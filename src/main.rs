@@ -1,138 +1,161 @@
 mod cir;
+mod parse;
 
-use saltwater::{Locatable, InternedStr, get_str, Type, Literal, types::FunctionType};
-use saltwater::hir::{Initializer, Stmt, StmtType, ExprType, Declaration, Expr};
-use lazy_static::lazy_static;
+use cir::{Command, ScoreOp, ScoreSet, Target, Execute, Function, ExecuteSubCmd, ExecuteCondition, ExecuteCondKind, FuncCall};
+use parse::{Block, Stmt, BinaryStmt, Expr, Ident, IfStmt, ConditionKind};
 use std::sync::Mutex;
-use std::collections::HashMap;
+use lazy_static::lazy_static;
 
 static PROGRAM: &str = "
-void print(int);
-
-const int FORTY_TWO = 42;
-
-int main() {
-    print(FORTY_TWO);
+main() {
+    foo += 1;
+    if foo < 10 {
+        main();
+    };
 }
 ";
 
-fn is_print_symbol(Expr { expr, .. }: &Expr) -> bool {
-    if let ExprType::Id(id) = &*expr {
-        "print" == get_str!(id.get().id)
-    } else {
-        false
-    }
+fn compile_unit(parse::Unit { decls }: &parse::Unit) -> Vec<Function> {
+    decls.iter().flat_map(|decl| {
+        compile_function(decl)
+    }).collect()
 }
 
-fn compile_print(param: &Expr) {
-    compile_expr(param);
-    todo!("compile rest of print call");
+fn compile_function(parse::Function { name, body }: &parse::Function) -> Vec<Function> {
+    let (cmds, mut fns) = compile_block(body);
+    fns.push(Function {
+        name: format!("rust:{}", name.0),
+        cmds,
+    });
+    fns
 }
 
-fn compile_expr(Expr { expr, .. }: &Expr) {
-    match expr {
-        ExprType::FuncCall(func, params) => {
-            if is_print_symbol(func) {
-                assert_eq!(params.len(), 1);
-                compile_print(&params[0]);
-            }
-        }
-        // There's only one data type, haha
-        ExprType::Cast(c) => {
-            compile_expr(c)
-        }
-        // Pointers? What are those?
-        ExprType::Deref(d) => {
-            compile_expr(d)
-        }
-        ExprType::Id
-        e => todo!("{:?}", e),       
+fn compile_block(program: &Block) -> (Vec<Command>, Vec<Function>) {
+    let mut cmds = Vec::new();
+    let mut fns = Vec::new();
+    for stmt in &program.stmts {
+        let (temp_cmds, temp_fns) = compile_stmt(stmt);
+        cmds.extend(temp_cmds.into_iter());
+        fns.extend(temp_fns.into_iter());
     }
-}
-
-fn compile_body(body: &[Stmt]) {
-    for Locatable { data: stmt, .. } in body {
-        match stmt {
-            StmtType::Expr(expr) => {
-                compile_expr(expr);
-            }
-            _ => todo!("{:#?}", stmt),
-        }
-    }
+    (cmds, fns)
 }
 
 lazy_static! {
-    pub static ref RESERVED_GLOBALS: Mutex<HashMap<InternedStr, i32>> = Mutex::new(HashMap::new());
+    pub static ref TEMP_CNT: Mutex<u32> = Mutex::new(0);
 }
 
-fn reserve_global(ident: InternedStr, initial_value: i32) {
-    let mut globals = RESERVED_GLOBALS.lock().unwrap();
-    if globals.contains_key(&ident) {
-        panic!("duplicate global {}", get_str!(ident));
+fn get_unique_num() -> u32 {
+    let mut lock = TEMP_CNT.lock().unwrap();
+    let result = *lock;
+    *lock += 1;
+    result
+}
+
+fn eval_expr(expr: &Expr) -> (Vec<Command>, Ident) {
+    match expr {
+        Expr::Ident(ident) => (vec![], ident.clone()),
+        Expr::Literal(score) => {
+            let val = get_unique_num();
+            
+            let cmd = ScoreSet {
+                target: Target::Uuid(format!("__temp{}", val)),
+                target_obj: "rust".to_string(),
+                score: *score,
+            }.into();
+
+            (vec![cmd], Ident(format!("__temp{}", val)))
+        }
     }
-    globals.insert(ident, initial_value);
 }
 
-fn literal_from_initializer(init: &Initializer) -> Option<i32> {
-    if let Initializer::Scalar(e) = init {
-        if let Expr { expr: ExprType::Cast(c), .. } = &**e {
-            if let Expr { expr: ExprType::Literal(Literal::Int(l)), .. } = &**c {
-                Some(*l as i32)
+fn compile_stmt(stmt: &Stmt) -> (Vec<Command>, Vec<Function>) {
+    match stmt {
+        Stmt::Binary(BinaryStmt { lhs, op, rhs }) => {
+            let (mut commands, ident) = eval_expr(rhs);
+            let cmd = ScoreOp {
+                target: lhs.clone().into(),
+                target_obj: "rust".to_string(),
+                kind: *op,
+                source: ident.into(),
+                source_obj: "rust".to_string(),
+            }.into();
+
+            commands.push(cmd);
+
+            (commands, vec![])
+        }
+        Stmt::FuncCall(parse::FuncCall { name }) => {
+            (vec![FuncCall {
+                name: format!("rust:{}", name.0),
+            }.into()], vec![])
+        }
+        Stmt::If(IfStmt { conds, body }) => {
+            let mut result = Vec::new();
+            let mut cmd = Execute::new();
+            for parse::Condition { inverted, lhs, kind } in conds {
+                let (lhs_cmds, lhs_ident) = eval_expr(lhs);
+                result.extend(lhs_cmds.into_iter());
+
+                let kind = match kind {
+                    ConditionKind::Relation { relation, rhs } => {
+                        let (rhs_cmds, rhs_ident) = eval_expr(rhs);
+                        result.extend(rhs_cmds.into_iter());
+                        ExecuteCondKind::Relation {
+                            relation: relation.clone(),
+                            source: rhs_ident.into(),
+                            source_obj: "rust".to_string(),
+                        }
+                    }
+                    ConditionKind::Matches(range) => {
+                        ExecuteCondKind::Matches(range.clone())
+                    }
+                };
+
+                cmd.with_subcmd(ExecuteSubCmd::Condition {
+                    is_unless: *inverted,
+                    cond: ExecuteCondition::Score {
+                        target: lhs_ident.into(),
+                        target_obj: "rust".to_string(),
+                        kind,
+                    }
+                });
+            }
+
+            // TODO: Optimize if statements with only a single function call in the body
+            let functions = if !body.stmts.is_empty() {
+                let unique = get_unique_num();
+
+                cmd.with_run(Command::FuncCall(FuncCall {
+                    name: format!("rust:__inner{}", unique),
+                }));
+
+                let (cmds, mut functions) = compile_block(body);
+                functions.push(Function {
+                    name: format!("__inner{}", unique),
+                    cmds,
+                });
+                functions
             } else {
-                None
-            }
-        } else {
-            None
+                vec![]
+            };
+
+            result.push(cmd.into());
+
+            (result, functions)
         }
-    } else {
-        None
-    }
-}
-
-fn compile_decl(decl: &Declaration) {
-    let variable = decl.symbol.get();
-
-    match &variable.ctype {
-        Type::Function(FunctionType { return_type, params, varargs }) => {
-            if **return_type != Type::Void && "main" != get_str!(variable.id) {
-                todo!("Non-void return type on a function");
-            }
-
-            if *varargs {
-                todo!("variadic arguments");
-            }
-
-            eprintln!("function name: {}", get_str!(variable.id));
-
-            if let Some(Initializer::FunctionBody(body)) = &decl.init {
-                compile_body(body);
-            }
-        }
-        Type::Int(true) => {
-            let initial_value = decl.init.as_ref().map(|i| literal_from_initializer(i).unwrap()).unwrap_or(0);
-            reserve_global(variable.id, initial_value);
-        }
-        Type::Char(_) => panic!("`char` not supported"),
-        Type::Short(_) => panic!("`short` not supported"),
-        Type::Long(_) => panic!("`long` not supported"),
-        ctype => todo!("{:?}", ctype)
     }
 }
 
 fn main() {
-    let program = saltwater::check_semantics(PROGRAM, saltwater::Opt {
-        debug_ast: true,
-        debug_hir: true,
-        ..Default::default()
-    });
-    
-    if !program.warnings.is_empty() {
-        eprintln!("Warnings: {:?}", program.warnings);
-    }
+    let program = parse::parse(PROGRAM).unwrap();
 
-    let decls = program.result.unwrap();
-
-    for Locatable { data, .. } in decls {
-        compile_decl(&data);
+    let fns = compile_unit(&program);
+    for decl in fns.iter() {
+        println!("Function `{}`", decl.name);
+        for r in decl.cmds.iter() {
+            println!("{}", r);
+        }
+        println!();
     }
 }

@@ -1,5 +1,27 @@
 use std::fmt;
 use std::string::ToString;
+use crate::parse::{Ident, Token};
+use std::ops::Range;
+use std::convert::TryFrom;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Function {
+    pub name: String,
+    pub cmds: Vec<Command>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct FuncCall {
+    pub name: String,
+}
+
+impl fmt::Display for FuncCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "function {}", self.name)
+    }
+}
+
+
 
 // Objectives are `i32`
 //  - Name [a-zA-Z0-9_.\-+]
@@ -9,44 +31,224 @@ use std::string::ToString;
 // Entities can have *scores* in certain objectives
 // Score holder is a player's name or entity's UUID that has scores in some objective
 
-/* Execute:
+/// Execute:
+/// `<TARGET>` is the same as the one for the `data` command
+///
+/// ```
+/// execute
+/// ... align <axes> -> execute
+/// ... anchored <anchor> -> execute
+/// ... as <targets> -> execute
+/// ... at <targets> -> execute
+/// ... facing (<pos>|entity <targets> <anchor>) -> execute
+/// ... in <dimension> -> execute
+/// ... positioned (<pos>|as <targets>) -> execute
+/// ... rotated (<rot>|as <targets>) -> execute
+/// ... store (result|success)
+///     ... <TARGET> <path> (byte|short|int|long|float|double) <scale> -> execute
+///     ... bossbar <id> (max|value) -> execute
+///     ... score <targets> <objective> -> execute
+/// ... (if|unless)
+///     ... block <pos> <block> -> [execute]
+///     ... blocks <start> <end> <destination> (all|masked) -> [execute]
+///     ... data
+///         ... block <sourcePos> <path> -> [execute]
+///         ... entity <source> <path> -> [execute]
+///         ... storage <source> <path> -> [execute]
+///     ... entity <entities> -> [execute]
+///     ... predicate <predicate> -> [execute]
+///     ... score <target> <targetObjective>
+///         ... (< | <= | = | > | >=) <source> <sourceObjective> -> [execute]
+///         ... matches <range> -> [execute]
+/// ... run <command>
+/// ```
 
-`<TARGET>` is the same as the one for the `data` command
+#[derive(Debug, PartialEq, Clone, Default)]
+pub struct Execute {
+    pub subcommands: Vec<ExecuteSubCmd>,
+    pub run: Option<Box<Command>>,
+}
 
-... align <axes> -> execute
-... anchored <anchor> -> execute
-... as <targets> -> execute
-... at <targets> -> execute
-... facing (<pos>|entity <targets> <anchor>) -> execute
-... in <dimension> -> execute
-... positioned (<pos>|as <targets>) -> execute
-... rotated (<rot>|as <targets>) -> execute
-... store (result|success)
-    ... <TARGET> <path> (byte|short|int|long|float|double) <scale> -> execute
-    ... bossbar <id> (max|value) -> execute
-    ... score <targets> <objective> -> execute
-... (if|unless)
-    ... block <pos> <block> -> [execute]
-    ... blocks <start> <end> <destination> (all|masked) -> [execute]
-    ... data
-        ... block <sourcePos> <path> -> [execute]
-        ... entity <source> <path> -> [execute]
-        ... storage <source> <path> -> [execute]
-    ... entity <entities> -> [execute]
-    ... predicate <predicate> -> [execute]
-    ... score <target> <targetObjective>
-        ... (< | <= | = | > | >=) <source> <sourceObjective> -> [execute]
-        ... matches <range> -> [execute]
-... run <command>
+impl fmt::Display for Execute {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "execute")?;
+        for sub in self.subcommands.iter() {
+            write!(f, " {}", sub)?;
+        }
+        if let Some(run) = &self.run {
+            write!(f, " run {}", run)?;
+        }
+        Ok(())
+    }
+}
 
-*/
+impl Execute {
+    pub fn new() -> Self {
+        Execute::default()
+    }
 
-/* Scoreboard (players functions)
+    pub fn with_subcmd(&mut self, cmd: ExecuteSubCmd) -> &mut Self {
+        self.subcommands.push(cmd);
+        self
+    }
 
-TODO: scoreboard players set <targets> <objective> <score>
-TODO: scoreboard players reset <targets> [<objectives>]
+    pub fn with_run(&mut self, cmd: Command) -> &mut Self {
+        assert!(self.run.is_none());
 
-*/
+        self.run = Some(Box::new(cmd));
+        self
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExecuteSubCmd {
+    // TODO: There's others lol
+    Condition {
+        is_unless: bool,
+        cond: ExecuteCondition,
+    }
+}
+
+impl fmt::Display for ExecuteSubCmd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Condition { is_unless, cond } => {
+                if *is_unless {
+                    write!(f, "unless")?;
+                } else {
+                    write!(f, "if")?;
+                }
+
+                write!(f, " {}", cond)
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExecuteCondition {
+    // TODO: There's more
+    Score {
+        target: Target,
+        target_obj: Objective,
+        kind: ExecuteCondKind,
+    },
+}
+
+impl fmt::Display for ExecuteCondition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ExecuteCondition::Score { target, target_obj, kind } => {
+                write!(f, "score {} {} {}", target, target_obj, kind)
+            }
+        }
+    }
+}
+
+
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExecuteCondKind {
+    Relation {
+        relation: Relation,
+        source: Target,
+        source_obj: Objective
+    },
+    Matches(Range<i32>),
+}
+
+impl fmt::Display for ExecuteCondKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Relation { relation, source, source_obj } => {
+                write!(f, "{} {} {}", relation, source, source_obj)
+            },
+            Self::Matches(range) => {
+                todo!("{:?}", range)
+                // write!(f, "matches {}", ???)
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Hash, Clone)]
+pub enum Relation {
+    LessThan,
+    LessThanEq,
+    Eq,
+    GreaterThan,
+    GreaterThanEq,
+}
+
+impl TryFrom<Token> for Relation {
+    type Error = ();
+
+    fn try_from(token: Token) -> Result<Self, Self::Error> {
+        match token {
+            Token::BinaryOp(ScoreOpKind::Min) => Ok(Self::LessThan),
+            Token::LessThanEq => Ok(Self::LessThanEq),
+            Token::BinaryOp(ScoreOpKind::Assign) => Ok(Self::Eq),
+            Token::GreaterThanEq => Ok(Self::GreaterThanEq),
+            Token::BinaryOp(ScoreOpKind::Max) => Ok(Self::GreaterThan),
+            _ => Err(())
+        }
+    }
+}
+
+impl fmt::Display for Relation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Relation::LessThan => write!(f, "<"),
+            Relation::LessThanEq => write!(f, "<="),
+            Relation::Eq => write!(f, "="),
+            Relation::GreaterThan => write!(f, ">"),
+            Relation::GreaterThanEq => write!(f, ">="),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Command {
+    ScoreOp(ScoreOp),
+    ScoreSet(ScoreSet),
+    Execute(Execute),
+    FuncCall(FuncCall),
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::ScoreOp(s) => s.fmt(f),
+            Command::ScoreSet(s) => s.fmt(f),
+            Command::Execute(s) => s.fmt(f),
+            Command::FuncCall(s) => s.fmt(f),
+        }
+    }
+}
+
+impl From<ScoreOp> for Command {
+    fn from(s: ScoreOp) -> Self {
+        Command::ScoreOp(s)
+    }
+}
+
+impl From<ScoreSet> for Command {
+    fn from(s: ScoreSet) -> Self {
+        Command::ScoreSet(s)
+    }
+}
+
+impl From<Execute> for Command {
+    fn from(e: Execute) -> Self {
+        Command::Execute(e)
+    }
+}
+
+impl From<FuncCall> for Command {
+    fn from(f: FuncCall) -> Self {
+        Command::FuncCall(f)
+    }
+}
 
 type Objective = String;
 
@@ -54,7 +256,7 @@ type Objective = String;
 pub struct SelectorArg;
 
 impl fmt::Display for SelectorArg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
 }
@@ -115,6 +317,31 @@ impl fmt::Display for Target {
     }
 }
 
+/* Scoreboard (players functions)
+
+TODO: scoreboard players reset <targets> [<objectives>]
+*/
+
+/// `scoreboard players set <targets> <objective> <score>`
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScoreSet {
+    pub target: Target,
+    pub target_obj: Objective,
+    pub score: i32,
+}
+
+impl fmt::Display for ScoreSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "scoreboard players set {} {} {}", self.target, self.target_obj, self.score)
+    }
+}
+
+impl From<Ident> for Target {
+    fn from(ident: Ident) -> Target {
+        Target::Uuid(ident.0)
+    }
+}
+
 /// `scoreboard players operation <targets> <targetObjective> <operation> <source> <sourceObjective>`
 /// 
 /// `<operation>` may be: `+=`, `-=`, `*=`, `/=`, `%=`, `=`, `<` (min), `>` (max), `><` (swap)
@@ -124,11 +351,11 @@ impl fmt::Display for Target {
 /// All operations treat a null score as 0
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScoreOp {
-    target: Target,
-    target_obj: Objective,
-    kind: ScoreOpKind,
-    source: Target,
-    source_obj: Objective,
+    pub target: Target,
+    pub target_obj: Objective,
+    pub kind: ScoreOpKind,
+    pub source: Target,
+    pub source_obj: Objective,
 }
 
 impl fmt::Display for ScoreOp {
