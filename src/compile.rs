@@ -1,24 +1,16 @@
-mod cir;
-mod parse;
-
-use cir::{Command, ScoreOp, ScoreSet, Target, Execute, Function, ExecuteSubCmd, ExecuteCondition, ExecuteCondKind, FuncCall};
-use parse::{Block, Stmt, BinaryStmt, Expr, Ident, IfStmt, ConditionKind};
-use std::sync::Mutex;
+use crate::cir::{
+    Command, Execute, ExecuteCondKind, ExecuteCondition, ExecuteSubCmd, FuncCall, Function,
+    ScoreOp, ScoreSet, Target,
+};
+use crate::parse::{self, BinaryStmt, Block, ConditionKind, Expr, Ident, IfStmt, Stmt};
 use lazy_static::lazy_static;
+use std::sync::Mutex;
 
-static PROGRAM: &str = "
-main() {
-    foo += 1;
-    if foo < 10 {
-        main();
-    };
-}
-";
-
-fn compile_unit(parse::Unit { decls }: &parse::Unit) -> Vec<Function> {
-    decls.iter().flat_map(|decl| {
-        compile_function(decl)
-    }).collect()
+pub fn compile_unit(parse::Unit { decls }: &parse::Unit) -> Vec<Function> {
+    decls
+        .iter()
+        .flat_map(|decl| compile_function(decl))
+        .collect()
 }
 
 fn compile_function(parse::Function { name, body }: &parse::Function) -> Vec<Function> {
@@ -57,12 +49,13 @@ fn eval_expr(expr: &Expr) -> (Vec<Command>, Ident) {
         Expr::Ident(ident) => (vec![], ident.clone()),
         Expr::Literal(score) => {
             let val = get_unique_num();
-            
+
             let cmd = ScoreSet {
                 target: Target::Uuid(format!("__temp{}", val)),
                 target_obj: "rust".to_string(),
                 score: *score,
-            }.into();
+            }
+            .into();
 
             (vec![cmd], Ident(format!("__temp{}", val)))
         }
@@ -79,21 +72,29 @@ fn compile_stmt(stmt: &Stmt) -> (Vec<Command>, Vec<Function>) {
                 kind: *op,
                 source: ident.into(),
                 source_obj: "rust".to_string(),
-            }.into();
+            }
+            .into();
 
             commands.push(cmd);
 
             (commands, vec![])
         }
-        Stmt::FuncCall(parse::FuncCall { name }) => {
-            (vec![FuncCall {
+        Stmt::FuncCall(parse::FuncCall { name }) => (
+            vec![FuncCall {
                 name: format!("rust:{}", name.0),
-            }.into()], vec![])
-        }
+            }
+            .into()],
+            vec![],
+        ),
         Stmt::If(IfStmt { conds, body }) => {
             let mut result = Vec::new();
             let mut cmd = Execute::new();
-            for parse::Condition { inverted, lhs, kind } in conds {
+            for parse::Condition {
+                inverted,
+                lhs,
+                kind,
+            } in conds
+            {
                 let (lhs_cmds, lhs_ident) = eval_expr(lhs);
                 result.extend(lhs_cmds.into_iter());
 
@@ -107,9 +108,7 @@ fn compile_stmt(stmt: &Stmt) -> (Vec<Command>, Vec<Function>) {
                             source_obj: "rust".to_string(),
                         }
                     }
-                    ConditionKind::Matches(range) => {
-                        ExecuteCondKind::Matches(range.clone())
-                    }
+                    ConditionKind::Matches(range) => ExecuteCondKind::Matches(range.clone()),
                 };
 
                 cmd.with_subcmd(ExecuteSubCmd::Condition {
@@ -118,7 +117,7 @@ fn compile_stmt(stmt: &Stmt) -> (Vec<Command>, Vec<Function>) {
                         target: lhs_ident.into(),
                         target_obj: "rust".to_string(),
                         kind,
-                    }
+                    },
                 });
             }
 
@@ -144,18 +143,5 @@ fn compile_stmt(stmt: &Stmt) -> (Vec<Command>, Vec<Function>) {
 
             (result, functions)
         }
-    }
-}
-
-fn main() {
-    let program = parse::parse(PROGRAM).unwrap();
-
-    let fns = compile_unit(&program);
-    for decl in fns.iter() {
-        println!("Function `{}`", decl.name);
-        for r in decl.cmds.iter() {
-            println!("{}", r);
-        }
-        println!();
     }
 }

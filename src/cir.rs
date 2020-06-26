@@ -1,8 +1,8 @@
-use std::fmt;
-use std::string::ToString;
 use crate::parse::{Ident, Token};
-use std::ops::Range;
 use std::convert::TryFrom;
+use std::fmt;
+use std::ops::Range;
+use std::string::ToString;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
@@ -20,8 +20,6 @@ impl fmt::Display for FuncCall {
         write!(f, "function {}", self.name)
     }
 }
-
-
 
 // Objectives are `i32`
 //  - Name [a-zA-Z0-9_.\-+]
@@ -106,7 +104,7 @@ pub enum ExecuteSubCmd {
     Condition {
         is_unless: bool,
         cond: ExecuteCondition,
-    }
+    },
 }
 
 impl fmt::Display for ExecuteSubCmd {
@@ -138,21 +136,21 @@ pub enum ExecuteCondition {
 impl fmt::Display for ExecuteCondition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ExecuteCondition::Score { target, target_obj, kind } => {
-                write!(f, "score {} {} {}", target, target_obj, kind)
-            }
+            ExecuteCondition::Score {
+                target,
+                target_obj,
+                kind,
+            } => write!(f, "score {} {} {}", target, target_obj, kind),
         }
     }
 }
-
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExecuteCondKind {
     Relation {
         relation: Relation,
         source: Target,
-        source_obj: Objective
+        source_obj: Objective,
     },
     Matches(Range<i32>),
 }
@@ -160,9 +158,11 @@ pub enum ExecuteCondKind {
 impl fmt::Display for ExecuteCondKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Relation { relation, source, source_obj } => {
-                write!(f, "{} {} {}", relation, source, source_obj)
-            },
+            Self::Relation {
+                relation,
+                source,
+                source_obj,
+            } => write!(f, "{} {} {}", relation, source, source_obj),
             Self::Matches(range) => {
                 todo!("{:?}", range)
                 // write!(f, "matches {}", ???)
@@ -190,7 +190,7 @@ impl TryFrom<Token> for Relation {
             Token::BinaryOp(ScoreOpKind::Assign) => Ok(Self::Eq),
             Token::GreaterThanEq => Ok(Self::GreaterThanEq),
             Token::BinaryOp(ScoreOpKind::Max) => Ok(Self::GreaterThan),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -270,7 +270,11 @@ pub struct Selector {
 impl fmt::Display for Selector {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.var)?;
-        let args = self.args.iter().map(|a| a.to_string()).collect::<Vec<String>>();
+        let args = self
+            .args
+            .iter()
+            .map(|a| a.to_string())
+            .collect::<Vec<String>>();
         if !args.is_empty() {
             write!(f, "{}", args.join(","))
         } else {
@@ -332,7 +336,11 @@ pub struct ScoreSet {
 
 impl fmt::Display for ScoreSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "scoreboard players set {} {} {}", self.target, self.target_obj, self.score)
+        write!(
+            f,
+            "scoreboard players set {} {} {}",
+            self.target, self.target_obj, self.score
+        )
     }
 }
 
@@ -343,9 +351,9 @@ impl From<Ident> for Target {
 }
 
 /// `scoreboard players operation <targets> <targetObjective> <operation> <source> <sourceObjective>`
-/// 
+///
 /// `<operation>` may be: `+=`, `-=`, `*=`, `/=`, `%=`, `=`, `<` (min), `>` (max), `><` (swap)
-/// 
+///
 /// Both `target` and `source` may be `*`, which uses all entites tracked by (TODO: the scoreboard? that objective?)
 ///
 /// All operations treat a null score as 0
@@ -363,13 +371,8 @@ impl fmt::Display for ScoreOp {
         write!(
             f,
             "scoreboard players operation {} {} {} {} {}",
-            self.target,
-            self.target_obj,
-            self.kind,
-            self.source,
-            self.source_obj
+            self.target, self.target_obj, self.kind, self.source, self.source_obj
         )
-            
     }
 }
 
