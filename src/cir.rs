@@ -1,8 +1,62 @@
 use crate::parse::{Ident, Token};
 use std::convert::TryFrom;
 use std::fmt;
-use std::ops::Range;
 use std::string::ToString;
+use std::ops::{RangeToInclusive, RangeFrom, RangeInclusive};
+
+#[derive(Debug, PartialEq, Hash, Clone)]
+pub enum McRange {
+    To(RangeToInclusive<i32>),
+    From(RangeFrom<i32>),
+    Between(RangeInclusive<i32>),
+}
+
+impl McRange {
+    pub fn contains(&self, item: i32) -> bool {
+        match self {
+            Self::To(r) => r.contains(&item),
+            Self::From(r) => r.contains(&item),
+            Self::Between(r) => r.contains(&item),
+        }
+    }
+}
+
+impl fmt::Display for McRange {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::To(r) => write!(f, "..{}", r.end),
+            Self::From(r) => write!(f, "{}..", r.start),
+            Self::Between(r) => write!(f, "{}..{}", r.start(), r.end()),
+        }
+    }
+}
+
+// TODO: There's many more variants
+#[derive(Debug, PartialEq, Clone)]
+pub enum Predicate {
+    Inverted(Box<Predicate>),
+    /// Minecraft calls this "alternative"
+    Or(Vec<Predicate>),
+}
+
+impl fmt::Display for Predicate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{ ")?;
+        
+        match self {
+            Predicate::Inverted(inner) => {
+                write!(f, "\"condition\": \"minecraft:inverted\", \"term\": {}", inner)?
+            }
+            Predicate::Or(inner) => {
+                let inner = inner.iter().map(|i| format!("{}", i)).collect::<Vec<String>>();
+
+                write!(f, "\tcondition\": \"minecraft:alternative\", \"term\": [{}]", inner.join(", "))?;
+            }
+        }
+
+        write!(f, " }}")
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Function {
@@ -17,7 +71,7 @@ pub struct FuncCall {
 
 impl fmt::Display for FuncCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "function {}", self.name)
+        write!(f, "function rust:{}", self.name)
     }
 }
 
@@ -105,6 +159,10 @@ pub enum ExecuteSubCmd {
         is_unless: bool,
         cond: ExecuteCondition,
     },
+    Store {
+        is_success: bool,
+        kind: ExecuteStoreKind,
+    }
 }
 
 impl fmt::Display for ExecuteSubCmd {
@@ -119,9 +177,38 @@ impl fmt::Display for ExecuteSubCmd {
 
                 write!(f, " {}", cond)
             }
+            Self::Store { is_success, kind } => {
+                write!(f, "store ")?;
+                if *is_success {
+                    write!(f, "success ")?;
+                } else {
+                    write!(f, "result ")?;
+                }
+                write!(f, "{}", kind)
+            }
         }
     }
 }
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExecuteStoreKind {
+    // TODO: There's 2 other kinds
+    Score {
+        target: Target,
+        objective: Objective,
+    }
+}
+
+impl fmt::Display for ExecuteStoreKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Score { target, objective } => {
+                write!(f, "score {} {}", target, objective)
+            }
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExecuteCondition {
@@ -152,7 +239,7 @@ pub enum ExecuteCondKind {
         source: Target,
         source_obj: Objective,
     },
-    Matches(Range<i32>),
+    Matches(McRange),
 }
 
 impl fmt::Display for ExecuteCondKind {
@@ -163,10 +250,7 @@ impl fmt::Display for ExecuteCondKind {
                 source,
                 source_obj,
             } => write!(f, "{} {} {}", relation, source, source_obj),
-            Self::Matches(range) => {
-                todo!("{:?}", range)
-                // write!(f, "matches {}", ???)
-            }
+            Self::Matches(range) => write!(f, "matches {}", range),
         }
     }
 }

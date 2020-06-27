@@ -1,4 +1,4 @@
-use crate::cir::Relation;
+use crate::cir::{Relation, McRange};
 use std::convert::TryFrom;
 use std::ops::Range;
 
@@ -360,7 +360,7 @@ pub struct Condition {
 #[derive(Debug, PartialEq, Hash, Clone)]
 pub enum ConditionKind {
     Relation { relation: Relation, rhs: Expr },
-    Matches(Range<i32>),
+    Matches(McRange),
 }
 
 #[derive(Debug, PartialEq, Hash, Clone)]

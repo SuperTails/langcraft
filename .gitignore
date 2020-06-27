@@ -1,1 +1,5 @@
 /target
+/out
+mcfunction.bc
+mcfunction.ll
+mcfunction.c

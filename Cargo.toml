@@ -15,5 +15,5 @@ path = "src/bin/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-saltwater = "0.10"
 lazy_static = "1.4.0"
+llvm-ir = "0.5.3"
