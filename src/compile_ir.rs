@@ -32,20 +32,67 @@ pub fn read_ptr(target: String) -> Command {
             objective: OBJECTIVE.to_string(),
         },
     });
-    exec.with_run(
-        Data {
-            target: DataTarget::Block("~ ~ ~".to_string()),
-            kind: DataKind::Get {
-                path: "RecordItem.tag.Memory".to_string(),
-                scale: 1.0,
-            },
-        }
-        .into(),
-    );
+    exec.with_run(Data {
+        target: DataTarget::Block("~ ~ ~".to_string()),
+        kind: DataKind::Get {
+            path: "RecordItem.tag.Memory".to_string(),
+            scale: 1.0,
+        },
+    });
 
     exec.into()
 }
 
+/// Returns xyz
+pub fn get_address(mut address: i32) -> (i32, i32, i32) {
+    assert!(0 < address);
+    assert!(address < 16 * 16 * 16);
+    let z = address % 16;
+    address /= 16;
+    let y = address % 16;
+    address /= 16;
+    let x = address % 16;
+    (x, y, z)
+}
+
+/// Optimized form of setting and then writing to the pointer
+/// when the address and value are known at compile time
+pub fn set_memory(value: i32, address: i32) -> Command {
+    let (x, y, z) = get_address(address);
+
+    Data {
+        target: DataTarget::Block(format!("{} {} {}", x, y, z)),
+        kind: DataKind::Modify {
+            path: "RecordItem.tag.Memory".to_string(),
+            kind: cir::DataModifyKind::Set,
+            source: cir::DataModifySource::Value(value),
+        },
+    }
+    .into()
+}
+
+// TODO: Technically this can support other datatypes too, since it's stored in a block
+/// Shorthand for `write_ptr` when the operand is a constant i32
+pub fn write_ptr_const(value: i32) -> Command {
+    let mut exec = Execute::new();
+    exec.with_subcmd(ExecuteSubCmd::At {
+        target: Target::Selector(cir::Selector {
+            var: cir::SelectorVariable::AllEntities,
+            args: vec![cir::SelectorArg("type=armor_stand".to_string())],
+        }),
+    });
+    exec.with_run(Data {
+        target: DataTarget::Block("~ ~ ~".to_string()),
+        kind: DataKind::Modify {
+            path: "RecordItem.tag.Memory".to_string(),
+            kind: cir::DataModifyKind::Set,
+            source: cir::DataModifySource::Value(value),
+        },
+    });
+    exec.into()
+}
+
+/// Reads the score in the given `target` and writes to the current memory location
 pub fn write_ptr(target: String) -> Command {
     let mut exec = Execute::new();
     exec.with_subcmd(ExecuteSubCmd::At {
@@ -63,13 +110,10 @@ pub fn write_ptr(target: String) -> Command {
             scale: 1.0,
         },
     });
-    exec.with_run(
-        ScoreGet {
-            target: Target::Uuid(target),
-            target_obj: OBJECTIVE.to_string(),
-        }
-        .into(),
-    );
+    exec.with_run(ScoreGet {
+        target: Target::Uuid(target),
+        target_obj: OBJECTIVE.to_string(),
+    });
 
     exec.into()
 }
@@ -108,29 +152,7 @@ pub fn compile_module(module: &Module) -> Vec<McFunction> {
                             todo!("{:?}", elem);
                         };
 
-                        cmds.push(
-                            ScoreSet {
-                                target: Target::Uuid("%ptr".to_string()),
-                                target_obj: OBJECTIVE.to_string(),
-                                score: start as i32 + idx as i32,
-                            }
-                            .into(),
-                        );
-                        cmds.push(
-                            McFuncCall {
-                                name: "intrinsic:setptr".to_string(),
-                            }
-                            .into(),
-                        );
-                        cmds.push(
-                            ScoreSet {
-                                target: Target::Uuid("%temp".to_string()),
-                                target_obj: OBJECTIVE.to_string(),
-                                score,
-                            }
-                            .into(),
-                        );
-                        cmds.push(write_ptr("%temp".to_string()));
+                        cmds.push(set_memory(score, start as i32 + idx as i32));
                     }
 
                     cmds
@@ -222,35 +244,26 @@ pub fn compile_function(func: &Function) -> Vec<McFunction> {
                     let true_dest = mc_block_name(&func.name, true_dest);
                     let false_dest = mc_block_name(&func.name, false_dest);
 
-                    this.cmds.push(
-                        Execute {
-                            subcommands: vec![ExecuteSubCmd::Condition {
-                                is_unless: false,
-                                cond: ExecuteCondition::Score {
-                                    target: Target::Uuid(cond.clone()),
-                                    target_obj: OBJECTIVE.to_string(),
-                                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
-                                },
-                            }],
-                            run: Some(Box::new(McFuncCall { name: true_dest }.into())),
-                        }
-                        .into(),
-                    );
+                    let mut true_cmd = Execute::new();
+                    true_cmd
+                        .with_if(ExecuteCondition::Score {
+                            target: Target::Uuid(cond.clone()),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
+                        })
+                        .with_run(McFuncCall { name: true_dest });
 
-                    this.cmds.push(
-                        Execute {
-                            subcommands: vec![ExecuteSubCmd::Condition {
-                                is_unless: true,
-                                cond: ExecuteCondition::Score {
-                                    target: Target::Uuid(cond),
-                                    target_obj: OBJECTIVE.to_string(),
-                                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
-                                },
-                            }],
-                            run: Some(Box::new(McFuncCall { name: false_dest }.into())),
-                        }
-                        .into(),
-                    );
+                    let mut false_cmd = Execute::new();
+                    false_cmd
+                        .with_if(ExecuteCondition::Score {
+                            target: Target::Uuid(cond),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
+                        })
+                        .with_run(McFuncCall { name: false_dest });
+
+                    this.cmds.push(true_cmd.into());
+                    this.cmds.push(false_cmd.into());
                 }
                 term => todo!("terminator {:?}", term),
             }
@@ -451,33 +464,27 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
             let (mut cmds, target) = eval_operand(operand0);
             let (tmp_cmds, source) = eval_operand(operand1);
             cmds.extend(tmp_cmds);
-            cmds.push(
-                Execute {
-                    subcommands: vec![
-                        ExecuteSubCmd::Store {
-                            is_success: true,
-                            kind: ExecuteStoreKind::Score {
-                                target: Target::Uuid(dest.to_string()),
-                                objective: OBJECTIVE.to_string(),
-                            },
-                        },
-                        ExecuteSubCmd::Condition {
-                            is_unless: false,
-                            cond: ExecuteCondition::Score {
-                                target: Target::Uuid(target),
-                                target_obj: OBJECTIVE.to_string(),
-                                kind: ExecuteCondKind::Relation {
-                                    relation,
-                                    source: Target::Uuid(source),
-                                    source_obj: OBJECTIVE.to_string(),
-                                },
-                            },
-                        },
-                    ],
-                    run: None,
-                }
-                .into(),
-            );
+
+            let mut cmd = Execute::new();
+            cmd.with_subcmd(ExecuteSubCmd::Store {
+                is_success: true,
+                kind: ExecuteStoreKind::Score {
+                    target: Target::Uuid(dest.to_string()),
+                    objective: OBJECTIVE.to_string(),
+                },
+            })
+            .with_if(ExecuteCondition::Score {
+                target: Target::Uuid(target),
+                target_obj: OBJECTIVE.to_string(),
+                kind: ExecuteCondKind::Relation {
+                    relation,
+                    source: Target::Uuid(source),
+                    source_obj: OBJECTIVE.to_string(),
+                },
+            });
+
+            cmds.push(cmd.into());
+
             cmds
         }
         _ => todo!("instruction {:?}", instr),

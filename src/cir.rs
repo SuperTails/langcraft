@@ -157,10 +157,24 @@ impl Execute {
         self
     }
 
-    pub fn with_run(&mut self, cmd: Command) -> &mut Self {
+    pub fn with_if(&mut self, cond: ExecuteCondition) -> &mut Self {
+        self.with_subcmd(ExecuteSubCmd::Condition {
+            is_unless: false,
+            cond,
+        })
+    }
+
+    pub fn with_unless(&mut self, cond: ExecuteCondition) -> &mut Self {
+        self.with_subcmd(ExecuteSubCmd::Condition {
+            is_unless: true,
+            cond,
+        })
+    }
+
+    pub fn with_run<C: Into<Command>>(&mut self, cmd: C) -> &mut Self {
         assert!(self.run.is_none());
 
-        self.run = Some(Box::new(cmd));
+        self.run = Some(Box::new(cmd.into()));
         self
     }
 }
@@ -578,17 +592,56 @@ impl fmt::Display for Data {
         write!(f, "data ")?;
         match &self.kind {
             DataKind::Get { .. } => write!(f, "get ")?,
+            DataKind::Modify { .. } => write!(f, "modify ")?,
         }
         write!(f, "{} ", self.target)?;
         match &self.kind {
             DataKind::Get { path, scale } => write!(f, "{} {}", path, scale),
+            DataKind::Modify { path, kind, source } => write!(f, "{} {} {}", path, kind, source),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum DataKind {
-    Get { path: String, scale: f32 },
+    Get {
+        path: String,
+        scale: f32,
+    },
+    Modify {
+        path: String,
+        kind: DataModifyKind,
+        source: DataModifySource,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum DataModifyKind {
+    // TODO: There's others
+    Set,
+}
+
+impl fmt::Display for DataModifyKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Set => write!(f, "set"),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum DataModifySource {
+    // TODO: There's another
+    // TODO: This can technically be other datatypes too, I think
+    Value(i32),
+}
+
+impl fmt::Display for DataModifySource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DataModifySource::Value(v) => write!(f, "value {}", v),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
