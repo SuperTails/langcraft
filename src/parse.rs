@@ -1,6 +1,5 @@
-use crate::cir::{Relation, McRange};
+use crate::cir::{McRange, Relation};
 use std::convert::TryFrom;
-use std::ops::Range;
 
 #[derive(Debug, PartialEq, PartialOrd, Hash, Clone)]
 pub enum Token {

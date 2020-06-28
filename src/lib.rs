@@ -11,5 +11,7 @@ pub fn compile(program: &str) -> Result<Vec<Function>, String> {
 }
 
 pub fn compile_bc(path: &Path) -> Result<Vec<Function>, String> {
-    Ok(compile_ir::compile_module(&llvm_ir::Module::from_bc_path(path)?))
+    Ok(compile_ir::compile_module(&llvm_ir::Module::from_bc_path(
+        path,
+    )?))
 }

@@ -1,8 +1,8 @@
 use crate::parse::{Ident, Token};
 use std::convert::TryFrom;
 use std::fmt;
+use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
-use std::ops::{RangeToInclusive, RangeFrom, RangeInclusive};
 
 #[derive(Debug, PartialEq, Hash, Clone)]
 pub enum McRange {
@@ -42,15 +42,24 @@ pub enum Predicate {
 impl fmt::Display for Predicate {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{{ ")?;
-        
-        match self {
-            Predicate::Inverted(inner) => {
-                write!(f, "\"condition\": \"minecraft:inverted\", \"term\": {}", inner)?
-            }
-            Predicate::Or(inner) => {
-                let inner = inner.iter().map(|i| format!("{}", i)).collect::<Vec<String>>();
 
-                write!(f, "\tcondition\": \"minecraft:alternative\", \"term\": [{}]", inner.join(", "))?;
+        match self {
+            Predicate::Inverted(inner) => write!(
+                f,
+                "\"condition\": \"minecraft:inverted\", \"term\": {}",
+                inner
+            )?,
+            Predicate::Or(inner) => {
+                let inner = inner
+                    .iter()
+                    .map(|i| format!("{}", i))
+                    .collect::<Vec<String>>();
+
+                write!(
+                    f,
+                    "\tcondition\": \"minecraft:alternative\", \"term\": [{}]",
+                    inner.join(", ")
+                )?;
             }
         }
 
@@ -71,7 +80,11 @@ pub struct FuncCall {
 
 impl fmt::Display for FuncCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "function rust:{}", self.name)
+        if self.name.contains(':') {
+            write!(f, "function {}", self.name)
+        } else {
+            write!(f, "function rust:{}", self.name)
+        }
     }
 }
 
@@ -162,7 +175,13 @@ pub enum ExecuteSubCmd {
     Store {
         is_success: bool,
         kind: ExecuteStoreKind,
-    }
+    },
+    As {
+        target: Target,
+    },
+    At {
+        target: Target,
+    },
 }
 
 impl fmt::Display for ExecuteSubCmd {
@@ -186,6 +205,8 @@ impl fmt::Display for ExecuteSubCmd {
                 }
                 write!(f, "{}", kind)
             }
+            Self::As { target } => write!(f, "as {}", target),
+            Self::At { target } => write!(f, "at {}", target),
         }
     }
 }
@@ -196,19 +217,28 @@ pub enum ExecuteStoreKind {
     Score {
         target: Target,
         objective: Objective,
-    }
+    },
+    Data {
+        target: DataTarget,
+        path: String,
+        ty: String,
+        scale: f32,
+    },
 }
 
 impl fmt::Display for ExecuteStoreKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Score { target, objective } => {
-                write!(f, "score {} {}", target, objective)
-            }
+            Self::Score { target, objective } => write!(f, "score {} {}", target, objective),
+            Self::Data {
+                target,
+                path,
+                ty,
+                scale,
+            } => write!(f, "{} {} {} {}", target, path, ty, scale),
         }
     }
 }
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ExecuteCondition {
@@ -295,8 +325,10 @@ impl fmt::Display for Relation {
 pub enum Command {
     ScoreOp(ScoreOp),
     ScoreSet(ScoreSet),
+    ScoreGet(ScoreGet),
     Execute(Execute),
     FuncCall(FuncCall),
+    Data(Data),
 }
 
 impl fmt::Display for Command {
@@ -304,8 +336,10 @@ impl fmt::Display for Command {
         match self {
             Command::ScoreOp(s) => s.fmt(f),
             Command::ScoreSet(s) => s.fmt(f),
+            Command::ScoreGet(s) => s.fmt(f),
             Command::Execute(s) => s.fmt(f),
             Command::FuncCall(s) => s.fmt(f),
+            Command::Data(s) => s.fmt(f),
         }
     }
 }
@@ -334,21 +368,34 @@ impl From<FuncCall> for Command {
     }
 }
 
+impl From<Data> for Command {
+    fn from(d: Data) -> Self {
+        Command::Data(d)
+    }
+}
+
+impl From<ScoreGet> for Command {
+    fn from(s: ScoreGet) -> Self {
+        Command::ScoreGet(s)
+    }
+}
+
 type Objective = String;
 
+// TODO: This should be an enum, probably
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SelectorArg;
+pub struct SelectorArg(pub String);
 
 impl fmt::Display for SelectorArg {
-    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        todo!()
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Selector {
-    var: SelectorVariable,
-    args: Vec<SelectorArg>,
+    pub var: SelectorVariable,
+    pub args: Vec<SelectorArg>,
 }
 
 impl fmt::Display for Selector {
@@ -360,7 +407,7 @@ impl fmt::Display for Selector {
             .map(|a| a.to_string())
             .collect::<Vec<String>>();
         if !args.is_empty() {
-            write!(f, "{}", args.join(","))
+            write!(f, "[{}]", args.join(","))
         } else {
             Ok(())
         }
@@ -409,6 +456,22 @@ impl fmt::Display for Target {
 
 TODO: scoreboard players reset <targets> [<objectives>]
 */
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScoreGet {
+    pub target: Target,
+    pub target_obj: Objective,
+}
+
+impl fmt::Display for ScoreGet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "scoreboard players get {} {}",
+            self.target, self.target_obj
+        )
+    }
+}
 
 /// `scoreboard players set <targets> <objective> <score>`
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -503,3 +566,41 @@ impl fmt::Display for ScoreOpKind {
 <MODIFICATION> = (append | insert <index> | merge | prepend | set)
 
 */
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Data {
+    pub target: DataTarget,
+    pub kind: DataKind,
+}
+
+impl fmt::Display for Data {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "data ")?;
+        match &self.kind {
+            DataKind::Get { .. } => write!(f, "get ")?,
+        }
+        write!(f, "{} ", self.target)?;
+        match &self.kind {
+            DataKind::Get { path, scale } => write!(f, "{} {}", path, scale),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum DataKind {
+    Get { path: String, scale: f32 },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum DataTarget {
+    // TODO: More
+    Block(String),
+}
+
+impl fmt::Display for DataTarget {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DataTarget::Block(b) => write!(f, "block {}", b),
+        }
+    }
+}
