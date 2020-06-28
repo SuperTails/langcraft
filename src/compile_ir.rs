@@ -262,6 +262,7 @@ pub fn compile_function(func: &Function) -> Vec<McFunction> {
 
 pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
     match instr {
+        // TODO: Implement a proper stack pointer
         Instruction::Alloca(Alloca {
             allocated_type: Type::IntegerType { bits: 32 },
             num_elements,
@@ -485,8 +486,8 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
 
 pub fn eval_operand(op: &Operand) -> (Vec<Command>, String) {
     match op {
-        Operand::LocalOperand { name, ty: Type::IntegerType { bits: 32 } } => (vec![], name.to_string()),
-        Operand::ConstantOperand(Constant::GlobalReference { name, ty: Type::IntegerType { bits: 32 } }) => {
+        Operand::LocalOperand { name, ty } => (vec![], name.to_string()),
+        Operand::ConstantOperand(Constant::GlobalReference { name, ty }) => {
             let temp = name.to_string();
             (vec![], format!("%@{}", &temp[1..temp.len() - 1]))
         }
