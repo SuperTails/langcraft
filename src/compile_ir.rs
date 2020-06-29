@@ -255,7 +255,7 @@ pub fn compile_function(func: &Function) -> Vec<McFunction> {
 
                     let mut false_cmd = Execute::new();
                     false_cmd
-                        .with_if(ExecuteCondition::Score {
+                        .with_unless(ExecuteCondition::Score {
                             target: Target::Uuid(cond),
                             target_obj: OBJECTIVE.to_string(),
                             kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
@@ -304,12 +304,13 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
             dest,
             ..
         }) => {
-            assert_eq!(indices.len(), 2);
+            if indices.len() != 2 {
+                todo!("{:?}", indices);
+            }
 
-            assert!(matches!(
-                indices[0],
-                Operand::ConstantOperand(Constant::Int { value: 0, .. })
-            ));
+            if !matches!(indices[0], Operand::ConstantOperand(Constant::Int { value: 0, .. })) {
+                todo!("{:?}", indices[0]);
+            }
 
             let (mut cmds, address) = eval_operand(address);
             let (tmp, source) = eval_operand(&indices[1]);
@@ -339,8 +340,16 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
         }
         Instruction::Store(Store { address, value, .. }) => {
             let (mut cmds, addr) = eval_operand(address);
-            let (tmp, source) = eval_operand(value);
-            cmds.extend(tmp);
+
+            // If we're directly storing a constant,
+            // we can skip writing to a temporary value
+            let write_cmd = match eval_maybe_const(value) {
+                MaybeConst::Const(value) => write_ptr_const(value),
+                MaybeConst::NonConst(eval_cmds, id) => {
+                    cmds.extend(eval_cmds);
+                    write_ptr(id)
+                }
+            };
 
             cmds.push(
                 ScoreOp {
@@ -358,7 +367,9 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
                 }
                 .into(),
             );
-            cmds.push(write_ptr(source));
+
+            cmds.push(write_cmd);
+
             cmds
         }
         Instruction::Load(Load { dest, address, .. }) => {
@@ -452,6 +463,9 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
             dest,
             ..
         }) => {
+            // TODO: When operand1 is a constant, we can optimize the direct comparison into a `matches`
+            
+
             let relation = match predicate {
                 IntPredicate::SGE => cir::Relation::GreaterThanEq,
                 IntPredicate::SGT => cir::Relation::GreaterThan,
@@ -491,27 +505,48 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
     }
 }
 
-pub fn eval_operand(op: &Operand) -> (Vec<Command>, String) {
+pub enum MaybeConst {
+    Const(i32),
+    NonConst(Vec<Command>, String)
+}
+
+impl MaybeConst {
+    pub fn force_eval(self) -> (Vec<Command>, String) {
+        match self {
+            MaybeConst::Const(score) => {
+                let target = format!("%temp{}", get_unique_num());
+                (
+                    vec![ScoreSet {
+                        target: Target::Uuid(target.clone()),
+                        target_obj: OBJECTIVE.to_string(),
+                        score,
+                    }
+                    .into()],
+                    target,
+                )
+            }
+            MaybeConst::NonConst(cmds, id) => (cmds, id)
+        }
+    }
+}
+
+pub fn eval_maybe_const(op: &Operand) -> MaybeConst {
     match op {
-        Operand::LocalOperand { name, ty } => (vec![], name.to_string()),
+        Operand::LocalOperand { name, ty } => MaybeConst::NonConst(vec![], name.to_string()),
         Operand::ConstantOperand(Constant::GlobalReference { name, ty }) => {
             let temp = name.to_string();
-            (vec![], format!("%@{}", &temp[1..temp.len() - 1]))
+            MaybeConst::NonConst(vec![], format!("%@{}", &temp[1..temp.len() - 1]))
         }
         Operand::ConstantOperand(Constant::Int { bits: 32, value }) => {
-            let target = format!("%temp{}", get_unique_num());
-            (
-                vec![ScoreSet {
-                    target: Target::Uuid(target.clone()),
-                    target_obj: OBJECTIVE.to_string(),
-                    score: *value as i32,
-                }
-                .into()],
-                target,
-            )
+            MaybeConst::Const(*value as i32)
         }
         _ => todo!("operand {:?}", op),
     }
+
+}
+
+pub fn eval_operand(op: &Operand) -> (Vec<Command>, String) {
+    eval_maybe_const(op).force_eval()
 }
 
 lazy_static! {
