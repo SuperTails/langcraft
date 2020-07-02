@@ -337,6 +337,7 @@ impl fmt::Display for Relation {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Command {
+    SetBlock(SetBlock),
     ScoreOp(ScoreOp),
     ScoreSet(ScoreSet),
     ScoreGet(ScoreGet),
@@ -348,6 +349,7 @@ pub enum Command {
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Command::SetBlock(s) => s.fmt(f),
             Command::ScoreOp(s) => s.fmt(f),
             Command::ScoreSet(s) => s.fmt(f),
             Command::ScoreGet(s) => s.fmt(f),
@@ -391,6 +393,42 @@ impl From<Data> for Command {
 impl From<ScoreGet> for Command {
     fn from(s: ScoreGet) -> Self {
         Command::ScoreGet(s)
+    }
+}
+
+impl From<SetBlock> for Command {
+    fn from(s: SetBlock) -> Self {
+        Command::SetBlock(s)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SetBlock {
+    pub pos: String,
+    pub block: String,
+    pub kind: SetBlockKind,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Clone, Copy)]
+pub enum SetBlockKind {
+    Destroy,
+    Keep,
+    Replace,
+}
+
+impl fmt::Display for SetBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "setblock {} {} {}", self.pos, self.block, self.kind)
+    }
+}
+
+impl fmt::Display for SetBlockKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SetBlockKind::Destroy => write!(f, "destroy"),
+            SetBlockKind::Keep => write!(f, "keep"),
+            SetBlockKind::Replace => write!(f, "replace"),
+        }
     }
 }
 
