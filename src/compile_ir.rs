@@ -8,7 +8,7 @@ use crate::cir::{
 use lazy_static::lazy_static;
 use llvm_ir::instruction::{Add, Alloca, GetElementPtr, ICmp, Load, Mul, Store, Call};
 use llvm_ir::module::GlobalVariable;
-use llvm_ir::terminator::{Br, CondBr, Ret};
+use llvm_ir::terminator::{Br, CondBr, Ret, Switch};
 use llvm_ir::{
     Constant, Function, Instruction, IntPredicate, Module, Name, Operand, Terminator, Type,
 };
@@ -124,12 +124,14 @@ pub fn write_ptr(target: String) -> Command {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
-    direct_call: bool,
+    // FIXME: It is actually *not correct* to directly terminate with a call!
+    // And, on the other hand, a Call instruction MUST be a call!
+    direct_term: bool,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { direct_call: false }
+        Options { direct_term: false }
     }
 }
 
@@ -191,7 +193,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                             .iter()
                             .enumerate()
                             .find(|(_, f)| f.name == name)
-                            .unwrap()
+                            .unwrap_or_else(|| panic!("could not find {:?}", name))
                             .0;
 
                         let pos = format!("~ ~1 {}", idx);
@@ -217,7 +219,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         }
     }
 
-    if !options.direct_call {
+    if !options.direct_term {
         let build_cmds = funcs
             .iter()
             .enumerate()
@@ -297,16 +299,28 @@ enum McBlock {
     Granite,
     Andesite,
     Diorite,
+    LapisBlock,
+    IronBlock,
+    GoldBlock,
+    DiamondBlock,
+    RedstoneBlock,
 }
 
 impl std::fmt::Display for McBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "minecraft:")?;
+
         match self {
-            McBlock::Air => write!(f, "minecraft:air"),
-            McBlock::Cobblestone => write!(f, "minecraft:cobblestone"),
-            McBlock::Granite => write!(f, "minecraft:granite"),
-            McBlock::Andesite => write!(f, "minecraft:andesite"),
-            McBlock::Diorite => write!(f, "minecraft:diorite"),
+            McBlock::Air => write!(f, "air"),
+            McBlock::Cobblestone => write!(f, "cobblestone"),
+            McBlock::Granite => write!(f, "granite"),
+            McBlock::Andesite => write!(f, "andesite"),
+            McBlock::Diorite => write!(f, "diorite"),
+            McBlock::LapisBlock => write!(f, "lapis_block"),
+            McBlock::IronBlock => write!(f, "iron_block"),
+            McBlock::GoldBlock => write!(f, "gold_block"),
+            McBlock::DiamondBlock => write!(f, "diamond_block"),
+            McBlock::RedstoneBlock => write!(f, "redstone_block"),
         }
     }
 }
@@ -321,6 +335,11 @@ impl TryFrom<i32> for McBlock {
             2 => Ok(McBlock::Granite),
             3 => Ok(McBlock::Andesite),
             4 => Ok(McBlock::Diorite),
+            5 => Ok(McBlock::LapisBlock),
+            6 => Ok(McBlock::IronBlock),
+            7 => Ok(McBlock::GoldBlock),
+            8 => Ok(McBlock::DiamondBlock),
+            9 => Ok(McBlock::RedstoneBlock),
             _ => Err(()),
         }
     }
@@ -347,7 +366,7 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
 
             let mut this = McFunction { name, cmds: vec![] };
 
-            if !options.direct_call {
+            if !options.direct_term {
                 this.cmds.push(
                     SetBlock {
                         pos: "~ ~1 ~".to_string(),
@@ -359,7 +378,7 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
             }
 
             for instr in block.instrs.iter() {
-                this.cmds.extend(compile_instr(instr));
+                this.cmds.extend(compile_instr(instr, options));
             }
 
             match &block.term {
@@ -387,7 +406,7 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
                 Terminator::Br(Br { dest, .. }) => {
                     let mut name = mc_block_name(&func.name, dest);
 
-                    if !options.direct_call {
+                    if !options.direct_term {
                         name.push_str("%%FIXUP");
                     }
 
@@ -405,7 +424,7 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
                     let mut true_dest = mc_block_name(&func.name, true_dest);
                     let mut false_dest = mc_block_name(&func.name, false_dest);
 
-                    if !options.direct_call {
+                    if !options.direct_term {
                         true_dest.push_str("%%FIXUP");
                         false_dest.push_str("%%FIXUP");
                     }
@@ -431,6 +450,75 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
                     this.cmds.push(true_cmd.into());
                     this.cmds.push(false_cmd.into());
                 }
+                Terminator::Switch(Switch {
+                    operand,
+                    dests,
+                    default_dest,
+                    ..
+                }) => {
+                    
+                    let (cmds, operand) = eval_operand(operand);
+                    this.cmds.extend(cmds);
+
+                    let default_tracker = format!("%temp{}", get_unique_num());
+
+                    this.cmds.push(ScoreSet {
+                        target: Target::Uuid(default_tracker.clone()),
+                        target_obj: OBJECTIVE.to_string(),
+                        score: 0,
+                    }.into());
+
+                    for (dest_value, dest_name) in dests.iter() {
+                        let dest_value = if let Constant::Int { value, .. } = dest_value {
+                            *value as i32
+                        } else {
+                            todo!("{:?}", dest_value)
+                        };
+
+                        let mut dest_name = mc_block_name(&func.name, dest_name);
+
+                        if !options.direct_term {
+                            dest_name.push_str("%%FIXUP");
+                        }
+
+                        let mut branch_cmd = Execute::new();
+                        branch_cmd.with_if(ExecuteCondition::Score {
+                            target: Target::Uuid(operand.clone()),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ExecuteCondKind::Matches(cir::McRange::Between(dest_value..=dest_value))
+                        });
+
+                        let mut add_cmd = branch_cmd.clone();
+
+                        add_cmd.with_run(ScoreSet {
+                            target: Target::Uuid(default_tracker.clone()),
+                            target_obj: OBJECTIVE.to_string(),
+                            score: 1,
+                        });
+                        branch_cmd.with_run(McFuncCall { name: dest_name });
+
+                        this.cmds.push(add_cmd.into());
+                        this.cmds.push(branch_cmd.into());
+                    }
+
+                    let mut default_dest = mc_block_name(&func.name, default_dest);
+
+                    if !options.direct_term {
+                        default_dest.push_str("%%FIXUP");
+                    }
+
+                    let mut default_cmd = Execute::new();
+                    default_cmd.with_if(ExecuteCondition::Score {
+                        target: Target::Uuid(default_tracker),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ExecuteCondKind::Matches(cir::McRange::Between(0..=0))
+                    });
+                    default_cmd.with_run(McFuncCall {
+                        name: default_dest,
+                    });
+
+                    this.cmds.push(default_cmd.into());
+                }
                 term => todo!("terminator {:?}", term),
             }
 
@@ -439,7 +527,7 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
         .collect()
 }
 
-pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
+pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
     match instr {
         // TODO: Implement a proper stack pointer
         Instruction::Alloca(Alloca {
@@ -634,12 +722,15 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
         }) => {
             // TODO: When operand1 is a constant, we can optimize the direct comparison into a `matches`
 
+            let mut normal = true;
+
             let relation = match predicate {
                 IntPredicate::SGE => cir::Relation::GreaterThanEq,
                 IntPredicate::SGT => cir::Relation::GreaterThan,
                 IntPredicate::SLT => cir::Relation::LessThan,
                 IntPredicate::SLE => cir::Relation::LessThanEq,
                 IntPredicate::EQ => cir::Relation::Eq,
+                IntPredicate::NE => { normal = false; cir::Relation::Eq },
                 p => todo!("predicate {:?}", p),
             };
 
@@ -655,14 +746,17 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
                     objective: OBJECTIVE.to_string(),
                 },
             })
-            .with_if(ExecuteCondition::Score {
-                target: Target::Uuid(target),
-                target_obj: OBJECTIVE.to_string(),
-                kind: ExecuteCondKind::Relation {
-                    relation,
-                    source: Target::Uuid(source),
-                    source_obj: OBJECTIVE.to_string(),
-                },
+            .with_subcmd(ExecuteSubCmd::Condition {
+                is_unless: !normal,
+                cond: ExecuteCondition::Score {
+                    target: Target::Uuid(target),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ExecuteCondKind::Relation {
+                        relation,
+                        source: Target::Uuid(source),
+                        source_obj: OBJECTIVE.to_string(),
+                    },
+                }
             });
 
             cmds.push(cmd.into());
@@ -680,14 +774,12 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
                 Either::Right(operand) => operand,
             };
 
-            if dest.is_some() {
-                todo!("{:?}", dest)
-            }
-
             if let Operand::ConstantOperand(Constant::GlobalReference { name: Name::Name(name), .. }) = function {
                 match name.as_str() {
                     "print" => {
                         assert_eq!(arguments.len(), 1);
+
+                        assert!(dest.is_none());
 
                         let (mut cmds, name) = eval_operand(&arguments[0].0);
 
@@ -702,6 +794,8 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
                     "turtle_y" | 
                     "turtle_z" => {
                         assert_eq!(arguments.len(), 1);
+
+                        assert!(dest.is_none());
 
                         let coord = if name.ends_with('x') { 0 } else if name.ends_with('y') { 1 } else { 2 };
 
@@ -733,10 +827,12 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
                     "turtle_set" => {
                         assert_eq!(arguments.len(), 1);
 
+                        assert!(dest.is_none());
+
                         let mc_block = if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
                             c
                         } else {
-                            todo!("{:?}", &arguments[0].0)
+                            todo!("non-constant block {:?}", &arguments[0].0)
                         };
 
                         let mc_block = McBlock::try_from(mc_block).unwrap();
@@ -753,7 +849,78 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
 
                         vec![cmd.into()]
                     }
-                    _ => todo!("other function {:?}", name)
+                    "turtle_check" => {
+                        assert_eq!(arguments.len(), 1);
+
+                        let dest = dest.as_ref().expect("turtle_check should return a value");
+
+                        let mc_block = if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
+                            c
+                        } else {
+                            todo!("non-constant block {:?}", &arguments[0].0)
+                        };
+
+                        let block = McBlock::try_from(mc_block).unwrap().to_string();
+
+                        let mut cmd = Execute::new();
+                        cmd.with_subcmd(ExecuteSubCmd::Store {
+                            is_success: true,
+                            kind: ExecuteStoreKind::Score {
+                                target: Target::Uuid(dest.to_string()),
+                                objective: OBJECTIVE.to_string(),
+                            }
+                        });
+                        cmd.with_subcmd(ExecuteSubCmd::At {
+                            target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllEntities, args: vec![cir::SelectorArg("tag=turtle".to_string())] })
+                        });
+                        cmd.with_if(ExecuteCondition::Block {
+                            pos: "~ ~ ~".to_string(),
+                            block,
+                        });
+
+                        vec![cmd.into()]
+                    }
+                    _ => {
+                        if !arguments.is_empty() {
+                            todo!("functions with parameters {:?}", arguments);
+                        }
+
+                        let block_name = mc_block_name(name, &Name::Number(0));
+
+                        let mut cmds = Vec::new();
+
+                        for i in 0..40 {
+                            cmds.push(ScoreOp {
+                                target: Target::Uuid(format!("%{}%{}", i, i)),
+                                target_obj: OBJECTIVE.to_string(),
+                                kind: ScoreOpKind::Assign,
+                                source: Target::Uuid(format!("%{}", i)),
+                                source_obj: OBJECTIVE.to_string(),
+                            }.into())
+                        }
+                        cmds.push(McFuncCall { name: block_name }.into());
+                        for i in 0..40 {
+                            cmds.push(ScoreOp {
+                                target: Target::Uuid(format!("%{}", i)),
+                                target_obj: OBJECTIVE.to_string(),
+                                kind: ScoreOpKind::Assign,
+                                source: Target::Uuid(format!("%{}%{}", i, i)),
+                                source_obj: OBJECTIVE.to_string(),
+                            }.into())
+                        }
+
+                        if let Some(dest) = dest {
+                            cmds.push(ScoreOp {
+                                target: Target::Uuid(dest.to_string()),
+                                target_obj: OBJECTIVE.to_string(),
+                                kind: ScoreOpKind::Assign,
+                                source: Target::Uuid("%return".to_string()),
+                                source_obj: OBJECTIVE.to_string(),
+                            }.into());
+                        }
+
+                        cmds
+                    }
                 }
             } else {
                 todo!("non-constant function call {:?}", function)

@@ -262,6 +262,10 @@ pub enum ExecuteCondition {
         target_obj: Objective,
         kind: ExecuteCondKind,
     },
+    Block {
+        pos: String,
+        block: String,
+    }
 }
 
 impl fmt::Display for ExecuteCondition {
@@ -272,6 +276,10 @@ impl fmt::Display for ExecuteCondition {
                 target_obj,
                 kind,
             } => write!(f, "score {} {} {}", target, target_obj, kind),
+            ExecuteCondition::Block {
+                pos,
+                block,
+            } => write!(f, "block {} {}", pos, block),
         }
     }
 }
