@@ -171,6 +171,14 @@ impl Execute {
         })
     }
 
+    pub fn with_as(&mut self, target: Target) -> &mut Self {
+        self.with_subcmd(ExecuteSubCmd::As { target })
+    }
+
+    pub fn with_at(&mut self, target: Target) -> &mut Self {
+        self.with_subcmd(ExecuteSubCmd::At { target })
+    }
+
     pub fn with_run<C: Into<Command>>(&mut self, cmd: C) -> &mut Self {
         assert!(self.run.is_none());
 
@@ -265,7 +273,7 @@ pub enum ExecuteCondition {
     Block {
         pos: String,
         block: String,
-    }
+    },
 }
 
 impl fmt::Display for ExecuteCondition {
@@ -276,10 +284,7 @@ impl fmt::Display for ExecuteCondition {
                 target_obj,
                 kind,
             } => write!(f, "score {} {} {}", target, target_obj, kind),
-            ExecuteCondition::Block {
-                pos,
-                block,
-            } => write!(f, "block {} {}", pos, block),
+            ExecuteCondition::Block { pos, block } => write!(f, "block {} {}", pos, block),
         }
     }
 }
@@ -352,7 +357,7 @@ pub enum Command {
     Execute(Execute),
     FuncCall(FuncCall),
     Data(Data),
-    Tellraw(Tellraw)
+    Tellraw(Tellraw),
 }
 
 impl fmt::Display for Command {
