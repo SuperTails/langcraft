@@ -13,6 +13,7 @@ use llvm_ir::{
     Constant, Function, Instruction, IntPredicate, Module, Name, Operand, Terminator, Type,
 };
 use std::sync::Mutex;
+use std::convert::TryFrom;
 use either::Either;
 
 pub const OBJECTIVE: &str = "rust";
@@ -203,7 +204,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                                 SetBlock {
                                     pos,
                                     block,
-                                    kind: SetBlockKind::Destroy,
+                                    kind: SetBlockKind::Replace,
                                 }
                                 .into(),
                             );
@@ -288,6 +289,43 @@ pub fn mc_block_name(func_name: &str, block_name: &Name) -> String {
     }
 }
 
+#[repr(i32)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
+enum McBlock {
+    Air,
+    Cobblestone,
+    Granite,
+    Andesite,
+    Diorite,
+}
+
+impl std::fmt::Display for McBlock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            McBlock::Air => write!(f, "minecraft:air"),
+            McBlock::Cobblestone => write!(f, "minecraft:cobblestone"),
+            McBlock::Granite => write!(f, "minecraft:granite"),
+            McBlock::Andesite => write!(f, "minecraft:andesite"),
+            McBlock::Diorite => write!(f, "minecraft:diorite"),
+        }
+    }
+}
+
+impl TryFrom<i32> for McBlock {
+    type Error = ();
+
+    fn try_from(val: i32) -> Result<Self, Self::Error> {
+        match val {
+            0 => Ok(McBlock::Air),
+            1 => Ok(McBlock::Cobblestone),
+            2 => Ok(McBlock::Granite),
+            3 => Ok(McBlock::Andesite),
+            4 => Ok(McBlock::Diorite),
+            _ => Err(()),
+        }
+    }
+}
+
 pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
     if !func.parameters.is_empty() {
         todo!("functions with parameters");
@@ -314,7 +352,7 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
                     SetBlock {
                         pos: "~ ~1 ~".to_string(),
                         block: "minecraft:air".to_string(),
-                        kind: SetBlockKind::Destroy,
+                        kind: SetBlockKind::Replace,
                     }
                     .into(),
                 );
@@ -647,22 +685,75 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
             }
 
             if let Operand::ConstantOperand(Constant::GlobalReference { name: Name::Name(name), .. }) = function {
-                if name == "print" {
-                    assert_eq!(arguments.len(), 1);
-                    let arg = &arguments[0].0;
+                match name.as_str() {
+                    "print" => {
+                        assert_eq!(arguments.len(), 1);
 
-                    let arg_name = if let Operand::LocalOperand { name: arg_name, .. } = arg {
-                        arg_name
-                    } else {
-                        todo!("{:?}", arg)
-                    };
+                        let (mut cmds, name) = eval_operand(&arguments[0].0);
 
-                    vec![Tellraw {
-                        target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllPlayers, args: vec![] }),
-                        message: format!("[{{\"score\": {{\"name\": \"{}\", \"objective\": \"rust\" }} }}]", arg_name),
-                    }.into()]
-                } else {
-                    todo!("other function {:?}", function)
+                        cmds.push(Tellraw {
+                            target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllPlayers, args: vec![] }),
+                            message: format!("[{{\"score\": {{\"name\": \"{}\", \"objective\": \"rust\" }} }}]", name),
+                        }.into());
+
+                        cmds
+                    }
+                    "turtle_x" |
+                    "turtle_y" | 
+                    "turtle_z" => {
+                        assert_eq!(arguments.len(), 1);
+
+                        let coord = if name.ends_with('x') { 0 } else if name.ends_with('y') { 1 } else { 2 };
+
+                        // TODO: Optimize for const argument
+                        let (mut cmds, pos) = eval_operand(&arguments[0].0);
+
+                        let mut cmd = Execute::new();
+                        cmd.with_subcmd(ExecuteSubCmd::As {
+                            target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllEntities, args: vec![cir::SelectorArg("tag=turtle".to_string())] })
+                        });
+                        cmd.with_subcmd(ExecuteSubCmd::Store {
+                            is_success: false,
+                            kind: ExecuteStoreKind::Data {
+                                path: format!("Pos[{}]", coord),
+                                ty: "double".to_string(),
+                                scale: 1.0,
+                                target: DataTarget::Entity(Target::Selector(cir::Selector { var: cir::SelectorVariable::ThisEntity, args: vec![] })),
+                            }
+                        });
+                        cmd.with_run(ScoreGet {
+                            target: Target::Uuid(pos),
+                            target_obj: OBJECTIVE.to_string(),
+                        });
+
+                        cmds.push(cmd.into());
+                        
+                        cmds
+                    }
+                    "turtle_set" => {
+                        assert_eq!(arguments.len(), 1);
+
+                        let mc_block = if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
+                            c
+                        } else {
+                            todo!("{:?}", &arguments[0].0)
+                        };
+
+                        let mc_block = McBlock::try_from(mc_block).unwrap();
+
+                        let mut cmd = Execute::new();
+                        cmd.with_subcmd(ExecuteSubCmd::At {
+                            target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllEntities, args: vec![cir::SelectorArg("tag=turtle".to_string())] })
+                        });
+                        cmd.with_run(SetBlock {
+                            block: mc_block.to_string(),
+                            pos: "~ ~ ~".to_string(),
+                            kind: SetBlockKind::Replace,
+                        });
+
+                        vec![cmd.into()]
+                    }
+                    _ => todo!("other function {:?}", name)
                 }
             } else {
                 todo!("non-constant function call {:?}", function)

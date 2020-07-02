@@ -706,12 +706,14 @@ impl fmt::Display for DataModifySource {
 pub enum DataTarget {
     // TODO: More
     Block(String),
+    Entity(Target),
 }
 
 impl fmt::Display for DataTarget {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DataTarget::Block(b) => write!(f, "block {}", b),
+            DataTarget::Entity(e) => write!(f, "entity {}", e),
         }
     }
 }
