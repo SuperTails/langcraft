@@ -344,6 +344,7 @@ pub enum Command {
     Execute(Execute),
     FuncCall(FuncCall),
     Data(Data),
+    Tellraw(Tellraw)
 }
 
 impl fmt::Display for Command {
@@ -356,6 +357,7 @@ impl fmt::Display for Command {
             Command::Execute(s) => s.fmt(f),
             Command::FuncCall(s) => s.fmt(f),
             Command::Data(s) => s.fmt(f),
+            Command::Tellraw(s) => s.fmt(f),
         }
     }
 }
@@ -399,6 +401,24 @@ impl From<ScoreGet> for Command {
 impl From<SetBlock> for Command {
     fn from(s: SetBlock) -> Self {
         Command::SetBlock(s)
+    }
+}
+
+impl From<Tellraw> for Command {
+    fn from(t: Tellraw) -> Self {
+        Command::Tellraw(t)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct Tellraw {
+    pub target: Target,
+    pub message: String,
+}
+
+impl fmt::Display for Tellraw {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "tellraw {} {}", self.target, self.message)
     }
 }
 

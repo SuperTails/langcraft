@@ -17,3 +17,4 @@ path = "src/bin/main.rs"
 [dependencies]
 lazy_static = "1.4.0"
 llvm-ir = "0.5.3"
+either = "1.5"

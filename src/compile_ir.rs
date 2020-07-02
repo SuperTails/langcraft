@@ -3,16 +3,17 @@ use crate::cir::Function as McFunction;
 use crate::cir::{
     self, Command, Data, DataKind, DataTarget, Execute, ExecuteCondKind, ExecuteCondition,
     ExecuteStoreKind, ExecuteSubCmd, ScoreGet, ScoreOp, ScoreOpKind, ScoreSet, SetBlock,
-    SetBlockKind, Target,
+    SetBlockKind, Target, Tellraw
 };
 use lazy_static::lazy_static;
-use llvm_ir::instruction::{Add, Alloca, GetElementPtr, ICmp, Load, Mul, Store};
+use llvm_ir::instruction::{Add, Alloca, GetElementPtr, ICmp, Load, Mul, Store, Call};
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret};
 use llvm_ir::{
     Constant, Function, Instruction, IntPredicate, Module, Name, Operand, Terminator, Type,
 };
 use std::sync::Mutex;
+use either::Either;
 
 pub const OBJECTIVE: &str = "rust";
 
@@ -24,7 +25,7 @@ pub fn read_ptr(target: String) -> Command {
     exec.with_subcmd(ExecuteSubCmd::At {
         target: Target::Selector(cir::Selector {
             var: cir::SelectorVariable::AllEntities,
-            args: vec![cir::SelectorArg("type=armor_stand".to_string())],
+            args: vec![cir::SelectorArg("tag=ptr".to_string())],
         }),
     });
     exec.with_subcmd(ExecuteSubCmd::Store {
@@ -80,7 +81,7 @@ pub fn write_ptr_const(value: i32) -> Command {
     exec.with_subcmd(ExecuteSubCmd::At {
         target: Target::Selector(cir::Selector {
             var: cir::SelectorVariable::AllEntities,
-            args: vec![cir::SelectorArg("type=armor_stand".to_string())],
+            args: vec![cir::SelectorArg("tag=ptr".to_string())],
         }),
     });
     exec.with_run(Data {
@@ -100,7 +101,7 @@ pub fn write_ptr(target: String) -> Command {
     exec.with_subcmd(ExecuteSubCmd::At {
         target: Target::Selector(cir::Selector {
             var: cir::SelectorVariable::AllEntities,
-            args: vec![cir::SelectorArg("type=armor_stand".to_string())],
+            args: vec![cir::SelectorArg("tag=ptr".to_string())],
         }),
     });
     exec.with_subcmd(ExecuteSubCmd::Store {
@@ -629,6 +630,43 @@ pub fn compile_instr(instr: &Instruction) -> Vec<Command> {
             cmds.push(cmd.into());
 
             cmds
+        }
+        Instruction::Call(Call {
+            function,
+            arguments,
+            dest,
+            ..
+        }) => {
+            let function = match function {
+                Either::Left(asm) => todo!("inline assembly {:?}", asm),
+                Either::Right(operand) => operand,
+            };
+
+            if dest.is_some() {
+                todo!("{:?}", dest)
+            }
+
+            if let Operand::ConstantOperand(Constant::GlobalReference { name: Name::Name(name), .. }) = function {
+                if name == "print" {
+                    assert_eq!(arguments.len(), 1);
+                    let arg = &arguments[0].0;
+
+                    let arg_name = if let Operand::LocalOperand { name: arg_name, .. } = arg {
+                        arg_name
+                    } else {
+                        todo!("{:?}", arg)
+                    };
+
+                    vec![Tellraw {
+                        target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllPlayers, args: vec![] }),
+                        message: format!("[{{\"score\": {{\"name\": \"{}\", \"objective\": \"rust\" }} }}]", arg_name),
+                    }.into()]
+                } else {
+                    todo!("other function {:?}", function)
+                }
+            } else {
+                todo!("non-constant function call {:?}", function)
+            }
         }
         _ => todo!("instruction {:?}", instr),
     }
