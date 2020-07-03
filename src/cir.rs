@@ -1,7 +1,7 @@
+use llvm_ir::Name;
 use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
-use llvm_ir::Name;
 
 #[derive(Debug, PartialEq, Hash, Clone)]
 pub enum McRange {
@@ -75,11 +75,19 @@ pub struct FunctionId {
 
 impl FunctionId {
     pub fn new<T: ToString>(name: T) -> Self {
-        FunctionId { name: name.to_string(), block: Name::Number(0), sub: 0 }
+        FunctionId {
+            name: name.to_string(),
+            block: Name::Number(0),
+            sub: 0,
+        }
     }
 
     pub fn new_block<T: ToString>(name: T, block: Name) -> Self {
-        FunctionId { name: name.to_string(), block, sub: 0 }
+        FunctionId {
+            name: name.to_string(),
+            block,
+            sub: 0,
+        }
     }
 }
 

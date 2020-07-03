@@ -8,7 +8,7 @@ use crate::cir::{
 };
 use either::Either;
 use lazy_static::lazy_static;
-use llvm_ir::instruction::{Add, Alloca, Call, GetElementPtr, ICmp, Load, Mul, Store};
+use llvm_ir::instruction::{Add, Alloca, Call, GetElementPtr, ICmp, Load, Mul, Store, BitCast};
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch};
 use llvm_ir::{
@@ -215,9 +215,12 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                             unreachable!()
                         }
                     }
-                } else if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), .. }) = &mut **func_call {
+                } else if let Command::ScoreGet(ScoreGet {
+                    target: Target::Uuid(target),
+                    ..
+                }) = &mut **func_call
+                {
                     if target == "%%FIXUP" {
-
                         // This is a return address
                         let mut return_id = funcs[func_idx].id.clone();
                         return_id.sub += 1;
@@ -230,14 +233,17 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                             .0;
 
                         let mut cmd = Execute::new();
-                        cmd.with_at(Target::Selector(cir::Selector { var: cir::SelectorVariable::AllEntities, args: vec![cir::SelectorArg("tag=ptr".to_string())]}));
+                        cmd.with_at(Target::Selector(cir::Selector {
+                            var: cir::SelectorVariable::AllEntities,
+                            args: vec![cir::SelectorArg("tag=ptr".to_string())],
+                        }));
                         cmd.with_run(Data {
                             target: DataTarget::Block("~ ~ ~".to_string()),
                             kind: DataKind::Modify {
                                 path: "RecordItem.tag.Memory".to_string(),
                                 kind: cir::DataModifyKind::Set,
-                                source: cir::DataModifySource::Value(idx as i32)
-                            }
+                                source: cir::DataModifySource::Value(idx as i32),
+                            },
                         });
                         funcs[func_idx].cmds[cmd_idx] = cmd.into();
                     }
@@ -250,20 +256,15 @@ fn apply_fixups(funcs: &mut [McFunction]) {
 pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
     let main_return = get_alloc(1);
 
-    let init_cmds = module
-        .global_vars
-        .iter()
-        .flat_map(compile_global_var_init)
-        .chain(std::iter::once(set_memory(-1, main_return as i32)))
-        .chain(std::iter::once(
-            ScoreSet {
-                target: Target::Uuid("%stackptr".to_string()),
-                target_obj: OBJECTIVE.to_string(),
-                score: *FREE_PTR.lock().unwrap() as i32,
-            }
-            .into()
-        ))
-        .collect();
+    let mut init_cmds = module.global_vars.iter().flat_map(compile_global_var_init).collect::<Vec<_>>();
+
+    init_cmds.push(set_memory(-1, main_return as i32));
+
+    init_cmds.push(ScoreSet {
+        target: Target::Uuid("%stackptr".to_string()),
+        target_obj: OBJECTIVE.to_string(),
+        score: get_alloc(1) as i32,
+    }.into());
 
     let init_func = McFunction {
         id: McFuncId::new("init"),
@@ -383,7 +384,9 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 let pos = format!("-2 0 {}", idx);
                 let block = format!(
                     "minecraft:command_block{{Command:\"{}\"}}",
-                    McFuncCall { id: func.id.clone() }
+                    McFuncCall {
+                        id: func.id.clone()
+                    }
                 );
 
                 SetBlock {
@@ -436,7 +439,32 @@ fn compile_global_var_init(v: &GlobalVariable) -> Vec<Command> {
 
             cmds
         }
-        _ => todo!("constant {:?}", v.initializer),
+        Some(Constant::Struct {
+            name: None,
+            values,
+            is_packed: false,
+        }) => {
+            let start = get_alloc(values.len() as u32);
+
+            let mut cmds = vec![ScoreSet {
+                target: Target::Uuid(target),
+                target_obj: OBJECTIVE.to_string(),
+                score: start as i32,
+            }
+            .into()];
+
+            for (idx, v) in values.iter().enumerate() {
+                // TODO: Support nested structs
+                if let Constant::Int { bits: 32, value } = v {
+                    cmds.push(set_memory(*value as i32, start as i32 + idx as i32));
+                } else {
+                    todo!("value {:?}", v);
+                }
+            }
+
+            cmds
+        }
+        _ => todo!("constant {:?}", v),
     }
 }
 
@@ -462,7 +490,18 @@ enum McBlock {
     RedstoneBlock,
 }
 
-static MC_BLOCKS: [McBlock; 10] = [McBlock::Air, McBlock::Cobblestone, McBlock::Granite, McBlock::Andesite, McBlock::Diorite, McBlock::LapisBlock, McBlock::IronBlock, McBlock::GoldBlock, McBlock::DiamondBlock, McBlock::RedstoneBlock];
+static MC_BLOCKS: [McBlock; 10] = [
+    McBlock::Air,
+    McBlock::Cobblestone,
+    McBlock::Granite,
+    McBlock::Andesite,
+    McBlock::Diorite,
+    McBlock::LapisBlock,
+    McBlock::IronBlock,
+    McBlock::GoldBlock,
+    McBlock::DiamondBlock,
+    McBlock::RedstoneBlock,
+];
 
 impl std::fmt::Display for McBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -653,17 +692,20 @@ fn compile_call(
                 let mut cmds = Vec::new();
 
                 // Default value (Air)
-                cmds.push(ScoreSet {
-                    target: Target::Uuid(dest.to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    score: 0,
-                }.into());
+                cmds.push(
+                    ScoreSet {
+                        target: Target::Uuid(dest.to_string()),
+                        target_obj: OBJECTIVE.to_string(),
+                        score: 0,
+                    }
+                    .into(),
+                );
 
                 for block in MC_BLOCKS[1..].iter() {
                     let mut cmd = Execute::new();
                     cmd.with_at(Target::Selector(cir::Selector {
                         var: cir::SelectorVariable::AllEntities,
-                        args: vec![cir::SelectorArg("tag=turtle".to_string())]
+                        args: vec![cir::SelectorArg("tag=turtle".to_string())],
                     }));
                     cmd.with_if(ExecuteCondition::Block {
                         pos: "~ ~ ~".to_string(),
@@ -679,6 +721,84 @@ fn compile_call(
 
                 (cmds, None)
             }
+            "llvm.memcpy.p0i8.p0i8.i32" => {
+                if let [(dest, _), (src, _), (len, _), (volatile, _)] = &arguments[..] {
+                    let (mut cmds, src1) = eval_operand(src);
+                    let (tmp, dest1) = eval_operand(dest);
+                    cmds.extend(tmp);
+
+                    if !matches!(volatile, Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })) {
+                        todo!("{:?}", volatile)
+                    }
+
+                    let len = if let Operand::ConstantOperand(Constant::Int { bits: 32, value }) = len {
+                        *value as i32
+                    } else {
+                        todo!("memcpy length {:?}", len)
+                    };
+
+                    // FIXME: When we switch to bytes this needs to be changed
+                    assert_eq!(len % 4, 0);
+
+                    let len = len / 4;
+
+                    let src = format!("%temp{}", get_unique_num());
+                    let dest = format!("%temp{}", get_unique_num());
+                    let buffer = format!("%temp{}", get_unique_num());
+
+                    cmds.push(ScoreOp {
+                        target: Target::Uuid(src.clone()),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ScoreOpKind::Assign,
+                        source: Target::Uuid(src1),
+                        source_obj: OBJECTIVE.to_string(),
+                    }.into());
+
+                    cmds.push(ScoreOp {
+                        target: Target::Uuid(dest.clone()),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ScoreOpKind::Assign,
+                        source: Target::Uuid(dest1),
+                        source_obj: OBJECTIVE.to_string(),
+                    }.into());
+                    
+                    for _ in 0..len {
+                        cmds.push(ScoreOp {
+                            target: Target::Uuid("%ptr".to_string()),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ScoreOpKind::Assign,
+                            source: Target::Uuid(src.clone()),
+                            source_obj: OBJECTIVE.to_string(),
+                        }.into());
+                        cmds.push(McFuncCall { id: McFuncId::new("intrinsic:setptr") }.into());
+                        cmds.push(read_ptr(buffer.clone()));
+                        cmds.push(ScoreOp {
+                            target: Target::Uuid("%ptr".to_string()),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ScoreOpKind::Assign,
+                            source: Target::Uuid(dest.clone()),
+                            source_obj: OBJECTIVE.to_string(),
+                        }.into());
+                        cmds.push(McFuncCall { id: McFuncId::new("intrinsic:setptr") }.into());
+                        cmds.push(write_ptr(buffer.clone()));
+
+                        cmds.push(ScoreAdd {
+                            target: Target::Uuid(src.clone()),
+                            target_obj: OBJECTIVE.to_string(),
+                            score: 1,
+                        }.into());
+                        cmds.push(ScoreAdd {
+                            target: Target::Uuid(dest.clone()),
+                            target_obj: OBJECTIVE.to_string(),
+                            score: 1,
+                        }.into());
+                    }
+
+                    (cmds, None)
+                } else {
+                    panic!("{:?}", arguments);
+                }
+            }
             _ => {
                 let mut callee_id = McFuncId::new(name);
 
@@ -692,21 +812,27 @@ fn compile_call(
                 for (idx, (arg, _attrs)) in arguments.iter().enumerate() {
                     match eval_maybe_const(arg) {
                         MaybeConst::Const(score) => {
-                            before_cmds.push(ScoreSet {
-                                target: Target::Uuid(format!("%param{}", idx)),
-                                target_obj: OBJECTIVE.to_string(),
-                                score,
-                            }.into());
+                            before_cmds.push(
+                                ScoreSet {
+                                    target: Target::Uuid(format!("%param{}", idx)),
+                                    target_obj: OBJECTIVE.to_string(),
+                                    score,
+                                }
+                                .into(),
+                            );
                         }
                         MaybeConst::NonConst(cmds, source) => {
                             before_cmds.extend(cmds);
-                            before_cmds.push(ScoreOp {
-                                target: Target::Uuid(format!("%param{}", idx)),
-                                target_obj: OBJECTIVE.to_string(),
-                                kind: ScoreOpKind::Assign,
-                                source: Target::Uuid(source),
-                                source_obj: OBJECTIVE.to_string(),
-                            }.into());
+                            before_cmds.push(
+                                ScoreOp {
+                                    target: Target::Uuid(format!("%param{}", idx)),
+                                    target_obj: OBJECTIVE.to_string(),
+                                    kind: ScoreOpKind::Assign,
+                                    source: Target::Uuid(source),
+                                    source_obj: OBJECTIVE.to_string(),
+                                }
+                                .into(),
+                            );
                         }
                     }
                 }
@@ -715,16 +841,14 @@ fn compile_call(
                 before_cmds.push(McFuncCall { id: callee_id }.into());
 
                 let after_cmds = if let Some(dest) = dest {
-                    vec![
-                        ScoreOp {
-                            target: Target::Uuid(dest.to_string()),
-                            target_obj: OBJECTIVE.to_string(),
-                            kind: ScoreOpKind::Assign,
-                            source: Target::Uuid("%return".to_string()),
-                            source_obj: OBJECTIVE.to_string(),
-                        }
-                        .into(),
-                    ]
+                    vec![ScoreOp {
+                        target: Target::Uuid(dest.to_string()),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ScoreOpKind::Assign,
+                        source: Target::Uuid("%return".to_string()),
+                        source_obj: OBJECTIVE.to_string(),
+                    }
+                    .into()]
                 } else {
                     Vec::new()
                 };
@@ -760,11 +884,13 @@ pub fn compile_function(
 
             let mut sub = 0;
 
-            let make_new_func = |sub| {
-                McFunction {
-                    id: McFuncId { name: func.name.clone(), block: block.name.clone(), sub },
-                    cmds: vec![]
-                }
+            let make_new_func = |sub| McFunction {
+                id: McFuncId {
+                    name: func.name.clone(),
+                    block: block.name.clone(),
+                    sub,
+                },
+                cmds: vec![],
             };
 
             let mut this = make_new_func(sub);
@@ -779,13 +905,16 @@ pub fn compile_function(
                 );
 
                 for (idx, arg) in func.parameters.iter().enumerate() {
-                    this.cmds.push(ScoreOp {
-                        target: Target::Uuid(arg.name.to_string()),
-                        target_obj: OBJECTIVE.to_string(),
-                        kind: ScoreOpKind::Assign,
-                        source: Target::Uuid(format!("%param{}", idx)),
-                        source_obj: OBJECTIVE.to_string(),
-                    }.into());
+                    this.cmds.push(
+                        ScoreOp {
+                            target: Target::Uuid(arg.name.to_string()),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ScoreOpKind::Assign,
+                            source: Target::Uuid(format!("%param{}", idx)),
+                            source_obj: OBJECTIVE.to_string(),
+                        }
+                        .into(),
+                    );
                 }
             }
 
@@ -812,7 +941,12 @@ pub fn compile_function(
                         .into(),
                     );
 
-                    this.cmds.push(McFuncCall { id: McFuncId::new("intrinsic:pop_and_branch")}.into());
+                    this.cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:pop_and_branch"),
+                        }
+                        .into(),
+                    );
                 }
                 Terminator::Ret(Ret {
                     return_operand: Some(operand),
@@ -838,7 +972,12 @@ pub fn compile_function(
                         .into(),
                     );
 
-                    this.cmds.push(McFuncCall { id: McFuncId::new("intrinsic:pop_and_branch")}.into());
+                    this.cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:pop_and_branch"),
+                        }
+                        .into(),
+                    );
                 }
                 Terminator::Br(Br { dest, .. }) => {
                     let mut id = McFuncId::new_block(&func.name, dest.clone());
@@ -965,7 +1104,8 @@ pub fn compile_function(
 
             if !options.direct_term {
                 for sub_block in result.iter_mut() {
-                    sub_block.cmds.insert(0, 
+                    sub_block.cmds.insert(
+                        0,
                         SetBlock {
                             pos: "~ ~1 ~".to_string(),
                             block: "minecraft:air".to_string(),
@@ -1087,48 +1227,65 @@ pub fn pop(target: String) -> Vec<Command> {
     cmds
 }
 
-pub fn compile_instr(instr: &Instruction, _options: &Options) -> (Vec<Command>, Option<Vec<Command>>) {
+// TODO: Migrate this (and everything else) to measure in bytes
+pub fn size_of_type(ty: &Type) -> usize {
+    match ty {
+        Type::IntegerType { bits: 32 } => 1,
+        Type::StructType { element_types, is_packed: false } => {
+            // FIXME: This doesn't account for alignment
+            element_types.iter().map(|e| size_of_type(e)).sum::<usize>()
+        }
+        Type::NamedStructType { ty: Some(ty), .. } => {
+            let ty = ty.upgrade().expect("Failed to upgrade type");
+
+            let ty_read = ty.read().unwrap();
+            size_of_type(&ty_read)
+        }
+        _ => todo!("size of type {:?}", ty),
+    }
+}
+
+pub fn compile_alloca(Alloca { allocated_type, num_elements, dest, .. }: &Alloca) -> Vec<Command> {
+    let type_size = size_of_type(allocated_type);
+
+    let num_elements =
+        if let Operand::ConstantOperand(Constant::Int { bits: 32, value }) = num_elements {
+            *value as i32
+        } else {
+            todo!("{:?}", num_elements);
+        };
+
+    let mut cmds = Vec::new();
+
+    cmds.push(
+        ScoreOp {
+            target: Target::Uuid(dest.to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            kind: ScoreOpKind::Assign,
+            source: Target::Uuid("%stackptr".to_string()),
+            source_obj: OBJECTIVE.to_string(),
+        }
+        .into(),
+    );
+    cmds.push(
+        ScoreAdd {
+            target: Target::Uuid("%stackptr".to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            score: type_size as i32 * num_elements,
+        }
+        .into(),
+    );
+
+    cmds
+}
+
+pub fn compile_instr(
+    instr: &Instruction,
+    _options: &Options,
+) -> (Vec<Command>, Option<Vec<Command>>) {
     let result = match instr {
         // We use an empty stack
-        Instruction::Alloca(Alloca {
-            allocated_type: Type::IntegerType { bits: 32 },
-            num_elements,
-            dest,
-            ..
-        }) => {
-            // TODO: This is never deallocated lol
-
-            let num = if let Operand::ConstantOperand(Constant::Int { bits: 32, value: 1 }) =
-                num_elements
-            {
-                1
-            } else {
-                todo!("{:?}", num_elements);
-            };
-
-            let mut cmds = Vec::new();
-
-            cmds.push(
-                ScoreOp {
-                    target: Target::Uuid(dest.to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::Assign,
-                    source: Target::Uuid("%stackptr".to_string()),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-            cmds.push(
-                ScoreAdd {
-                    target: Target::Uuid("%stackptr".to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    score: num,
-                }
-                .into(),
-            );
-
-            cmds
-        }
+        Instruction::Alloca(alloca) => compile_alloca(alloca),
         Instruction::GetElementPtr(GetElementPtr {
             address,
             indices,
@@ -1296,6 +1453,19 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> (Vec<Command>, 
             cmds
         }
         Instruction::Call(call) => return compile_call(call),
+        Instruction::BitCast(BitCast { operand, dest, .. }) => {
+            let (mut cmds, source) = eval_operand(operand);
+
+            cmds.push(ScoreOp {
+                target: Target::Uuid(dest.to_string()),
+                target_obj: OBJECTIVE.to_string(),
+                kind: ScoreOpKind::Assign,
+                source: Target::Uuid(source),
+                source_obj: OBJECTIVE.to_string(),
+            }.into());
+
+            cmds
+        }
         _ => todo!("instruction {:?}", instr),
     };
 
@@ -1327,16 +1497,26 @@ impl MaybeConst {
     }
 }
 
-pub fn eval_maybe_const(op: &Operand) -> MaybeConst {
-    match op {
-        Operand::LocalOperand { name, .. } => MaybeConst::NonConst(vec![], name.to_string()),
-        Operand::ConstantOperand(Constant::GlobalReference { name, .. }) => {
+pub fn eval_constant(con: &Constant) -> MaybeConst {
+    match con {
+        Constant::GlobalReference { name, .. } => {
             let temp = name.to_string();
             MaybeConst::NonConst(vec![], format!("%@{}", &temp[1..temp.len() - 1]))
         }
-        Operand::ConstantOperand(Constant::Int { bits: 32, value }) => {
+        Constant::Int { bits: 32, value } => {
             MaybeConst::Const(*value as i32)
         }
+        Constant::BitCast(bitcast) => {
+            eval_constant(&bitcast.operand)
+        }
+        _ => todo!("evaluate constant {:?}", con)
+    }
+}
+
+pub fn eval_maybe_const(op: &Operand) -> MaybeConst {
+    match op {
+        Operand::LocalOperand { name, .. } => MaybeConst::NonConst(vec![], name.to_string()),
+        Operand::ConstantOperand(con) => eval_constant(con),
         _ => todo!("operand {:?}", op),
     }
 }
