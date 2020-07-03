@@ -434,7 +434,7 @@ pub fn mc_block_name(func_name: &str, block_name: &Name) -> String {
 }
 
 #[repr(i32)]
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Copy)]
 enum McBlock {
     Air,
     Cobblestone,
@@ -447,6 +447,8 @@ enum McBlock {
     DiamondBlock,
     RedstoneBlock,
 }
+
+static MC_BLOCKS: [McBlock; 10] = [McBlock::Air, McBlock::Cobblestone, McBlock::Granite, McBlock::Andesite, McBlock::Diorite, McBlock::LapisBlock, McBlock::IronBlock, McBlock::GoldBlock, McBlock::DiamondBlock, McBlock::RedstoneBlock];
 
 impl std::fmt::Display for McBlock {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -628,6 +630,40 @@ fn compile_call(
                 });
 
                 (vec![cmd.into()], None)
+            }
+            "turtle_get" => {
+                assert_eq!(arguments.len(), 0);
+
+                let dest = dest.as_ref().expect("turtle_get should return a value");
+
+                let mut cmds = Vec::new();
+
+                // Default value (Air)
+                cmds.push(ScoreSet {
+                    target: Target::Uuid(dest.to_string()),
+                    target_obj: OBJECTIVE.to_string(),
+                    score: 0,
+                }.into());
+
+                for block in MC_BLOCKS[1..].iter() {
+                    let mut cmd = Execute::new();
+                    cmd.with_at(Target::Selector(cir::Selector {
+                        var: cir::SelectorVariable::AllEntities,
+                        args: vec![cir::SelectorArg("tag=turtle".to_string())]
+                    }));
+                    cmd.with_if(ExecuteCondition::Block {
+                        pos: "~ ~ ~".to_string(),
+                        block: block.to_string(),
+                    });
+                    cmd.with_run(ScoreSet {
+                        target: Target::Uuid(dest.to_string()),
+                        target_obj: OBJECTIVE.to_string(),
+                        score: *block as i32,
+                    });
+                    cmds.push(cmd.into());
+                }
+
+                (cmds, None)
             }
             _ => {
                 if !arguments.is_empty() {
