@@ -2,8 +2,8 @@ use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
 use crate::cir::{
     self, Command, Data, DataKind, DataTarget, Execute, ExecuteCondKind, ExecuteCondition,
-    ExecuteStoreKind, ExecuteSubCmd, ScoreGet, ScoreOp, ScoreOpKind, ScoreSet, SetBlock,
-    SetBlockKind, Target, Tellraw, ScoreAdd,
+    ExecuteStoreKind, ExecuteSubCmd, ScoreAdd, ScoreGet, ScoreOp, ScoreOpKind, ScoreSet, SetBlock,
+    SetBlockKind, Target, Tellraw,
 };
 use either::Either;
 use lazy_static::lazy_static;
@@ -13,9 +13,9 @@ use llvm_ir::terminator::{Br, CondBr, Ret, Switch};
 use llvm_ir::{
     Constant, Function, Instruction, IntPredicate, Module, Name, Operand, Terminator, Type,
 };
+use std::collections::{BTreeSet, HashMap};
 use std::convert::TryFrom;
 use std::sync::Mutex;
-use std::collections::{BTreeSet, HashMap};
 
 pub const OBJECTIVE: &str = "rust";
 
@@ -208,11 +208,14 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         .global_vars
         .iter()
         .flat_map(compile_global_var_init)
-        .chain(std::iter::once(ScoreSet {
-            target: Target::Uuid("%stackptr".to_string()),
-            target_obj: OBJECTIVE.to_string(),
-            score: *FREE_PTR.lock().unwrap() as i32,
-        }.into()))
+        .chain(std::iter::once(
+            ScoreSet {
+                target: Target::Uuid("%stackptr".to_string()),
+                target_obj: OBJECTIVE.to_string(),
+                score: *FREE_PTR.lock().unwrap() as i32,
+            }
+            .into(),
+        ))
         .collect();
 
     let init_func = McFunction {
@@ -223,7 +226,11 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
     let mut clobber_list = HashMap::new();
     let mut funcs = vec![init_func];
 
-    for (mc_funcs, mut clobbers) in module.functions.iter().map(|f| compile_function(f, options)) {
+    for (mc_funcs, mut clobbers) in module
+        .functions
+        .iter()
+        .map(|f| compile_function(f, options))
+    {
         clobbers.remove("%stackptr");
         clobbers.remove("%return");
         clobbers.remove("%ptr");
@@ -240,13 +247,13 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         let get_save_idx = |cmds: &[Command]| {
             cmds.iter()
                 .enumerate()
-                .find(|(_, c)|
+                .find(|(_, c)| {
                     if let Command::FuncCall(McFuncCall { name }) = c {
                         name == "%%SAVEREGS"
                     } else {
                         false
                     }
-                )
+                })
                 .map(|(i, _)| i)
         };
 
@@ -260,7 +267,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 kind: ScoreOpKind::Assign,
                 source: Target::Uuid("%stackptr".to_string()),
                 source_obj: OBJECTIVE.to_string(),
-            }.into();
+            }
+            .into();
 
             let save_code = clobber_list
                 .get(&func.name)
@@ -271,21 +279,20 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 .map(push)
                 .flatten()
                 .chain(std::iter::once(base_set));
-            
+
             func.cmds.splice(save_idx..save_idx, save_code);
         }
 
         let get_load_idx = |cmds: &[Command]| {
-            cmds
-                .iter()
+            cmds.iter()
                 .enumerate()
-                .find(|(_, c)| 
+                .find(|(_, c)| {
                     if let Command::FuncCall(McFuncCall { name }) = c {
                         name == "%%LOADREGS"
                     } else {
                         false
                     }
-                )
+                })
                 .map(|(i, _)| i)
         };
 
@@ -299,18 +306,21 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 kind: ScoreOpKind::Assign,
                 source: Target::Uuid("%stackbaseptr".to_string()),
                 source_obj: OBJECTIVE.to_string(),
-            }.into();
+            }
+            .into();
 
-            let load_code = std::iter::once(base_read).chain(clobber_list
-                .get(&func.name)
-                .unwrap()
-                .iter()
-                .cloned()
-                .chain(std::iter::once("%stackbaseptr".to_string()))
-                .rev()
-                .map(pop)
-                .flatten());
-            
+            let load_code = std::iter::once(base_read).chain(
+                clobber_list
+                    .get(&func.name)
+                    .unwrap()
+                    .iter()
+                    .cloned()
+                    .chain(std::iter::once("%stackbaseptr".to_string()))
+                    .rev()
+                    .map(pop)
+                    .flatten(),
+            );
+
             func.cmds.splice(load_idx..load_idx, load_code);
         }
     }
@@ -617,7 +627,10 @@ fn compile_call(
 
 type ScoreHolder = String;
 
-pub fn compile_function(func: &Function, options: &Options) -> (Vec<McFunction>, BTreeSet<ScoreHolder>) {
+pub fn compile_function(
+    func: &Function,
+    options: &Options,
+) -> (Vec<McFunction>, BTreeSet<ScoreHolder>) {
     if !func.parameters.is_empty() {
         todo!("functions with parameters");
     }
@@ -630,7 +643,8 @@ pub fn compile_function(func: &Function, options: &Options) -> (Vec<McFunction>,
         todo!("functions with no basic blocks");
     }
 
-    let funcs = func.basic_blocks
+    let funcs = func
+        .basic_blocks
         .iter()
         .enumerate()
         .map(|(idx, block)| {
@@ -639,7 +653,12 @@ pub fn compile_function(func: &Function, options: &Options) -> (Vec<McFunction>,
             let mut this = McFunction { name, cmds: vec![] };
 
             if idx == 0 {
-                this.cmds.push(McFuncCall { name: "%%SAVEREGS".to_string() }.into());
+                this.cmds.push(
+                    McFuncCall {
+                        name: "%%SAVEREGS".to_string(),
+                    }
+                    .into(),
+                );
             }
 
             if !options.direct_term {
@@ -662,7 +681,12 @@ pub fn compile_function(func: &Function, options: &Options) -> (Vec<McFunction>,
                     return_operand: None,
                     ..
                 }) => {
-                    this.cmds.push(McFuncCall { name: "%%LOADREGS".to_string() }.into());
+                    this.cmds.push(
+                        McFuncCall {
+                            name: "%%LOADREGS".to_string(),
+                        }
+                        .into(),
+                    );
                 }
                 Terminator::Ret(Ret {
                     return_operand: Some(operand),
@@ -681,7 +705,12 @@ pub fn compile_function(func: &Function, options: &Options) -> (Vec<McFunction>,
                         .into(),
                     );
 
-                    this.cmds.push(McFuncCall { name: "%%LOADREGS".to_string() }.into());
+                    this.cmds.push(
+                        McFuncCall {
+                            name: "%%LOADREGS".to_string(),
+                        }
+                        .into(),
+                    );
                 }
                 Terminator::Br(Br { dest, .. }) => {
                     let mut name = mc_block_name(&func.name, dest);
@@ -854,20 +883,31 @@ pub fn compile_arithmetic(
 pub fn push(target: String) -> Vec<Command> {
     let mut cmds = Vec::new();
 
-    cmds.push(ScoreOp {
-        target: Target::Uuid("%ptr".to_string()),
-        target_obj: OBJECTIVE.to_string(),
-        kind: ScoreOpKind::Assign,
-        source: Target::Uuid("%stackptr".to_string()),
-        source_obj: OBJECTIVE.to_string(),
-    }.into());
-    cmds.push(McFuncCall { name: "intrinsic:setptr".to_string() }.into());
+    cmds.push(
+        ScoreOp {
+            target: Target::Uuid("%ptr".to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            kind: ScoreOpKind::Assign,
+            source: Target::Uuid("%stackptr".to_string()),
+            source_obj: OBJECTIVE.to_string(),
+        }
+        .into(),
+    );
+    cmds.push(
+        McFuncCall {
+            name: "intrinsic:setptr".to_string(),
+        }
+        .into(),
+    );
     cmds.push(write_ptr(target));
-    cmds.push(ScoreAdd {
-        target: Target::Uuid("%stackptr".to_string()),
-        target_obj: OBJECTIVE.to_string(),
-        score: 1,
-    }.into());
+    cmds.push(
+        ScoreAdd {
+            target: Target::Uuid("%stackptr".to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            score: 1,
+        }
+        .into(),
+    );
 
     cmds
 }
@@ -875,19 +915,30 @@ pub fn push(target: String) -> Vec<Command> {
 pub fn pop(target: String) -> Vec<Command> {
     let mut cmds = Vec::new();
 
-    cmds.push(ScoreAdd {
-        target: Target::Uuid("%stackptr".to_string()),
-        target_obj: OBJECTIVE.to_string(),
-        score: -1,
-    }.into());
-    cmds.push(ScoreOp {
-        target: Target::Uuid("%ptr".to_string()),
-        target_obj: OBJECTIVE.to_string(),
-        kind: ScoreOpKind::Assign,
-        source: Target::Uuid("%stackptr".to_string()),
-        source_obj: OBJECTIVE.to_string(),
-    }.into());
-    cmds.push(McFuncCall { name: "intrinsic:setptr".to_string() }.into());
+    cmds.push(
+        ScoreAdd {
+            target: Target::Uuid("%stackptr".to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            score: -1,
+        }
+        .into(),
+    );
+    cmds.push(
+        ScoreOp {
+            target: Target::Uuid("%ptr".to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            kind: ScoreOpKind::Assign,
+            source: Target::Uuid("%stackptr".to_string()),
+            source_obj: OBJECTIVE.to_string(),
+        }
+        .into(),
+    );
+    cmds.push(
+        McFuncCall {
+            name: "intrinsic:setptr".to_string(),
+        }
+        .into(),
+    );
     cmds.push(read_ptr(target));
 
     cmds
@@ -914,18 +965,24 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
 
             let mut cmds = Vec::new();
 
-            cmds.push(ScoreOp {
-                target: Target::Uuid(dest.to_string()),
-                target_obj: OBJECTIVE.to_string(),
-                kind: ScoreOpKind::Assign,
-                source: Target::Uuid("%stackptr".to_string()),
-                source_obj: OBJECTIVE.to_string(),
-            }.into());
-            cmds.push(ScoreAdd {
-                target: Target::Uuid("%stackptr".to_string()),
-                target_obj: OBJECTIVE.to_string(),
-                score: num,
-            }.into());
+            cmds.push(
+                ScoreOp {
+                    target: Target::Uuid(dest.to_string()),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ScoreOpKind::Assign,
+                    source: Target::Uuid("%stackptr".to_string()),
+                    source_obj: OBJECTIVE.to_string(),
+                }
+                .into(),
+            );
+            cmds.push(
+                ScoreAdd {
+                    target: Target::Uuid("%stackptr".to_string()),
+                    target_obj: OBJECTIVE.to_string(),
+                    score: num,
+                }
+                .into(),
+            );
 
             cmds
         }
