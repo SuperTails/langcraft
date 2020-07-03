@@ -12,7 +12,7 @@ fn main() {
         let data = data.join("\n");
 
         std::fs::write(
-            Path::new(&format!("out/{}.mcfunction", func.name)),
+            Path::new(&format!("out/{}.mcfunction", func.id)),
             data.as_bytes(),
         )
         .unwrap();

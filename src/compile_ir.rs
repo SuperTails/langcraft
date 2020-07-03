@@ -1,5 +1,6 @@
 use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
+use crate::cir::FunctionId as McFuncId;
 use crate::cir::{
     self, Command, Data, DataKind, DataTarget, Execute, ExecuteCondKind, ExecuteCondition,
     ExecuteStoreKind, ExecuteSubCmd, ScoreAdd, ScoreGet, ScoreOp, ScoreOpKind, ScoreSet, SetBlock,
@@ -126,6 +127,7 @@ pub fn write_ptr(target: String) -> Command {
 pub struct Options {
     // FIXME: It is actually *not correct* to directly terminate with a call sometimes!
     // And, on the other hand, a Call instruction MUST be a call!
+    // edit: oh god functions are awful why do we have abstraction
     direct_term: bool,
 }
 
@@ -139,17 +141,19 @@ impl Default for Options {
 fn apply_fixups(funcs: &mut [McFunction]) {
     for func_idx in 0..funcs.len() {
         for cmd_idx in 0..funcs[func_idx].cmds.len() {
-            if let Command::FuncCall(McFuncCall { name }) = &mut funcs[func_idx].cmds[cmd_idx] {
+            if let Command::FuncCall(McFuncCall { id }) = &mut funcs[func_idx].cmds[cmd_idx] {
                 // TODO: `strip_suffix` is nightly but it's exactly what I'm doing
-                if name.ends_with("%%FIXUP") {
-                    let mut name = std::mem::take(name);
-                    name.truncate(name.len() - "%%FIXUP".len());
+                if id.name.ends_with("%%FIXUP") {
+                    // It doesn't matter what we replace it with
+                    // because the whole command gets removed
+                    let mut id = std::mem::replace(id, McFuncId::new(""));
+                    id.name.truncate(id.name.len() - "%%FIXUP".len());
 
                     let idx = funcs
                         .iter()
                         .enumerate()
-                        .find(|(_, f)| f.name == name)
-                        .unwrap()
+                        .find(|(_, f)| f.id == id)
+                        .unwrap_or_else(|| panic!("could not find {:?}", id))
                         .0;
 
                     let pos = format!("~ 1 {}", idx);
@@ -167,16 +171,16 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                 ..
             }) = &mut funcs[func_idx].cmds[cmd_idx]
             {
-                if let Command::FuncCall(McFuncCall { name }) = &mut **func_call {
-                    if name.ends_with("%%FIXUP") {
-                        let mut name = std::mem::take(name);
-                        name.truncate(name.len() - "%%FIXUP".len());
+                if let Command::FuncCall(McFuncCall { id }) = &mut **func_call {
+                    if id.name.ends_with("%%FIXUP") {
+                        let mut id = std::mem::replace(id, McFuncId::new(""));
+                        id.name.truncate(id.name.len() - "%%FIXUP".len());
 
                         let idx = funcs
                             .iter()
                             .enumerate()
-                            .find(|(_, f)| f.name == name)
-                            .unwrap_or_else(|| panic!("could not find {:?}", name))
+                            .find(|(_, f)| f.id == id)
+                            .unwrap_or_else(|| panic!("could not find {:?}", id))
                             .0;
 
                         let pos = format!("~ ~1 {}", idx);
@@ -219,11 +223,11 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         .collect();
 
     let init_func = McFunction {
-        name: "init".to_string(),
+        id: McFuncId::new("init"),
         cmds: init_cmds,
     };
 
-    let mut clobber_list = HashMap::new();
+    let mut clobber_list = HashMap::<String, _>::new();
     let mut funcs = vec![init_func];
 
     for (mc_funcs, mut clobbers) in module
@@ -235,11 +239,13 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         clobbers.remove("%return");
         clobbers.remove("%ptr");
 
-        for McFunction { name, .. } in mc_funcs.iter() {
-            assert_eq!(clobber_list.insert(name.clone(), clobbers.clone()), None);
+        for McFunction { id, .. } in mc_funcs.iter() {
+            clobber_list.insert(id.name.clone(), clobbers.clone());
         }
         funcs.extend(mc_funcs);
     }
+
+    println!("{:?}", clobber_list);
 
     apply_fixups(&mut funcs);
 
@@ -248,8 +254,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             cmds.iter()
                 .enumerate()
                 .find(|(_, c)| {
-                    if let Command::FuncCall(McFuncCall { name }) = c {
-                        name == "%%SAVEREGS"
+                    if let Command::FuncCall(McFuncCall { id }) = c {
+                        id.name == "%%SAVEREGS"
                     } else {
                         false
                     }
@@ -258,7 +264,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         };
 
         while let Some(save_idx) = get_save_idx(&func.cmds) {
-            println!("Adding save code at {} idx {}", func.name, save_idx);
+            println!("Adding save code at {} idx {}", func.id, save_idx);
             func.cmds.remove(save_idx);
 
             let base_set = ScoreOp {
@@ -271,7 +277,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             .into();
 
             let save_code = clobber_list
-                .get(&func.name)
+                .get(&func.id.name)
                 .unwrap()
                 .iter()
                 .cloned()
@@ -287,8 +293,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             cmds.iter()
                 .enumerate()
                 .find(|(_, c)| {
-                    if let Command::FuncCall(McFuncCall { name }) = c {
-                        name == "%%LOADREGS"
+                    if let Command::FuncCall(McFuncCall { id }) = c {
+                        id.name == "%%LOADREGS"
                     } else {
                         false
                     }
@@ -297,7 +303,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         };
 
         while let Some(load_idx) = get_load_idx(&func.cmds) {
-            println!("Adding load code at {} idx {}", func.name, load_idx);
+            println!("Adding load code at {} idx {}", func.id, load_idx);
             func.cmds.remove(load_idx);
 
             let base_read = ScoreOp {
@@ -311,7 +317,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
 
             let load_code = std::iter::once(base_read).chain(
                 clobber_list
-                    .get(&func.name)
+                    .get(&func.id.name)
                     .unwrap()
                     .iter()
                     .cloned()
@@ -332,8 +338,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             .map(|(idx, func)| {
                 let pos = format!("-2 0 {}", idx);
                 let block = format!(
-                    "minecraft:command_block{{Command:\"function rust:{}\"}}",
-                    func.name
+                    "minecraft:command_block{{Command:\"{}\"}}",
+                    McFuncCall { id: func.id.clone() }
                 );
 
                 SetBlock {
@@ -598,11 +604,13 @@ fn compile_call(
                     todo!("functions with parameters {:?}", arguments);
                 }
 
-                let block_name = mc_block_name(name, &Name::Number(0));
+                let callee_id = McFuncId::new(name);
 
                 let mut cmds = Vec::new();
 
-                cmds.push(McFuncCall { name: block_name }.into());
+                cmds.push(McFuncCall { id: callee_id }.into());
+
+                // FIXME: We need to split up the functions here
 
                 if let Some(dest) = dest {
                     cmds.push(
@@ -648,14 +656,14 @@ pub fn compile_function(
         .iter()
         .enumerate()
         .map(|(idx, block)| {
-            let name = mc_block_name(&func.name, &block.name);
+            let id = McFuncId::new_block(func.name.clone(), block.name.clone());
 
-            let mut this = McFunction { name, cmds: vec![] };
+            let mut this = McFunction { id, cmds: vec![] };
 
             if idx == 0 {
                 this.cmds.push(
                     McFuncCall {
-                        name: "%%SAVEREGS".to_string(),
+                        id: McFuncId::new("%%SAVEREGS"),
                     }
                     .into(),
                 );
@@ -683,7 +691,7 @@ pub fn compile_function(
                 }) => {
                     this.cmds.push(
                         McFuncCall {
-                            name: "%%LOADREGS".to_string(),
+                            id: McFuncId::new("%%LOADREGS"),
                         }
                         .into(),
                     );
@@ -707,19 +715,19 @@ pub fn compile_function(
 
                     this.cmds.push(
                         McFuncCall {
-                            name: "%%LOADREGS".to_string(),
+                            id: McFuncId::new("%%LOADREGS"),
                         }
                         .into(),
                     );
                 }
                 Terminator::Br(Br { dest, .. }) => {
-                    let mut name = mc_block_name(&func.name, dest);
+                    let mut id = McFuncId::new_block(&func.name, dest.clone());
 
                     if !options.direct_term {
-                        name.push_str("%%FIXUP");
+                        id.name.push_str("%%FIXUP");
                     }
 
-                    this.cmds.push(McFuncCall { name }.into());
+                    this.cmds.push(McFuncCall { id }.into());
                 }
                 Terminator::CondBr(CondBr {
                     condition,
@@ -730,12 +738,12 @@ pub fn compile_function(
                     let (cmds, cond) = eval_operand(condition);
                     this.cmds.extend(cmds);
 
-                    let mut true_dest = mc_block_name(&func.name, true_dest);
-                    let mut false_dest = mc_block_name(&func.name, false_dest);
+                    let mut true_dest = McFuncId::new_block(&func.name, true_dest.clone());
+                    let mut false_dest = McFuncId::new_block(&func.name, false_dest.clone());
 
                     if !options.direct_term {
-                        true_dest.push_str("%%FIXUP");
-                        false_dest.push_str("%%FIXUP");
+                        true_dest.name.push_str("%%FIXUP");
+                        false_dest.name.push_str("%%FIXUP");
                     }
 
                     let mut true_cmd = Execute::new();
@@ -745,7 +753,7 @@ pub fn compile_function(
                             target_obj: OBJECTIVE.to_string(),
                             kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
                         })
-                        .with_run(McFuncCall { name: true_dest });
+                        .with_run(McFuncCall { id: true_dest });
 
                     let mut false_cmd = Execute::new();
                     false_cmd
@@ -754,7 +762,7 @@ pub fn compile_function(
                             target_obj: OBJECTIVE.to_string(),
                             kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
                         })
-                        .with_run(McFuncCall { name: false_dest });
+                        .with_run(McFuncCall { id: false_dest });
 
                     this.cmds.push(true_cmd.into());
                     this.cmds.push(false_cmd.into());
@@ -786,10 +794,10 @@ pub fn compile_function(
                             todo!("{:?}", dest_value)
                         };
 
-                        let mut dest_name = mc_block_name(&func.name, dest_name);
+                        let mut dest_id = McFuncId::new_block(&func.name, dest_name.clone());
 
                         if !options.direct_term {
-                            dest_name.push_str("%%FIXUP");
+                            dest_id.name.push_str("%%FIXUP");
                         }
 
                         let mut branch_cmd = Execute::new();
@@ -808,16 +816,16 @@ pub fn compile_function(
                             target_obj: OBJECTIVE.to_string(),
                             score: 1,
                         });
-                        branch_cmd.with_run(McFuncCall { name: dest_name });
+                        branch_cmd.with_run(McFuncCall { id: dest_id });
 
                         this.cmds.push(add_cmd.into());
                         this.cmds.push(branch_cmd.into());
                     }
 
-                    let mut default_dest = mc_block_name(&func.name, default_dest);
+                    let mut default_dest = McFuncId::new_block(&func.name, default_dest.clone());
 
                     if !options.direct_term {
-                        default_dest.push_str("%%FIXUP");
+                        default_dest.name.push_str("%%FIXUP");
                     }
 
                     let mut default_cmd = Execute::new();
@@ -826,7 +834,7 @@ pub fn compile_function(
                         target_obj: OBJECTIVE.to_string(),
                         kind: ExecuteCondKind::Matches(cir::McRange::Between(0..=0)),
                     });
-                    default_cmd.with_run(McFuncCall { name: default_dest });
+                    default_cmd.with_run(McFuncCall { id: default_dest });
 
                     this.cmds.push(default_cmd.into());
                 }
@@ -895,7 +903,7 @@ pub fn push(target: String) -> Vec<Command> {
     );
     cmds.push(
         McFuncCall {
-            name: "intrinsic:setptr".to_string(),
+            id: McFuncId::new("intrinsic:setptr"),
         }
         .into(),
     );
@@ -935,7 +943,7 @@ pub fn pop(target: String) -> Vec<Command> {
     );
     cmds.push(
         McFuncCall {
-            name: "intrinsic:setptr".to_string(),
+            id: McFuncId::new("intrinsic:setptr"),
         }
         .into(),
     );
@@ -1056,7 +1064,7 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
             );
             cmds.push(
                 McFuncCall {
-                    name: "intrinsic:setptr".into(),
+                    id: McFuncId::new("intrinsic:setptr"),
                 }
                 .into(),
             );
@@ -1079,7 +1087,7 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
             );
             cmds.push(
                 McFuncCall {
-                    name: "intrinsic:setptr".into(),
+                    id: McFuncId::new("intrinsic:setptr"),
                 }
                 .into(),
             );

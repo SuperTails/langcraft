@@ -1,8 +1,7 @@
-use crate::parse::{Ident, Token};
-use std::convert::TryFrom;
 use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
+use llvm_ir::Name;
 
 #[derive(Debug, PartialEq, Hash, Clone)]
 pub enum McRange {
@@ -68,22 +67,60 @@ impl fmt::Display for Predicate {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Function {
+pub struct FunctionId {
     pub name: String,
+    pub block: Name,
+    pub sub: usize,
+}
+
+impl FunctionId {
+    pub fn new<T: ToString>(name: T) -> Self {
+        FunctionId { name: name.to_string(), block: Name::Number(0), sub: 0 }
+    }
+
+    pub fn new_block<T: ToString>(name: T, block: Name) -> Self {
+        FunctionId { name: name.to_string(), block, sub: 0 }
+    }
+}
+
+impl fmt::Display for FunctionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)?;
+
+        let block = if let Name::Number(n) = self.block {
+            n
+        } else {
+            todo!("{:?}", self.name)
+        };
+
+        if block != 0 || self.sub != 0 {
+            write!(f, "-block{}", block)?;
+        }
+        if self.sub != 0 {
+            write!(f, "-sub{}", self.sub)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Function {
+    pub id: FunctionId,
     pub cmds: Vec<Command>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FuncCall {
-    pub name: String,
+    pub id: FunctionId,
 }
 
 impl fmt::Display for FuncCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.name.contains(':') {
-            write!(f, "function {}", self.name)
+        let id = self.id.to_string();
+        if id.contains(':') {
+            write!(f, "function {}", id)
         } else {
-            write!(f, "function rust:{}", self.name)
+            write!(f, "function rust:{}", id)
         }
     }
 }
@@ -319,21 +356,6 @@ pub enum Relation {
     Eq,
     GreaterThan,
     GreaterThanEq,
-}
-
-impl TryFrom<Token> for Relation {
-    type Error = ();
-
-    fn try_from(token: Token) -> Result<Self, Self::Error> {
-        match token {
-            Token::BinaryOp(ScoreOpKind::Min) => Ok(Self::LessThan),
-            Token::LessThanEq => Ok(Self::LessThanEq),
-            Token::BinaryOp(ScoreOpKind::Assign) => Ok(Self::Eq),
-            Token::GreaterThanEq => Ok(Self::GreaterThanEq),
-            Token::BinaryOp(ScoreOpKind::Max) => Ok(Self::GreaterThan),
-            _ => Err(()),
-        }
-    }
 }
 
 impl fmt::Display for Relation {
@@ -604,12 +626,6 @@ impl fmt::Display for ScoreSet {
             "scoreboard players set {} {} {}",
             self.target, self.target_obj, self.score
         )
-    }
-}
-
-impl From<Ident> for Target {
-    fn from(ident: Ident) -> Target {
-        Target::Uuid(ident.0)
     }
 }
 
