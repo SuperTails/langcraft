@@ -4,12 +4,6 @@ fn main() {
     let funcs = langcraft::compile_bc(Path::new("mcfunction.bc")).unwrap();
 
     for func in funcs.iter() {
-        println!("Function `{}`", func.name);
-        for cmd in func.cmds.iter() {
-            println!("{}", cmd);
-        }
-        println!();
-
         let data = func
             .cmds
             .iter()

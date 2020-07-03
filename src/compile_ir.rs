@@ -3,7 +3,7 @@ use crate::cir::Function as McFunction;
 use crate::cir::{
     self, Command, Data, DataKind, DataTarget, Execute, ExecuteCondKind, ExecuteCondition,
     ExecuteStoreKind, ExecuteSubCmd, ScoreGet, ScoreOp, ScoreOpKind, ScoreSet, SetBlock,
-    SetBlockKind, Target, Tellraw,
+    SetBlockKind, Target, Tellraw, ScoreAdd,
 };
 use either::Either;
 use lazy_static::lazy_static;
@@ -15,8 +15,14 @@ use llvm_ir::{
 };
 use std::convert::TryFrom;
 use std::sync::Mutex;
+use std::collections::{BTreeSet, HashMap};
 
 pub const OBJECTIVE: &str = "rust";
+
+// %ptr, %x, %y, %z are caller-saved registers
+// all other registers are callee-saved
+// %stackptr is... weird
+// %temp<X> are... weird
 
 // `intrinsic:setptr` sets the pointer to the value in `%ptr` for objective `rust`
 
@@ -118,7 +124,7 @@ pub fn write_ptr(target: String) -> Command {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Options {
-    // FIXME: It is actually *not correct* to directly terminate with a call!
+    // FIXME: It is actually *not correct* to directly terminate with a call sometimes!
     // And, on the other hand, a Call instruction MUST be a call!
     direct_term: bool,
 }
@@ -129,25 +135,8 @@ impl Default for Options {
     }
 }
 
-pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
-    let init_cmds = module
-        .global_vars
-        .iter()
-        .flat_map(compile_global_var_init)
-        .collect();
-
-    let mut funcs = std::iter::once(McFunction {
-        name: "init".to_string(),
-        cmds: init_cmds,
-    })
-    .chain(
-        module
-            .functions
-            .iter()
-            .flat_map(|f| compile_function(f, options)),
-    )
-    .collect::<Vec<McFunction>>();
-
+// This doesn't change what the function clobbers
+fn apply_fixups(funcs: &mut [McFunction]) {
     for func_idx in 0..funcs.len() {
         for cmd_idx in 0..funcs[func_idx].cmds.len() {
             if let Command::FuncCall(McFuncCall { name }) = &mut funcs[func_idx].cmds[cmd_idx] {
@@ -210,6 +199,119 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                     }
                 }
             }
+        }
+    }
+}
+
+pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
+    let init_cmds = module
+        .global_vars
+        .iter()
+        .flat_map(compile_global_var_init)
+        .chain(std::iter::once(ScoreSet {
+            target: Target::Uuid("%stackptr".to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            score: *FREE_PTR.lock().unwrap() as i32,
+        }.into()))
+        .collect();
+
+    let init_func = McFunction {
+        name: "init".to_string(),
+        cmds: init_cmds,
+    };
+
+    let mut clobber_list = HashMap::new();
+    let mut funcs = vec![init_func];
+
+    for (mc_funcs, mut clobbers) in module.functions.iter().map(|f| compile_function(f, options)) {
+        clobbers.remove("%stackptr");
+        clobbers.remove("%return");
+        clobbers.remove("%ptr");
+
+        for McFunction { name, .. } in mc_funcs.iter() {
+            assert_eq!(clobber_list.insert(name.clone(), clobbers.clone()), None);
+        }
+        funcs.extend(mc_funcs);
+    }
+
+    apply_fixups(&mut funcs);
+
+    for func in funcs.iter_mut() {
+        let get_save_idx = |cmds: &[Command]| {
+            cmds.iter()
+                .enumerate()
+                .find(|(_, c)|
+                    if let Command::FuncCall(McFuncCall { name }) = c {
+                        name == "%%SAVEREGS"
+                    } else {
+                        false
+                    }
+                )
+                .map(|(i, _)| i)
+        };
+
+        while let Some(save_idx) = get_save_idx(&func.cmds) {
+            println!("Adding save code at {} idx {}", func.name, save_idx);
+            func.cmds.remove(save_idx);
+
+            let base_set = ScoreOp {
+                target: Target::Uuid("%stackbaseptr".to_string()),
+                target_obj: OBJECTIVE.to_string(),
+                kind: ScoreOpKind::Assign,
+                source: Target::Uuid("%stackptr".to_string()),
+                source_obj: OBJECTIVE.to_string(),
+            }.into();
+
+            let save_code = clobber_list
+                .get(&func.name)
+                .unwrap()
+                .iter()
+                .cloned()
+                .chain(std::iter::once("%stackbaseptr".to_string()))
+                .map(push)
+                .flatten()
+                .chain(std::iter::once(base_set));
+            
+            func.cmds.splice(save_idx..save_idx, save_code);
+        }
+
+        let get_load_idx = |cmds: &[Command]| {
+            cmds
+                .iter()
+                .enumerate()
+                .find(|(_, c)| 
+                    if let Command::FuncCall(McFuncCall { name }) = c {
+                        name == "%%LOADREGS"
+                    } else {
+                        false
+                    }
+                )
+                .map(|(i, _)| i)
+        };
+
+        while let Some(load_idx) = get_load_idx(&func.cmds) {
+            println!("Adding load code at {} idx {}", func.name, load_idx);
+            func.cmds.remove(load_idx);
+
+            let base_read = ScoreOp {
+                target: Target::Uuid("%stackptr".to_string()),
+                target_obj: OBJECTIVE.to_string(),
+                kind: ScoreOpKind::Assign,
+                source: Target::Uuid("%stackbaseptr".to_string()),
+                source_obj: OBJECTIVE.to_string(),
+            }.into();
+
+            let load_code = std::iter::once(base_read).chain(clobber_list
+                .get(&func.name)
+                .unwrap()
+                .iter()
+                .cloned()
+                .chain(std::iter::once("%stackbaseptr".to_string()))
+                .rev()
+                .map(pop)
+                .flatten());
+            
+            func.cmds.splice(load_idx..load_idx, load_code);
         }
     }
 
@@ -339,7 +441,183 @@ impl TryFrom<i32> for McBlock {
     }
 }
 
-pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
+fn compile_call(
+    Call {
+        function,
+        arguments,
+        dest,
+        ..
+    }: &Call,
+) -> Vec<Command> {
+    let function = match function {
+        Either::Left(asm) => todo!("inline assembly {:?}", asm),
+        Either::Right(operand) => operand,
+    };
+
+    if let Operand::ConstantOperand(Constant::GlobalReference {
+        name: Name::Name(name),
+        ..
+    }) = function
+    {
+        match name.as_str() {
+            "print" => {
+                assert_eq!(arguments.len(), 1);
+
+                assert!(dest.is_none());
+
+                let (mut cmds, name) = eval_operand(&arguments[0].0);
+
+                cmds.push(
+                    Tellraw {
+                        target: Target::Selector(cir::Selector {
+                            var: cir::SelectorVariable::AllPlayers,
+                            args: vec![],
+                        }),
+                        message: format!(
+                            "[{{\"score\": {{\"name\": \"{}\", \"objective\": \"rust\" }} }}]",
+                            name
+                        ),
+                    }
+                    .into(),
+                );
+
+                cmds
+            }
+            "turtle_x" | "turtle_y" | "turtle_z" => {
+                assert_eq!(arguments.len(), 1);
+
+                assert!(dest.is_none());
+
+                let coord = if name.ends_with('x') {
+                    0
+                } else if name.ends_with('y') {
+                    1
+                } else {
+                    2
+                };
+
+                // TODO: Optimize for const argument
+                let (mut cmds, pos) = eval_operand(&arguments[0].0);
+
+                let mut cmd = Execute::new();
+                cmd.with_as(Target::Selector(cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=turtle".to_string())],
+                }));
+                cmd.with_subcmd(ExecuteSubCmd::Store {
+                    is_success: false,
+                    kind: ExecuteStoreKind::Data {
+                        path: format!("Pos[{}]", coord),
+                        ty: "double".to_string(),
+                        scale: 1.0,
+                        target: DataTarget::Entity(Target::Selector(cir::Selector {
+                            var: cir::SelectorVariable::ThisEntity,
+                            args: vec![],
+                        })),
+                    },
+                });
+                cmd.with_run(ScoreGet {
+                    target: Target::Uuid(pos),
+                    target_obj: OBJECTIVE.to_string(),
+                });
+
+                cmds.push(cmd.into());
+
+                cmds
+            }
+            "turtle_set" => {
+                assert_eq!(arguments.len(), 1);
+
+                assert!(dest.is_none());
+
+                let mc_block = if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
+                    c
+                } else {
+                    todo!("non-constant block {:?}", &arguments[0].0)
+                };
+
+                let mc_block = McBlock::try_from(mc_block).unwrap();
+
+                let mut cmd = Execute::new();
+                cmd.with_at(Target::Selector(cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=turtle".to_string())],
+                }));
+                cmd.with_run(SetBlock {
+                    block: mc_block.to_string(),
+                    pos: "~ ~ ~".to_string(),
+                    kind: SetBlockKind::Replace,
+                });
+
+                vec![cmd.into()]
+            }
+            "turtle_check" => {
+                assert_eq!(arguments.len(), 1);
+
+                let dest = dest.as_ref().expect("turtle_check should return a value");
+
+                let mc_block = if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
+                    c
+                } else {
+                    todo!("non-constant block {:?}", &arguments[0].0)
+                };
+
+                let block = McBlock::try_from(mc_block).unwrap().to_string();
+
+                let mut cmd = Execute::new();
+                cmd.with_subcmd(ExecuteSubCmd::Store {
+                    is_success: true,
+                    kind: ExecuteStoreKind::Score {
+                        target: Target::Uuid(dest.to_string()),
+                        objective: OBJECTIVE.to_string(),
+                    },
+                });
+                cmd.with_at(Target::Selector(cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=turtle".to_string())],
+                }));
+                cmd.with_if(ExecuteCondition::Block {
+                    pos: "~ ~ ~".to_string(),
+                    block,
+                });
+
+                vec![cmd.into()]
+            }
+            _ => {
+                if !arguments.is_empty() {
+                    todo!("functions with parameters {:?}", arguments);
+                }
+
+                let block_name = mc_block_name(name, &Name::Number(0));
+
+                let mut cmds = Vec::new();
+
+                cmds.push(McFuncCall { name: block_name }.into());
+
+                if let Some(dest) = dest {
+                    cmds.push(
+                        ScoreOp {
+                            target: Target::Uuid(dest.to_string()),
+                            target_obj: OBJECTIVE.to_string(),
+                            kind: ScoreOpKind::Assign,
+                            source: Target::Uuid("%return".to_string()),
+                            source_obj: OBJECTIVE.to_string(),
+                        }
+                        .into(),
+                    );
+                }
+
+                cmds
+            }
+        }
+    } else {
+        todo!("non-constant function call {:?}", function)
+    }
+}
+
+type ScoreHolder = String;
+
+pub fn compile_function(func: &Function, options: &Options) -> (Vec<McFunction>, BTreeSet<ScoreHolder>) {
     if !func.parameters.is_empty() {
         todo!("functions with parameters");
     }
@@ -352,13 +630,17 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
         todo!("functions with no basic blocks");
     }
 
-    func.basic_blocks
+    let funcs = func.basic_blocks
         .iter()
         .enumerate()
-        .map(|(_, block)| {
+        .map(|(idx, block)| {
             let name = mc_block_name(&func.name, &block.name);
 
             let mut this = McFunction { name, cmds: vec![] };
+
+            if idx == 0 {
+                this.cmds.push(McFuncCall { name: "%%SAVEREGS".to_string() }.into());
+            }
 
             if !options.direct_term {
                 this.cmds.push(
@@ -379,7 +661,9 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
                 Terminator::Ret(Ret {
                     return_operand: None,
                     ..
-                }) => {}
+                }) => {
+                    this.cmds.push(McFuncCall { name: "%%LOADREGS".to_string() }.into());
+                }
                 Terminator::Ret(Ret {
                     return_operand: Some(operand),
                     ..
@@ -396,6 +680,8 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
                         }
                         .into(),
                     );
+
+                    this.cmds.push(McFuncCall { name: "%%LOADREGS".to_string() }.into());
                 }
                 Terminator::Br(Br { dest, .. }) => {
                     let mut name = mc_block_name(&func.name, dest);
@@ -520,18 +806,104 @@ pub fn compile_function(func: &Function, options: &Options) -> Vec<McFunction> {
 
             this
         })
-        .collect()
+        .collect::<Vec<_>>();
+
+    let mut clobbers = BTreeSet::new();
+    for cmd in funcs.iter().flat_map(|f| f.cmds.iter()) {
+        let cmd_str = cmd.to_string();
+        for holder in cmd_str.split_whitespace().filter(|s| s.starts_with('%')) {
+            clobbers.insert(holder.to_owned());
+        }
+    }
+
+    (funcs, clobbers)
+}
+
+pub fn compile_arithmetic(
+    operand0: &Operand,
+    operand1: &Operand,
+    dest: &Name,
+    kind: ScoreOpKind,
+) -> Vec<Command> {
+    let (mut cmds, source0) = eval_operand(operand0);
+    let (tmp, source1) = eval_operand(operand1);
+    cmds.extend(tmp.into_iter());
+    cmds.push(
+        ScoreOp {
+            target: Target::Uuid(dest.to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            kind: ScoreOpKind::Assign,
+            source: Target::Uuid(source0),
+            source_obj: OBJECTIVE.to_string(),
+        }
+        .into(),
+    );
+    cmds.push(
+        ScoreOp {
+            target: Target::Uuid(dest.to_string()),
+            target_obj: OBJECTIVE.to_string(),
+            kind,
+            source: Target::Uuid(source1),
+            source_obj: OBJECTIVE.to_string(),
+        }
+        .into(),
+    );
+    cmds
+}
+
+pub fn push(target: String) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    cmds.push(ScoreOp {
+        target: Target::Uuid("%ptr".to_string()),
+        target_obj: OBJECTIVE.to_string(),
+        kind: ScoreOpKind::Assign,
+        source: Target::Uuid("%stackptr".to_string()),
+        source_obj: OBJECTIVE.to_string(),
+    }.into());
+    cmds.push(McFuncCall { name: "intrinsic:setptr".to_string() }.into());
+    cmds.push(write_ptr(target));
+    cmds.push(ScoreAdd {
+        target: Target::Uuid("%stackptr".to_string()),
+        target_obj: OBJECTIVE.to_string(),
+        score: 1,
+    }.into());
+
+    cmds
+}
+
+pub fn pop(target: String) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    cmds.push(ScoreAdd {
+        target: Target::Uuid("%stackptr".to_string()),
+        target_obj: OBJECTIVE.to_string(),
+        score: -1,
+    }.into());
+    cmds.push(ScoreOp {
+        target: Target::Uuid("%ptr".to_string()),
+        target_obj: OBJECTIVE.to_string(),
+        kind: ScoreOpKind::Assign,
+        source: Target::Uuid("%stackptr".to_string()),
+        source_obj: OBJECTIVE.to_string(),
+    }.into());
+    cmds.push(McFuncCall { name: "intrinsic:setptr".to_string() }.into());
+    cmds.push(read_ptr(target));
+
+    cmds
 }
 
 pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
     match instr {
-        // TODO: Implement a proper stack pointer
+        // We use an empty stack
         Instruction::Alloca(Alloca {
             allocated_type: Type::IntegerType { bits: 32 },
             num_elements,
             dest,
             ..
         }) => {
+            // TODO: This is never deallocated lol
+
             let num = if let Operand::ConstantOperand(Constant::Int { bits: 32, value: 1 }) =
                 num_elements
             {
@@ -540,12 +912,22 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
                 todo!("{:?}", num_elements);
             };
 
-            vec![ScoreSet {
+            let mut cmds = Vec::new();
+
+            cmds.push(ScoreOp {
                 target: Target::Uuid(dest.to_string()),
                 target_obj: OBJECTIVE.to_string(),
-                score: get_alloc(num) as i32,
-            }
-            .into()]
+                kind: ScoreOpKind::Assign,
+                source: Target::Uuid("%stackptr".to_string()),
+                source_obj: OBJECTIVE.to_string(),
+            }.into());
+            cmds.push(ScoreAdd {
+                target: Target::Uuid("%stackptr".to_string()),
+                target_obj: OBJECTIVE.to_string(),
+                score: num,
+            }.into());
+
+            cmds
         }
         Instruction::GetElementPtr(GetElementPtr {
             address,
@@ -589,6 +971,7 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
                 }
                 .into(),
             );
+
             cmds
         }
         Instruction::Store(Store { address, value, .. }) => {
@@ -644,6 +1027,7 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
                 .into(),
             );
             cmds.push(read_ptr(dest.to_string()));
+
             cmds
         }
         Instruction::Add(Add {
@@ -651,64 +1035,13 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
             operand1,
             dest,
             ..
-        }) => {
-            let (mut cmds, source0) = eval_operand(operand0);
-            let (tmp, source1) = eval_operand(operand1);
-            cmds.extend(tmp.into_iter());
-            cmds.push(
-                ScoreOp {
-                    target: Target::Uuid(dest.to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::Assign,
-                    source: Target::Uuid(source0),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-            cmds.push(
-                ScoreOp {
-                    target: Target::Uuid(dest.to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::AddAssign,
-                    source: Target::Uuid(source1),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-            cmds
-        }
-        // TODO: Refactor, because this is *identical* to Add except for the line
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::AddAssign),
         Instruction::Mul(Mul {
             operand0,
             operand1,
             dest,
             ..
-        }) => {
-            let (mut cmds, source0) = eval_operand(operand0);
-            let (tmp, source1) = eval_operand(operand1);
-            cmds.extend(tmp.into_iter());
-            cmds.push(
-                ScoreOp {
-                    target: Target::Uuid(dest.to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::Assign,
-                    source: Target::Uuid(source0),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-            cmds.push(
-                ScoreOp {
-                    target: Target::Uuid(dest.to_string()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::MulAssign,
-                    source: Target::Uuid(source1),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-            cmds
-        }
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::MulAssign),
         Instruction::ICmp(ICmp {
             predicate,
             operand0,
@@ -762,194 +1095,7 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
 
             cmds
         }
-        Instruction::Call(Call {
-            function,
-            arguments,
-            dest,
-            ..
-        }) => {
-            let function = match function {
-                Either::Left(asm) => todo!("inline assembly {:?}", asm),
-                Either::Right(operand) => operand,
-            };
-
-            if let Operand::ConstantOperand(Constant::GlobalReference {
-                name: Name::Name(name),
-                ..
-            }) = function
-            {
-                match name.as_str() {
-                    "print" => {
-                        assert_eq!(arguments.len(), 1);
-
-                        assert!(dest.is_none());
-
-                        let (mut cmds, name) = eval_operand(&arguments[0].0);
-
-                        cmds.push(Tellraw {
-                            target: Target::Selector(cir::Selector { var: cir::SelectorVariable::AllPlayers, args: vec![] }),
-                            message: format!("[{{\"score\": {{\"name\": \"{}\", \"objective\": \"rust\" }} }}]", name),
-                        }.into());
-
-                        cmds
-                    }
-                    "turtle_x" | "turtle_y" | "turtle_z" => {
-                        assert_eq!(arguments.len(), 1);
-
-                        assert!(dest.is_none());
-
-                        let coord = if name.ends_with('x') {
-                            0
-                        } else if name.ends_with('y') {
-                            1
-                        } else {
-                            2
-                        };
-
-                        // TODO: Optimize for const argument
-                        let (mut cmds, pos) = eval_operand(&arguments[0].0);
-
-                        let mut cmd = Execute::new();
-                        cmd.with_as(Target::Selector(cir::Selector {
-                            var: cir::SelectorVariable::AllEntities,
-                            args: vec![cir::SelectorArg("tag=turtle".to_string())],
-                        }));
-                        cmd.with_subcmd(ExecuteSubCmd::Store {
-                            is_success: false,
-                            kind: ExecuteStoreKind::Data {
-                                path: format!("Pos[{}]", coord),
-                                ty: "double".to_string(),
-                                scale: 1.0,
-                                target: DataTarget::Entity(Target::Selector(cir::Selector {
-                                    var: cir::SelectorVariable::ThisEntity,
-                                    args: vec![],
-                                })),
-                            },
-                        });
-                        cmd.with_run(ScoreGet {
-                            target: Target::Uuid(pos),
-                            target_obj: OBJECTIVE.to_string(),
-                        });
-
-                        cmds.push(cmd.into());
-
-                        cmds
-                    }
-                    "turtle_set" => {
-                        assert_eq!(arguments.len(), 1);
-
-                        assert!(dest.is_none());
-
-                        let mc_block =
-                            if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
-                                c
-                            } else {
-                                todo!("non-constant block {:?}", &arguments[0].0)
-                            };
-
-                        let mc_block = McBlock::try_from(mc_block).unwrap();
-
-                        let mut cmd = Execute::new();
-                        cmd.with_at(Target::Selector(cir::Selector {
-                            var: cir::SelectorVariable::AllEntities,
-                            args: vec![cir::SelectorArg("tag=turtle".to_string())],
-                        }));
-                        cmd.with_run(SetBlock {
-                            block: mc_block.to_string(),
-                            pos: "~ ~ ~".to_string(),
-                            kind: SetBlockKind::Replace,
-                        });
-
-                        vec![cmd.into()]
-                    }
-                    "turtle_check" => {
-                        assert_eq!(arguments.len(), 1);
-
-                        let dest = dest.as_ref().expect("turtle_check should return a value");
-
-                        let mc_block =
-                            if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0) {
-                                c
-                            } else {
-                                todo!("non-constant block {:?}", &arguments[0].0)
-                            };
-
-                        let block = McBlock::try_from(mc_block).unwrap().to_string();
-
-                        let mut cmd = Execute::new();
-                        cmd.with_subcmd(ExecuteSubCmd::Store {
-                            is_success: true,
-                            kind: ExecuteStoreKind::Score {
-                                target: Target::Uuid(dest.to_string()),
-                                objective: OBJECTIVE.to_string(),
-                            },
-                        });
-                        cmd.with_at(Target::Selector(cir::Selector {
-                            var: cir::SelectorVariable::AllEntities,
-                            args: vec![cir::SelectorArg("tag=turtle".to_string())],
-                        }));
-                        cmd.with_if(ExecuteCondition::Block {
-                            pos: "~ ~ ~".to_string(),
-                            block,
-                        });
-
-                        vec![cmd.into()]
-                    }
-                    _ => {
-                        if !arguments.is_empty() {
-                            todo!("functions with parameters {:?}", arguments);
-                        }
-
-                        let block_name = mc_block_name(name, &Name::Number(0));
-
-                        let mut cmds = Vec::new();
-
-                        for i in 0..40 {
-                            cmds.push(
-                                ScoreOp {
-                                    target: Target::Uuid(format!("%{}%{}", i, i)),
-                                    target_obj: OBJECTIVE.to_string(),
-                                    kind: ScoreOpKind::Assign,
-                                    source: Target::Uuid(format!("%{}", i)),
-                                    source_obj: OBJECTIVE.to_string(),
-                                }
-                                .into(),
-                            )
-                        }
-                        cmds.push(McFuncCall { name: block_name }.into());
-                        for i in 0..40 {
-                            cmds.push(
-                                ScoreOp {
-                                    target: Target::Uuid(format!("%{}", i)),
-                                    target_obj: OBJECTIVE.to_string(),
-                                    kind: ScoreOpKind::Assign,
-                                    source: Target::Uuid(format!("%{}%{}", i, i)),
-                                    source_obj: OBJECTIVE.to_string(),
-                                }
-                                .into(),
-                            )
-                        }
-
-                        if let Some(dest) = dest {
-                            cmds.push(
-                                ScoreOp {
-                                    target: Target::Uuid(dest.to_string()),
-                                    target_obj: OBJECTIVE.to_string(),
-                                    kind: ScoreOpKind::Assign,
-                                    source: Target::Uuid("%return".to_string()),
-                                    source_obj: OBJECTIVE.to_string(),
-                                }
-                                .into(),
-                            );
-                        }
-
-                        cmds
-                    }
-                }
-            } else {
-                todo!("non-constant function call {:?}", function)
-            }
-        }
+        Instruction::Call(call) => compile_call(call),
         _ => todo!("instruction {:?}", instr),
     }
 }

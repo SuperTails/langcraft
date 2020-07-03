@@ -354,6 +354,7 @@ pub enum Command {
     ScoreOp(ScoreOp),
     ScoreSet(ScoreSet),
     ScoreGet(ScoreGet),
+    ScoreAdd(ScoreAdd),
     Execute(Execute),
     FuncCall(FuncCall),
     Data(Data),
@@ -367,6 +368,7 @@ impl fmt::Display for Command {
             Command::ScoreOp(s) => s.fmt(f),
             Command::ScoreSet(s) => s.fmt(f),
             Command::ScoreGet(s) => s.fmt(f),
+            Command::ScoreAdd(s) => s.fmt(f),
             Command::Execute(s) => s.fmt(f),
             Command::FuncCall(s) => s.fmt(f),
             Command::Data(s) => s.fmt(f),
@@ -408,6 +410,12 @@ impl From<Data> for Command {
 impl From<ScoreGet> for Command {
     fn from(s: ScoreGet) -> Self {
         Command::ScoreGet(s)
+    }
+}
+
+impl From<ScoreAdd> for Command {
+    fn from(s: ScoreAdd) -> Self {
+        Command::ScoreAdd(s)
     }
 }
 
@@ -557,6 +565,31 @@ impl fmt::Display for ScoreGet {
         )
     }
 }
+
+/// `scoreboard players set <targets> <objective> <score>`
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ScoreAdd {
+    pub target: Target,
+    pub target_obj: Objective,
+    pub score: i32,
+}
+
+impl fmt::Display for ScoreAdd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "scoreboard players ")?;
+        let score = if self.score < 0 {
+            write!(f, "remove ")?;
+            -self.score
+        } else {
+            write!(f, "add ")?;
+            self.score
+        };
+
+        write!(f, "{} {} {}", self.target, self.target_obj, score)
+    }
+}
+
+
 
 /// `scoreboard players set <targets> <objective> <score>`
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
