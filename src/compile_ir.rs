@@ -20,7 +20,7 @@ use std::sync::Mutex;
 
 pub const OBJECTIVE: &str = "rust";
 
-// %ptr, %x, %y, %z are caller-saved registers
+// %ptr, %x, %y, %z, %param<X> are caller-saved registers
 // all other registers are callee-saved
 // %stackptr is... weird
 // %temp<X> are... weird
@@ -153,8 +153,15 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                         .iter()
                         .enumerate()
                         .find(|(_, f)| f.id == id)
-                        .unwrap_or_else(|| panic!("could not find {:?}", id))
-                        .0;
+                        .map(|(i, _)| i)
+                        .unwrap_or_else(|| {
+                            funcs
+                                .iter()
+                                .enumerate()
+                                .find(|(_, f)| f.id.name == id.name)
+                                .map(|(i, _)| i)
+                                .unwrap_or_else(|| panic!("could not find {:?}", id))
+                        });
 
                     let pos = format!("~ 1 {}", idx);
                     let block = "minecraft:redstone_block".to_string();
@@ -180,8 +187,15 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                             .iter()
                             .enumerate()
                             .find(|(_, f)| f.id == id)
-                            .unwrap_or_else(|| panic!("could not find {:?}", id))
-                            .0;
+                            .map(|(i, _)| i)
+                            .unwrap_or_else(|| {
+                                funcs
+                                    .iter()
+                                    .enumerate()
+                                    .find(|(_, f)| f.id.name == id.name)
+                                    .map(|(i, _)| i)
+                                    .unwrap_or_else(|| panic!("could not find {:?}", id))
+                            });
 
                         let pos = format!("~ ~1 {}", idx);
                         let block = "minecraft:redstone_block".to_string();
@@ -666,10 +680,6 @@ fn compile_call(
                 (cmds, None)
             }
             _ => {
-                if !arguments.is_empty() {
-                    todo!("functions with parameters {:?}", arguments);
-                }
-
                 let mut callee_id = McFuncId::new(name);
 
                 callee_id.name.push_str("%%FIXUP");
@@ -677,6 +687,30 @@ fn compile_call(
                 let mut before_cmds = Vec::new();
                 // Push return address
                 before_cmds.extend(push("%%FIXUP".to_string()));
+
+                // Set arguments
+                for (idx, (arg, _attrs)) in arguments.iter().enumerate() {
+                    match eval_maybe_const(arg) {
+                        MaybeConst::Const(score) => {
+                            before_cmds.push(ScoreSet {
+                                target: Target::Uuid(format!("%param{}", idx)),
+                                target_obj: OBJECTIVE.to_string(),
+                                score,
+                            }.into());
+                        }
+                        MaybeConst::NonConst(cmds, source) => {
+                            before_cmds.extend(cmds);
+                            before_cmds.push(ScoreOp {
+                                target: Target::Uuid(format!("%param{}", idx)),
+                                target_obj: OBJECTIVE.to_string(),
+                                kind: ScoreOpKind::Assign,
+                                source: Target::Uuid(source),
+                                source_obj: OBJECTIVE.to_string(),
+                            }.into());
+                        }
+                    }
+                }
+
                 // Branch to function
                 before_cmds.push(McFuncCall { id: callee_id }.into());
 
@@ -709,10 +743,6 @@ pub fn compile_function(
     func: &Function,
     options: &Options,
 ) -> (Vec<McFunction>, BTreeSet<ScoreHolder>) {
-    if !func.parameters.is_empty() {
-        todo!("functions with parameters");
-    }
-
     if func.is_var_arg {
         todo!("functions with variadic arguments");
     }
@@ -747,6 +777,16 @@ pub fn compile_function(
                     }
                     .into(),
                 );
+
+                for (idx, arg) in func.parameters.iter().enumerate() {
+                    this.cmds.push(ScoreOp {
+                        target: Target::Uuid(arg.name.to_string()),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ScoreOpKind::Assign,
+                        source: Target::Uuid(format!("%param{}", idx)),
+                        source_obj: OBJECTIVE.to_string(),
+                    }.into());
+                }
             }
 
             for instr in block.instrs.iter() {
