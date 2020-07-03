@@ -201,6 +201,32 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                             unreachable!()
                         }
                     }
+                } else if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), .. }) = &mut **func_call {
+                    if target == "%%FIXUP" {
+
+                        // This is a return address
+                        let mut return_id = funcs[func_idx].id.clone();
+                        return_id.sub += 1;
+
+                        let idx = funcs
+                            .iter()
+                            .enumerate()
+                            .find(|(_, f)| f.id == return_id)
+                            .unwrap_or_else(|| panic!("could not find {:?}", return_id))
+                            .0;
+
+                        let mut cmd = Execute::new();
+                        cmd.with_at(Target::Selector(cir::Selector { var: cir::SelectorVariable::AllEntities, args: vec![cir::SelectorArg("tag=ptr".to_string())]}));
+                        cmd.with_run(Data {
+                            target: DataTarget::Block("~ ~ ~".to_string()),
+                            kind: DataKind::Modify {
+                                path: "RecordItem.tag.Memory".to_string(),
+                                kind: cir::DataModifyKind::Set,
+                                source: cir::DataModifySource::Value(idx as i32)
+                            }
+                        });
+                        funcs[func_idx].cmds[cmd_idx] = cmd.into();
+                    }
                 }
             }
         }
@@ -208,17 +234,20 @@ fn apply_fixups(funcs: &mut [McFunction]) {
 }
 
 pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
+    let main_return = get_alloc(1);
+
     let init_cmds = module
         .global_vars
         .iter()
         .flat_map(compile_global_var_init)
+        .chain(std::iter::once(set_memory(-1, main_return as i32)))
         .chain(std::iter::once(
             ScoreSet {
                 target: Target::Uuid("%stackptr".to_string()),
                 target_obj: OBJECTIVE.to_string(),
                 score: *FREE_PTR.lock().unwrap() as i32,
             }
-            .into(),
+            .into()
         ))
         .collect();
 
@@ -238,6 +267,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         clobbers.remove("%stackptr");
         clobbers.remove("%return");
         clobbers.remove("%ptr");
+        clobbers.remove("%%FIXUP");
 
         for McFunction { id, .. } in mc_funcs.iter() {
             clobber_list.insert(id.name.clone(), clobbers.clone());
@@ -464,7 +494,7 @@ fn compile_call(
         dest,
         ..
     }: &Call,
-) -> Vec<Command> {
+) -> (Vec<Command>, Option<Vec<Command>>) {
     let function = match function {
         Either::Left(asm) => todo!("inline assembly {:?}", asm),
         Either::Right(operand) => operand,
@@ -497,7 +527,7 @@ fn compile_call(
                     .into(),
                 );
 
-                cmds
+                (cmds, None)
             }
             "turtle_x" | "turtle_y" | "turtle_z" => {
                 assert_eq!(arguments.len(), 1);
@@ -539,7 +569,7 @@ fn compile_call(
 
                 cmds.push(cmd.into());
 
-                cmds
+                (cmds, None)
             }
             "turtle_set" => {
                 assert_eq!(arguments.len(), 1);
@@ -565,7 +595,7 @@ fn compile_call(
                     kind: SetBlockKind::Replace,
                 });
 
-                vec![cmd.into()]
+                (vec![cmd.into()], None)
             }
             "turtle_check" => {
                 assert_eq!(arguments.len(), 1);
@@ -597,23 +627,25 @@ fn compile_call(
                     block,
                 });
 
-                vec![cmd.into()]
+                (vec![cmd.into()], None)
             }
             _ => {
                 if !arguments.is_empty() {
                     todo!("functions with parameters {:?}", arguments);
                 }
 
-                let callee_id = McFuncId::new(name);
+                let mut callee_id = McFuncId::new(name);
 
-                let mut cmds = Vec::new();
+                callee_id.name.push_str("%%FIXUP");
 
-                cmds.push(McFuncCall { id: callee_id }.into());
+                let mut before_cmds = Vec::new();
+                // Push return address
+                before_cmds.extend(push("%%FIXUP".to_string()));
+                // Branch to function
+                before_cmds.push(McFuncCall { id: callee_id }.into());
 
-                // FIXME: We need to split up the functions here
-
-                if let Some(dest) = dest {
-                    cmds.push(
+                let after_cmds = if let Some(dest) = dest {
+                    vec![
                         ScoreOp {
                             target: Target::Uuid(dest.to_string()),
                             target_obj: OBJECTIVE.to_string(),
@@ -622,10 +654,12 @@ fn compile_call(
                             source_obj: OBJECTIVE.to_string(),
                         }
                         .into(),
-                    );
-                }
+                    ]
+                } else {
+                    Vec::new()
+                };
 
-                cmds
+                (before_cmds, Some(after_cmds))
             }
         }
     } else {
@@ -655,10 +689,20 @@ pub fn compile_function(
         .basic_blocks
         .iter()
         .enumerate()
-        .map(|(idx, block)| {
-            let id = McFuncId::new_block(func.name.clone(), block.name.clone());
+        .flat_map(|(idx, block)| {
+            let mut result = Vec::new();
 
-            let mut this = McFunction { id, cmds: vec![] };
+            let mut sub = 0;
+
+            let make_new_func = |sub| {
+                McFunction {
+                    id: McFuncId { name: func.name.clone(), block: block.name.clone(), sub },
+                    cmds: vec![]
+                }
+            };
+
+            let mut this = make_new_func(sub);
+            sub += 1;
 
             if idx == 0 {
                 this.cmds.push(
@@ -669,19 +713,15 @@ pub fn compile_function(
                 );
             }
 
-            if !options.direct_term {
-                this.cmds.push(
-                    SetBlock {
-                        pos: "~ ~1 ~".to_string(),
-                        block: "minecraft:air".to_string(),
-                        kind: SetBlockKind::Replace,
-                    }
-                    .into(),
-                );
-            }
-
             for instr in block.instrs.iter() {
-                this.cmds.extend(compile_instr(instr, options));
+                let (before, after) = compile_instr(instr, options);
+                this.cmds.extend(before);
+
+                if let Some(after) = after {
+                    result.push(std::mem::replace(&mut this, make_new_func(sub)));
+                    sub += 1;
+                    this.cmds.extend(after);
+                }
             }
 
             match &block.term {
@@ -695,6 +735,8 @@ pub fn compile_function(
                         }
                         .into(),
                     );
+
+                    this.cmds.push(McFuncCall { id: McFuncId::new("intrinsic:pop_and_branch")}.into());
                 }
                 Terminator::Ret(Ret {
                     return_operand: Some(operand),
@@ -719,6 +761,8 @@ pub fn compile_function(
                         }
                         .into(),
                     );
+
+                    this.cmds.push(McFuncCall { id: McFuncId::new("intrinsic:pop_and_branch")}.into());
                 }
                 Terminator::Br(Br { dest, .. }) => {
                     let mut id = McFuncId::new_block(&func.name, dest.clone());
@@ -841,7 +885,22 @@ pub fn compile_function(
                 term => todo!("terminator {:?}", term),
             }
 
-            this
+            result.push(this);
+
+            if !options.direct_term {
+                for sub_block in result.iter_mut() {
+                    sub_block.cmds.insert(0, 
+                        SetBlock {
+                            pos: "~ ~1 ~".to_string(),
+                            block: "minecraft:air".to_string(),
+                            kind: SetBlockKind::Replace,
+                        }
+                        .into(),
+                    );
+                }
+            }
+
+            result
         })
         .collect::<Vec<_>>();
 
@@ -952,8 +1011,8 @@ pub fn pop(target: String) -> Vec<Command> {
     cmds
 }
 
-pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
-    match instr {
+pub fn compile_instr(instr: &Instruction, _options: &Options) -> (Vec<Command>, Option<Vec<Command>>) {
+    let result = match instr {
         // We use an empty stack
         Instruction::Alloca(Alloca {
             allocated_type: Type::IntegerType { bits: 32 },
@@ -1160,9 +1219,11 @@ pub fn compile_instr(instr: &Instruction, _options: &Options) -> Vec<Command> {
 
             cmds
         }
-        Instruction::Call(call) => compile_call(call),
+        Instruction::Call(call) => return compile_call(call),
         _ => todo!("instruction {:?}", instr),
-    }
+    };
+
+    (result, None)
 }
 
 pub enum MaybeConst {
