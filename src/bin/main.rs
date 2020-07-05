@@ -1,7 +1,10 @@
 use std::path::Path;
 
 fn main() {
-    let funcs = langcraft::compile_bc(Path::new("mcfunction.bc")).unwrap();
+    let args = std::env::args().collect::<Vec<_>>();
+    assert_eq!(args.len(), 2);
+
+    let funcs = langcraft::compile_bc(Path::new(&args[1])).unwrap();
 
     for file in std::fs::read_dir("out/").unwrap() {
         let file = file.unwrap();

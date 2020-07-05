@@ -13,7 +13,7 @@ use std::string::ToString;
 pub struct ScoreHolder(String);
 
 impl ScoreHolder {
-    pub fn new(string: String) -> Result<Self, String> {
+    pub fn new(mut string: String) -> Result<Self, String> {
         if string.is_empty() {
             return Err(string);
         }
@@ -31,7 +31,10 @@ impl ScoreHolder {
         }
 
         if string.contains('"') {
-            todo!("allow quotation marks {:?}", string)
+            println!("TODO: allow quotation marks {:?}", string);
+            string.truncate(string.len() - 1);
+            string.remove(0);
+            assert!(!string.contains('"'))
         }
 
         Ok(ScoreHolder(string))

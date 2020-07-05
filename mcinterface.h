@@ -25,3 +25,5 @@ extern int turtle_check(enum Block block);
 
 // Returns the block at the turtle's position
 extern enum Block turtle_get(void);
+
+extern int turtle_get_char(void);

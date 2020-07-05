@@ -9,7 +9,7 @@ use crate::cir::{
 use either::Either;
 use lazy_static::lazy_static;
 use llvm_ir::instruction::{
-    Add, Alloca, BitCast, Call, GetElementPtr, ICmp, InsertValue, Load, Mul, Store, Sub, Trunc, Select, ExtractValue,
+    Add, Alloca, BitCast, Call, GetElementPtr, ICmp, InsertValue, Load, Mul, Store, Sub, Trunc, Select, ExtractValue, ZExt, Phi
 };
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
@@ -42,6 +42,15 @@ pub fn param(index: usize, word_index: usize) -> ScoreHolder {
 pub fn return_holder(word_index: usize) -> ScoreHolder {
     ScoreHolder::new(format!("%return%{}", word_index)).unwrap()
 }
+
+pub fn print_entry(location: &McFuncId) -> Command {
+    Tellraw {
+        target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
+        message: format!("[{{\"text\": \"entered block {}\"}}]", location),
+
+    }.into()
+}
+
 
 // %ptr, %x, %y, %z, %param<X> are caller-saved registers
 // all other registers are callee-saved
@@ -328,6 +337,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         clobbers.remove(&stackptr());
         clobbers.remove(&ptr());
         clobbers.remove(&ScoreHolder::new("%%fixup".to_string()).unwrap());
+        clobbers.remove(&ScoreHolder::new("%phi".to_string()).unwrap());
         clobbers = clobbers.into_iter().filter(|e| !e.as_ref().starts_with("%return%")).collect();
 
         for McFunction { id, .. } in mc_funcs.iter() {
@@ -443,6 +453,33 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
 
         funcs[0].cmds.extend(build_cmds);
     }
+
+    let main_idx = funcs
+        .iter()
+        .enumerate()
+        .find(|(_, f)| f.id == McFuncId::new("main"))
+        .map(|(i, _)| i)
+        .unwrap_or_else(|| {
+            funcs
+                .iter()
+                .enumerate()
+                .find(|(_, f)| f.id.name == "main")
+                .map(|(i, _)| i)
+                .unwrap_or_else(|| panic!("could not find main"))
+        });
+
+    for func in &mut funcs[1..] {
+        func.cmds.insert(0, print_entry(&func.id));
+    }
+
+    funcs.push(McFunction {
+        id: McFuncId::new("run"),
+        cmds: vec![SetBlock {
+            pos: format!("-2 1 {}", main_idx),
+            block: "minecraft:redstone_block".to_string(),
+            kind: SetBlockKind::Replace,
+        }.into()]
+    });
 
     funcs
 }
@@ -772,6 +809,60 @@ fn compile_call(
 
                 (vec![cmd.into()], None)
             }
+            "turtle_get_char" => {
+                assert_eq!(arguments.len(), 0);
+
+                let dest = dest.as_ref().expect("turtle_get_char should return a value");
+
+                assert_eq!(dest.len(), 1, "wrong length for dest");
+                let dest = dest[0].clone();
+
+                let mut cmds = Vec::new();
+
+                // Default value (a space)
+                cmds.push(
+                    ScoreSet {
+                        target: dest.clone().into(),
+                        target_obj: OBJECTIVE.to_string(),
+                        score: b' ' as i32,
+                    }
+                    .into(),
+                );
+
+                let mut valid_chars = (b'A'..=b'Z').collect::<Vec<_>>();
+                valid_chars.push(b'[');
+                valid_chars.push(b']');
+
+                for c in valid_chars {
+                    let is_white = c == b'H' || c == b'Q' || c == b'S';
+
+                    let mut block = if is_white {
+                        "minecraft:white_wall_banner"
+                    } else {
+                        "minecraft:light_blue_wall_banner"
+                    }.to_string();
+
+                    block.push_str(&format!("{{ CustomName: \"{{\\\"text\\\":\\\"{}\\\"}}\"}}", char::from(c)));
+
+                    let mut cmd = Execute::new();
+                    cmd.with_at(cir::Selector {
+                        var: cir::SelectorVariable::AllEntities,
+                        args: vec![cir::SelectorArg("tag=turtle".to_string())]
+                    }.into());
+                    cmd.with_if(ExecuteCondition::Block {
+                        pos: "~ ~ ~".to_string(),
+                        block,
+                    });
+                    cmd.with_run(ScoreSet {
+                        target: dest.clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        score: c as i32,
+                    });
+                    cmds.push(cmd.into());
+                }
+
+                (cmds, None)
+            }
             "turtle_get" => {
                 assert_eq!(arguments.len(), 0);
 
@@ -822,6 +913,14 @@ fn compile_call(
                 assert_eq!(dest, None);
                 (compile_memcpy(arguments), None)
             }
+            "llvm.lifetime.start.p0i8" => {
+                assert_eq!(dest, None);
+                (vec![], None)
+            }
+            "llvm.lifetime.end.p0i8" => {
+                assert_eq!(dest, None);
+                (vec![], None)
+            }
             _ => {
                 let mut callee_id = McFuncId::new(name);
 
@@ -846,14 +945,11 @@ fn compile_call(
                             );
                         }
                         MaybeConst::NonConst(cmds, source) => {
-                            if source.len() != 1 {
-                                todo!("passing multiword arguments {:?}", source)
-                            }
-
-                            let source = source[0].clone();
-
                             before_cmds.extend(cmds);
-                            before_cmds.push(assign(param(idx, 0), source));
+
+                            for (word_idx, source_word) in source.into_iter().enumerate() {
+                                before_cmds.push(assign(param(idx, word_idx), source_word));
+                            }
                         }
                     }
                 }
@@ -935,7 +1031,7 @@ pub fn compile_function(
             }
 
             for instr in block.instrs.iter() {
-                let (before, after) = compile_instr(instr, options);
+                let (before, after) = compile_instr(instr, func, options);
                 this.cmds.extend(before);
 
                 if let Some(after) = after {
@@ -944,6 +1040,12 @@ pub fn compile_function(
                     this.cmds.extend(after);
                 }
             }
+
+            this.cmds.push(ScoreSet {
+                target: ScoreHolder::new("%phi".to_string()).unwrap().into(),
+                target_obj: OBJECTIVE.into(),
+                score: idx as i32,
+            }.into());
 
             match &block.term {
                 Terminator::Ret(Ret {
@@ -1163,7 +1265,10 @@ pub fn compile_function(
     let mut clobbers = BTreeSet::new();
     for cmd in funcs.iter().flat_map(|f| f.cmds.iter()) {
         let cmd_str = cmd.to_string();
-        for holder in cmd_str.split_whitespace().filter(|s| s.starts_with('%')) {
+        for mut holder in cmd_str.split_whitespace().filter(|s| s.contains('%')) {
+            if holder.ends_with(',') {
+                holder = &holder[..holder.len() - 1];
+            }
             clobbers.insert(ScoreHolder::new(holder.to_string()).unwrap());
         }
     }
@@ -1458,6 +1563,7 @@ fn compile_signed_cmp(target: ScoreHolder, source: ScoreHolder, dest: ScoreHolde
 
 pub fn compile_instr(
     instr: &Instruction,
+    parent: &Function,
     _options: &Options,
 ) -> (Vec<Command>, Option<Vec<Command>>) {
     let result = match instr {
@@ -1752,6 +1858,35 @@ pub fn compile_instr(
 
             cmds
         }
+        Instruction::Phi(Phi { incoming_values, dest, to_type, .. }) => {
+            let to_type_size = size_of_type(to_type);
+
+            let dst = ScoreHolder::from_local_name(dest.clone(), to_type_size);
+
+            let mut cmds = Vec::new();
+
+            for (value, block) in incoming_values {
+                let block_idx = parent.basic_blocks.iter().enumerate().find(|(_, b)| &b.name == block).unwrap().0 as i32;
+
+                let (tmp, val) = eval_operand(value);
+                cmds.extend(tmp);
+
+                assert_eq!(val.len(), dst.len());
+
+                for (val_word, dst_word) in val.into_iter().zip(dst.iter().cloned()) {
+                    let mut cmd = Execute::new();
+                    cmd.with_if(ExecuteCondition::Score {
+                        target: ScoreHolder::new("%phi".to_string()).unwrap().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((block_idx..=block_idx).into()),
+                    });
+                    cmd.with_run(assign(dst_word, val_word));
+                    cmds.push(cmd.into());
+                }
+            }
+
+            cmds
+        }
         Instruction::Call(call) => return compile_call(call),
         Instruction::BitCast(BitCast { operand, dest, to_type, .. }) => {
             let (mut cmds, source) = eval_operand(operand);
@@ -1895,6 +2030,23 @@ pub fn compile_instr(
 
             cmds
         }
+        Instruction::ZExt(ZExt { operand, to_type, dest, .. }) => {
+            let (mut cmds, op) = eval_operand(operand);
+
+            if op.len() != 1 {
+                todo!()
+            }
+
+            let dst = ScoreHolder::from_local_name(dest.clone(), size_of_type(to_type));
+
+            if dst.len() != 1 {
+                todo!()
+            }
+
+            cmds.push(assign(dst[0].clone(), op[0].clone()));
+
+            cmds
+        }
         _ => todo!("instruction {:?}", instr),
     };
 
@@ -1935,6 +2087,26 @@ pub fn eval_constant(con: &Constant) -> MaybeConst {
         }
         Constant::Int { bits: 8, value } => MaybeConst::Const(*value as i32),
         Constant::Int { bits: 32, value } => MaybeConst::Const(*value as i32),
+        Constant::Int { bits: 64, value } => {
+            // TODO: I mean it's *const* but not convenient...
+            let num = get_unique_num();
+
+            let lo_word = ScoreHolder::new(format!("%temp{}%0", num)).unwrap();
+            let hi_word = ScoreHolder::new(format!("%temp{}%1", num)).unwrap();
+
+            let cmds = vec![ScoreSet { 
+                target: lo_word.clone().into(),
+                target_obj: OBJECTIVE.into(),
+                score: *value as i32,
+            }.into(),
+            ScoreSet {
+                target: hi_word.clone().into(),
+                target_obj: OBJECTIVE.into(),
+                score: (*value >> 32) as i32,
+            }.into()];
+
+            MaybeConst::NonConst(cmds, vec![lo_word, hi_word])
+        }
         Constant::BitCast(bitcast) => eval_constant(&bitcast.operand),
         Constant::Undef(ty) => {
             // TODO: This can literally be *anything* you want it to be
