@@ -9,7 +9,7 @@ use crate::cir::{
 use either::Either;
 use lazy_static::lazy_static;
 use llvm_ir::instruction::{
-    Add, Alloca, BitCast, Call, GetElementPtr, ICmp, InsertValue, Load, Mul, Store, Sub, Trunc, Select
+    Add, Alloca, BitCast, Call, GetElementPtr, ICmp, InsertValue, Load, Mul, Store, Sub, Trunc, Select, ExtractValue,
 };
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
@@ -182,11 +182,11 @@ fn apply_fixups(funcs: &mut [McFunction]) {
         for cmd_idx in 0..funcs[func_idx].cmds.len() {
             if let Command::FuncCall(McFuncCall { id }) = &mut funcs[func_idx].cmds[cmd_idx] {
                 // TODO: `strip_suffix` is nightly but it's exactly what I'm doing
-                if id.name.ends_with("%%FIXUP") {
+                if id.name.ends_with("%%fixup") {
                     // It doesn't matter what we replace it with
                     // because the whole command gets removed
                     let mut id = std::mem::replace(id, McFuncId::new(""));
-                    id.name.truncate(id.name.len() - "%%FIXUP".len());
+                    id.name.truncate(id.name.len() - "%%fixup".len());
 
                     let idx = funcs
                         .iter()
@@ -218,9 +218,9 @@ fn apply_fixups(funcs: &mut [McFunction]) {
             }) = &mut funcs[func_idx].cmds[cmd_idx]
             {
                 if let Command::FuncCall(McFuncCall { id }) = &mut **func_call {
-                    if id.name.ends_with("%%FIXUP") {
+                    if id.name.ends_with("%%fixup") {
                         let mut id = std::mem::replace(id, McFuncId::new(""));
-                        id.name.truncate(id.name.len() - "%%FIXUP".len());
+                        id.name.truncate(id.name.len() - "%%fixup".len());
 
                         let idx = funcs
                             .iter()
@@ -259,7 +259,7 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                     ..
                 }) = &mut **func_call
                 {
-                    if target.as_ref() == "%%FIXUP" {
+                    if target.as_ref() == "%%fixup" {
                         // This is a return address
                         let mut return_id = funcs[func_idx].id.clone();
                         return_id.sub += 1;
@@ -327,7 +327,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
     {
         clobbers.remove(&stackptr());
         clobbers.remove(&ptr());
-        clobbers.remove(&ScoreHolder::new("%%FIXUP".to_string()).unwrap());
+        clobbers.remove(&ScoreHolder::new("%%fixup".to_string()).unwrap());
         clobbers = clobbers.into_iter().filter(|e| !e.as_ref().starts_with("%return%")).collect();
 
         for McFunction { id, .. } in mc_funcs.iter() {
@@ -346,7 +346,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 .enumerate()
                 .find(|(_, c)| {
                     if let Command::FuncCall(McFuncCall { id }) = c {
-                        id.name == "%%SAVEREGS"
+                        id.name == "%%saveregs"
                     } else {
                         false
                     }
@@ -381,7 +381,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 .enumerate()
                 .find(|(_, c)| {
                     if let Command::FuncCall(McFuncCall { id }) = c {
-                        id.name == "%%LOADREGS"
+                        id.name == "%%loadregs"
                     } else {
                         false
                     }
@@ -418,10 +418,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             .map(|(idx, func)| {
                 let pos = format!("-2 0 {}", idx);
                 let block = format!(
-                    "minecraft:command_block{{Command:\"{}\"}}",
-                    McFuncCall {
-                        id: func.id.clone()
-                    }
+                    "minecraft:command_block{{Command:\"function rust:{}\"}}",
+                    func.id
                 );
 
                 SetBlock {
@@ -437,7 +435,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             0,
             cir::Fill {
                 start: "-2 0 0".to_string(),
-                end: "-2 0 100".to_string(),
+                end: "-2 0 150".to_string(),
                 block: "minecraft:air".to_string(),
             }
             .into(),
@@ -827,12 +825,12 @@ fn compile_call(
             _ => {
                 let mut callee_id = McFuncId::new(name);
 
-                callee_id.name.push_str("%%FIXUP");
+                callee_id.name.push_str("%%fixup");
 
                 let mut before_cmds = Vec::new();
 
                 // Push return address
-                before_cmds.extend(push(ScoreHolder::new("%%FIXUP".to_string()).unwrap()));
+                before_cmds.extend(push(ScoreHolder::new("%%fixup".to_string()).unwrap()));
 
                 // Set arguments
                 for (idx, (arg, _attrs)) in arguments.iter().enumerate() {
@@ -907,11 +905,7 @@ pub fn compile_function(
             let mut sub = 0;
 
             let make_new_func = |sub| McFunction {
-                id: McFuncId {
-                    name: func.name.clone(),
-                    block: block.name.clone(),
-                    sub,
-                },
+                id: McFuncId::new_sub(func.name.clone(), block.name.clone(), sub),
                 cmds: vec![],
             };
 
@@ -921,7 +915,7 @@ pub fn compile_function(
             if idx == 0 {
                 this.cmds.push(
                     McFuncCall {
-                        id: McFuncId::new("%%SAVEREGS"),
+                        id: McFuncId::new("%%saveregs"),
                     }
                     .into(),
                 );
@@ -958,7 +952,7 @@ pub fn compile_function(
                 }) => {
                     this.cmds.push(
                         McFuncCall {
-                            id: McFuncId::new("%%LOADREGS"),
+                            id: McFuncId::new("%%loadregs"),
                         }
                         .into(),
                     );
@@ -984,7 +978,7 @@ pub fn compile_function(
 
                     this.cmds.push(
                         McFuncCall {
-                            id: McFuncId::new("%%LOADREGS"),
+                            id: McFuncId::new("%%loadregs"),
                         }
                         .into(),
                     );
@@ -1000,7 +994,7 @@ pub fn compile_function(
                     let mut id = McFuncId::new_block(&func.name, dest.clone());
 
                     if !options.direct_term {
-                        id.name.push_str("%%FIXUP");
+                        id.name.push_str("%%fixup");
                     }
 
                     this.cmds.push(McFuncCall { id }.into());
@@ -1021,8 +1015,8 @@ pub fn compile_function(
                     let mut false_dest = McFuncId::new_block(&func.name, false_dest.clone());
 
                     if !options.direct_term {
-                        true_dest.name.push_str("%%FIXUP");
-                        false_dest.name.push_str("%%FIXUP");
+                        true_dest.name.push_str("%%fixup");
+                        false_dest.name.push_str("%%fixup");
                     }
 
                     let mut true_cmd = Execute::new();
@@ -1082,7 +1076,7 @@ pub fn compile_function(
                         let mut dest_id = McFuncId::new_block(&func.name, dest_name.clone());
 
                         if !options.direct_term {
-                            dest_id.name.push_str("%%FIXUP");
+                            dest_id.name.push_str("%%fixup");
                         }
 
                         let mut branch_cmd = Execute::new();
@@ -1110,7 +1104,7 @@ pub fn compile_function(
                     let mut default_dest = McFuncId::new_block(&func.name, default_dest.clone());
 
                     if !options.direct_term {
-                        default_dest.name.push_str("%%FIXUP");
+                        default_dest.name.push_str("%%fixup");
                     }
 
                     let mut default_cmd = Execute::new();
@@ -1476,55 +1470,109 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            if indices.len() != 2 {
-                todo!("{:?}", indices);
-            }
+            // TODO: Optimize this instruction for when the indices are constant
 
-            if !matches!(
-                indices[0],
-                Operand::ConstantOperand(Constant::Int { value: 0, .. })
-            ) {
-                todo!("{:?}", indices[0]);
-            }
-
-            let (mut cmds, address) = eval_operand(address);
-            let (tmp, field) = eval_operand(&indices[1]);
-            cmds.extend(tmp);
-
-            assert_eq!(address.len(), 1, "multiword address");
-            let address = address[0].clone();
-
-            if field.len() != 1 {
-                todo!("multiword source {:?}", field);
-            }
-
-            let field = field[0].clone();
-            
             let dest = ScoreHolder::from_local_name(dest.clone(), 4);
             let dest = dest[0].clone();
 
-            // FIXME: This should actually calculate the offset of the field
-            cmds.push(
-                ScoreOp {
-                    target: field.clone().into(),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::MulAssign,
-                    source: ScoreHolder::new("%%FOUR".to_string()).unwrap().into(),
-                    source_obj: OBJECTIVE.to_string(),
-                }.into()
-            );
+            let mut ty = address.get_type();
+            let (mut cmds, addr) = eval_operand(address);
 
-            cmds.push(assign(dest.clone(), address));
-            cmds.push(
-                ScoreOp {
-                    target: dest.into(),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::AddAssign,
-                    source: field.into(),
-                    source_obj: OBJECTIVE.to_string(),
+            let mut index_holders = Vec::new();
+            for index in indices.iter() {
+                let (tmp, index_holder) = eval_operand(index);
+                cmds.extend(tmp);
+
+                assert_eq!(index_holder.len(), 1);
+                index_holders.push((index_holder[0].clone(), index));
+            }
+
+            assert_eq!(addr.len(), 1, "multiword address");
+            let addr = addr[0].clone();
+
+            cmds.push(assign(dest.clone(), addr));
+
+            while !index_holders.is_empty() {
+                let (index, raw_index) = index_holders.remove(0);
+
+                match ty {
+                    Type::PointerType { pointee_type, .. } => {
+                        ty = (*pointee_type).clone();
+
+                        // FIXME: This doesn't account for alignment
+                        for _ in 0..size_of_type(&pointee_type) {
+                            cmds.push(ScoreOp {
+                                target: dest.clone().into(),
+                                target_obj: OBJECTIVE.into(),
+                                kind: ScoreOpKind::AddAssign,
+                                source: index.clone().into(),
+                                source_obj: OBJECTIVE.into(),
+                            }.into());
+                        }
+                    }
+                    Type::NamedStructType { ty: struct_ty, .. } => {
+                        // Have to end here, because we don't know the type until runtime
+                        assert_eq!(index_holders, Vec::new());
+
+                        let struct_ty = struct_ty.unwrap().upgrade().unwrap();
+                        let struct_ty = struct_ty.read().unwrap();
+
+                        let (element_types, is_packed) = if let Type::StructType { element_types, is_packed } = &*struct_ty {
+                            (element_types, *is_packed)
+                        } else {
+                            todo!("{:?}", &*struct_ty)
+                        };
+
+                        let raw_index_maybe = eval_maybe_const(raw_index);
+
+                        if !element_types.iter().all(|e| size_of_type(e) == 4) {
+                            if let MaybeConst::Const(c) = raw_index_maybe {
+                                cmds.push(ScoreAdd {
+                                    target: dest.into(),
+                                    target_obj: OBJECTIVE.to_string(),
+                                    score: offset_of(element_types, is_packed, c as u32) as i32,
+                                }.into())
+                            } else {
+                                todo!()
+                            }
+                        } else if let MaybeConst::Const(c) = raw_index_maybe {
+                            cmds.push(ScoreAdd {
+                                target: dest.into(),
+                                target_obj: OBJECTIVE.to_string(),
+                                score: offset_of(element_types, is_packed, c as u32) as i32,
+                            }.into())
+                        } else {
+                            todo!()
+                        }
+
+                        break
+                    }
+                    Type::StructType { element_types, is_packed: false } => {
+                        // Have to end here, because we don't know the type until runtime
+                        assert_eq!(index_holders, Vec::new());
+
+                        if !element_types.iter().all(|e| size_of_type(e) == 4) {
+                            todo!("{:?}", element_types);
+                        }
+
+                        // FIXME: This should actually calculate the offset of the field
+                        for _ in 0..4 {
+                            cmds.push(
+                                ScoreOp {
+                                    target: dest.clone().into(),
+                                    target_obj: OBJECTIVE.to_string(),
+                                    kind: ScoreOpKind::AddAssign,
+                                    source: index.clone().into(),
+                                    source_obj: OBJECTIVE.to_string(),
+                                }.into()
+                            );
+                        }
+                        
+                        break
+                    }
+                    _ => todo!("{:?}", ty)
                 }
-                .into(),
-            );
+            }
 
             cmds
         }
@@ -1748,6 +1796,47 @@ pub fn compile_instr(
                 source: ScoreHolder::new("%%31BITSHIFT".to_string()).unwrap().into(),
                 source_obj: OBJECTIVE.to_string(),
             }.into());
+
+            cmds
+        }
+        Instruction::ExtractValue(ExtractValue {
+            aggregate,
+            indices,
+            dest,
+            ..
+        }) => {
+            let (mut cmds, aggr) = eval_operand(aggregate);
+
+            if indices.len() != 1 {
+                todo!("{:?}", indices)
+            }
+
+            if let Type::StructType { element_types, is_packed } = aggregate.get_type() {
+                let size = size_of_type(&element_types[indices[0] as usize]);
+                
+                let offset = offset_of(&element_types, is_packed, indices[0]);
+
+                let dest = ScoreHolder::from_local_name(dest.clone(), size);
+
+                if size != 4 {
+                    todo!()
+                }
+
+                if dest.len() != 1 {
+                    todo!()
+                }
+
+                let dest = dest[0].clone();
+
+                if offset % 4 != 0 {
+                    todo!()
+                }
+
+                // FIXME: If the element is smaller than a register this won't work
+                cmds.push(assign(dest, aggr[offset as usize / 4].clone()))
+            } else {
+                todo!("{:?}", aggregate)
+            }
 
             cmds
         }

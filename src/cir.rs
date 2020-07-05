@@ -247,18 +247,22 @@ pub struct FunctionId {
 
 impl FunctionId {
     pub fn new<T: ToString>(name: T) -> Self {
-        FunctionId {
-            name: name.to_string(),
-            block: Name::Number(0),
-            sub: 0,
-        }
+        Self::new_sub(name, Name::Number(0), 0)
     }
 
     pub fn new_block<T: ToString>(name: T, block: Name) -> Self {
+        Self::new_sub(name, block, 0)
+    }
+    
+    pub fn new_sub<T: ToString>(name: T, block: Name, sub: usize) -> Self {
+        let mut name = name.to_string();
+        name = name.replace(|c| c == '$' || c == '.' || c == '-', "_");
+        name = name.to_ascii_lowercase();
+
         FunctionId {
-            name: name.to_string(),
+            name,
             block,
-            sub: 0,
+            sub,
         }
     }
 }
