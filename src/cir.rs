@@ -3,6 +3,160 @@ use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
 
+/// Characters not allowed:
+/// All non-printing characters (anywhere)
+/// whitespace (anywhere)
+/// '*' (by itself)
+/// '@' (as the first character)
+/// '"' (technically allowed, but complicates JSON)
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+pub struct ScoreHolder(String);
+
+impl ScoreHolder {
+    pub fn new(string: String) -> Result<Self, String> {
+        if string.is_empty() {
+            return Err(string);
+        }
+
+        if string.len() == 1 && string == "*" {
+            return Err(string);
+        }
+
+        if string.starts_with('@') {
+            return Err(string);
+        }
+
+        if string.contains(|c: char| c.is_control() || c.is_whitespace()) {
+            return Err(string);
+        }
+
+        if string.contains('"') {
+            todo!("allow quotation marks {:?}", string)
+        }
+
+        Ok(ScoreHolder(string))
+    }
+
+    pub fn from_local_name(name: llvm_ir::Name, type_size: usize) -> Vec<Self> {
+        let prefix = match name {
+            llvm_ir::Name::Number(n) => format!("%{}", n),
+            llvm_ir::Name::Name(n) => n,
+        };
+
+        if type_size % 4 != 0 {
+            todo!("{:?}", type_size)
+        }
+
+        (0..(type_size / 4))
+            .map(|idx| ScoreHolder::new(format!("{}%{}", prefix, idx)).unwrap())
+            .collect()
+    }
+
+    /// Replaces any characters in the input string that are not valid in a score holder
+    /// with '_'
+    pub fn new_lossy(string: String) -> Self {
+        todo!("{:?}", string)
+    }
+}
+
+impl AsRef<str> for ScoreHolder {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ScoreHolder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Target {
+    Uuid(ScoreHolder),
+    Selector(Selector),
+    Asterisk,
+}
+
+impl From<ScoreHolder> for Target {
+    fn from(score_holder: ScoreHolder) -> Self {
+        Target::Uuid(score_holder)
+    }
+}
+
+impl From<Selector> for Target {
+    fn from(selector: Selector) -> Self {
+        Target::Selector(selector)
+    }
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Uuid(uuid) => write!(f, "{}", uuid),
+            Self::Selector(selector) => write!(f, "{}", selector),
+            Self::Asterisk => write!(f, "*"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Selector {
+    pub var: SelectorVariable,
+    pub args: Vec<SelectorArg>,
+}
+
+impl fmt::Display for Selector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.var)?;
+        let args = self
+            .args
+            .iter()
+            .map(|a| a.to_string())
+            .collect::<Vec<String>>();
+        if !args.is_empty() {
+            write!(f, "[{}]", args.join(","))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+// TODO: These support a much more limit set of characters than a scoreboard objective
+// TODO: This should be an enum, probably
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SelectorArg(pub String);
+
+impl fmt::Display for SelectorArg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum SelectorVariable {
+    NearestPlayer,
+    RandomPlayer,
+    AllPlayers,
+    AllEntities,
+    ThisEntity,
+}
+
+impl fmt::Display for SelectorVariable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NearestPlayer => write!(f, "@p"),
+            Self::RandomPlayer => write!(f, "@r"),
+            Self::AllPlayers => write!(f, "@a"),
+            Self::AllEntities => write!(f, "@e"),
+            Self::ThisEntity => write!(f, "@s"),
+        }
+    }
+}
+
+
+
 #[derive(Debug, PartialEq, Hash, Clone)]
 pub enum McRange {
     To(RangeToInclusive<i32>),
@@ -17,6 +171,24 @@ impl McRange {
             Self::From(r) => r.contains(&item),
             Self::Between(r) => r.contains(&item),
         }
+    }
+}
+
+impl From<RangeToInclusive<i32>> for McRange {
+    fn from(r: RangeToInclusive<i32>) -> Self {
+        Self::To(r)
+    }
+}
+
+impl From<RangeFrom<i32>> for McRange {
+    fn from(r: RangeFrom<i32>) -> Self {
+        Self::From(r)
+    }
+}
+
+impl From<RangeInclusive<i32>> for McRange {
+    fn from(r: RangeInclusive<i32>) -> Self {
+        Self::Between(r)
     }
 }
 
@@ -95,18 +267,17 @@ impl fmt::Display for FunctionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
 
-        let block = if let Name::Number(n) = self.block {
-            n
-        } else {
-            todo!("{:?}", self.name)
-        };
-
-        if block != 0 || self.sub != 0 {
-            write!(f, "-block{}", block)?;
+        if self.block != Name::Number(0) || self.sub != 0 {
+            match &self.block {
+                Name::Number(n) => write!(f, "-block{}", n)?,
+                Name::Name(n) => write!(f, "-block{}", n)?,
+            }
         }
+
         if self.sub != 0 {
             write!(f, "-sub{}", self.sub)?;
         }
+
         Ok(())
     }
 }
@@ -380,6 +551,7 @@ impl fmt::Display for Relation {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Command {
+    Fill(Fill),
     SetBlock(SetBlock),
     ScoreOp(ScoreOp),
     ScoreSet(ScoreSet),
@@ -394,6 +566,7 @@ pub enum Command {
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Command::Fill(s) => s.fmt(f),
             Command::SetBlock(s) => s.fmt(f),
             Command::ScoreOp(s) => s.fmt(f),
             Command::ScoreSet(s) => s.fmt(f),
@@ -404,6 +577,25 @@ impl fmt::Display for Command {
             Command::Data(s) => s.fmt(f),
             Command::Tellraw(s) => s.fmt(f),
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Fill {
+    pub start: String,
+    pub end: String,
+    pub block: String,
+}
+
+impl fmt::Display for Fill {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "fill {} {} {}", self.start, self.end, self.block)
+    }
+}
+
+impl From<Fill> for Command {
+    fn from(f: Fill) -> Self {
+        Command::Fill(f)
     }
 }
 
@@ -504,76 +696,6 @@ impl fmt::Display for SetBlockKind {
 }
 
 type Objective = String;
-
-// TODO: This should be an enum, probably
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct SelectorArg(pub String);
-
-impl fmt::Display for SelectorArg {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Selector {
-    pub var: SelectorVariable,
-    pub args: Vec<SelectorArg>,
-}
-
-impl fmt::Display for Selector {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.var)?;
-        let args = self
-            .args
-            .iter()
-            .map(|a| a.to_string())
-            .collect::<Vec<String>>();
-        if !args.is_empty() {
-            write!(f, "[{}]", args.join(","))
-        } else {
-            Ok(())
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum SelectorVariable {
-    NearestPlayer,
-    RandomPlayer,
-    AllPlayers,
-    AllEntities,
-    ThisEntity,
-}
-
-impl fmt::Display for SelectorVariable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NearestPlayer => write!(f, "@p"),
-            Self::RandomPlayer => write!(f, "@r"),
-            Self::AllPlayers => write!(f, "@a"),
-            Self::AllEntities => write!(f, "@e"),
-            Self::ThisEntity => write!(f, "@s"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Target {
-    Uuid(String),
-    Selector(Selector),
-    Asterisk,
-}
-
-impl fmt::Display for Target {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Uuid(uuid) => write!(f, "{}", uuid),
-            Self::Selector(selector) => write!(f, "{}", selector),
-            Self::Asterisk => write!(f, "*"),
-        }
-    }
-}
 
 /* Scoreboard (players functions)
 

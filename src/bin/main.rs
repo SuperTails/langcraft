@@ -1,7 +1,12 @@
 use std::path::Path;
 
 fn main() {
-    let funcs = langcraft::compile_bc(Path::new("mcfunction.bc")).unwrap();
+    let funcs = langcraft::compile_bc(Path::new("rustfunction.bc")).unwrap();
+
+    for file in std::fs::read_dir("out/").unwrap() {
+        let file = file.unwrap();
+        std::fs::remove_file(file.path()).unwrap();
+    }
 
     for func in funcs.iter() {
         let data = func
