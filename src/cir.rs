@@ -46,11 +46,7 @@ impl ScoreHolder {
             llvm_ir::Name::Name(n) => n,
         };
 
-        if type_size % 4 != 0 {
-            todo!("{:?}", type_size)
-        }
-
-        (0..(type_size / 4))
+        (0..((type_size + 3) / 4))
             .map(|idx| ScoreHolder::new(format!("{}%{}", prefix, idx)).unwrap())
             .collect()
     }
@@ -136,7 +132,6 @@ impl fmt::Display for SelectorArg {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SelectorVariable {
     NearestPlayer,
@@ -157,8 +152,6 @@ impl fmt::Display for SelectorVariable {
         }
     }
 }
-
-
 
 #[derive(Debug, PartialEq, Hash, Clone)]
 pub enum McRange {
@@ -256,17 +249,13 @@ impl FunctionId {
     pub fn new_block<T: ToString>(name: T, block: Name) -> Self {
         Self::new_sub(name, block, 0)
     }
-    
+
     pub fn new_sub<T: ToString>(name: T, block: Name, sub: usize) -> Self {
         let mut name = name.to_string();
         name = name.replace(|c| c == '$' || c == '.' || c == '-', "_");
         name = name.to_ascii_lowercase();
 
-        FunctionId {
-            name,
-            block,
-            sub,
-        }
+        FunctionId { name, block, sub }
     }
 }
 
