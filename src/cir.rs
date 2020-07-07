@@ -250,10 +250,15 @@ impl FunctionId {
         Self::new_sub(name, block, 0)
     }
 
-    pub fn new_sub<T: ToString>(name: T, block: Name, sub: usize) -> Self {
+    pub fn new_sub<T: ToString>(name: T, mut block: Name, sub: usize) -> Self {
         let mut name = name.to_string();
         name = name.replace(|c| c == '$' || c == '.' || c == '-', "_");
         name = name.to_ascii_lowercase();
+
+        if let Name::Name(n) = &mut block {
+            *n = n.replace(|c| c == '$' || c == '.' || c == '-', "_");
+            *n = n.to_ascii_lowercase();
+        }
 
         FunctionId { name, block, sub }
     }
