@@ -229,7 +229,8 @@ impl Default for Options {
 // This doesn't change what the function clobbers
 fn apply_fixups(funcs: &mut [McFunction]) {
     for func_idx in 0..funcs.len() {
-        for cmd_idx in 0..funcs[func_idx].cmds.len() {
+        let mut cmd_idx = 0;
+        while cmd_idx < funcs[func_idx].cmds.len() {
             if let Command::FuncCall(McFuncCall { id }) = &mut funcs[func_idx].cmds[cmd_idx] {
                 // TODO: `strip_suffix` is nightly but it's exactly what I'm doing
                 if id.name.ends_with("%%fixup") {
@@ -261,6 +262,7 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                         kind: SetBlockKind::Destroy,
                     }
                     .into();
+                    funcs[func_idx].cmds.insert(cmd_idx, Command::Comment(format!("{}", id)));
                 }
             } else if let Command::Execute(Execute {
                 run: Some(func_call),
@@ -303,6 +305,8 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                         } else {
                             unreachable!()
                         }
+
+                        funcs[func_idx].cmds.insert(cmd_idx, Command::Comment(format!("{}", id)));
                     }
                 } else if let Command::ScoreGet(ScoreGet {
                     target: Target::Uuid(target),
@@ -338,6 +342,8 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                     }
                 }
             }
+
+            cmd_idx += 1;
         }
     }
 }
@@ -991,7 +997,9 @@ fn compile_call(
                 assert_eq!(arguments.len(), 1);
                 assert!(dest.is_none());
                 println!("Assumption {:?}", arguments[0]);
-                (Vec::new(), None)
+
+                let cmds = vec![Command::Comment(format!("assumption {:?}", arguments[0]))];
+                (cmds, None)
             }
             "print_raw" => {
                 assert_eq!(arguments.len(), 2);
@@ -1059,7 +1067,7 @@ fn compile_call(
                 assert!(dest.is_none());
 
                 let (mut cmds, name) = eval_operand(&arguments[0].0, globals);
-
+                
                 let name = name[0].clone();
 
                 cmds.push(
@@ -1078,7 +1086,7 @@ fn compile_call(
 
                 (cmds, None)
             }
-            "turtle_x" | "turtle_y" | "turtle_z" => {
+            n@"turtle_x" | n@"turtle_y" | n@"turtle_z" => {
                 assert_eq!(arguments.len(), 1);
 
                 assert!(dest.is_none());
@@ -1093,6 +1101,8 @@ fn compile_call(
 
                 // TODO: Optimize for const argument
                 let (mut cmds, pos) = eval_operand(&arguments[0].0, globals);
+
+                cmds.insert(0, Command::Comment(format!("call to {}", n)));
 
                 let pos = pos[0].clone();
 
@@ -1147,7 +1157,9 @@ fn compile_call(
                     kind: SetBlockKind::Replace,
                 });
 
-                (vec![cmd.into()], None)
+                let cmds = vec![Command::Comment("call to turtle_set".to_string()), cmd.into()];
+
+                (cmds, None)
             }
             "turtle_check" => {
                 assert_eq!(arguments.len(), 1);
@@ -1256,6 +1268,8 @@ fn compile_call(
                 let dest = dest[0].clone();
 
                 let mut cmds = Vec::new();
+
+                cmds.push(Command::Comment("call to turtle_get".to_string()));
 
                 // Default value (Air)
                 cmds.push(
@@ -1435,6 +1449,8 @@ pub fn compile_function(
                     return_operand: None,
                     ..
                 }) => {
+                    this.cmds.push(Command::Comment("return".to_string()));
+
                     this.cmds.push(
                         McFuncCall {
                             id: McFuncId::new("%%loadregs"),
@@ -1453,6 +1469,8 @@ pub fn compile_function(
                     return_operand: Some(operand),
                     ..
                 }) => {
+                    this.cmds.push(Command::Comment(format!("return operand {:?}", operand)));
+
                     let (cmds, source) = eval_operand(operand, globals);
 
                     this.cmds.extend(cmds);
@@ -1648,7 +1666,7 @@ pub fn compile_function(
         .collect::<Vec<_>>();
 
     let mut clobbers = BTreeSet::new();
-    for cmd in funcs.iter().flat_map(|f| f.cmds.iter()) {
+    for cmd in funcs.iter().flat_map(|f| f.cmds.iter()).filter(|cmd| !matches!(cmd, Command::Comment(_))) {
         let cmd_str = cmd.to_string();
         for mut holder in cmd_str.split_whitespace().filter(|s| s.contains('%')) {
             if holder.ends_with(',') {
@@ -2021,6 +2039,8 @@ pub fn shift_left_bytes(holder: ScoreHolder, byte: u32) -> Vec<Command> {
 
     let mut cmds = Vec::new();
 
+    cmds.push(Command::Comment(format!("shift_left_bytes by {} bytes", byte)));
+
     for _ in 0..byte {
         cmds.push(
             ScoreOp {
@@ -2041,6 +2061,8 @@ pub fn shift_right_bytes(holder: ScoreHolder, byte: u32) -> Vec<Command> {
     assert!(byte < 4);
 
     let mut cmds = Vec::new();
+
+    cmds.push(Command::Comment(format!("shift_right_bytes by {} bytes", byte)));
 
     for _ in 0..byte {
         cmds.push(
@@ -2243,7 +2265,7 @@ pub fn compile_instr(
 
             let mut start_cmds = match eval_maybe_const(address, globals) {
                 MaybeConst::Const(addr) => vec![ScoreSet {
-                    target: dest.into(),
+                    target: dest.clone().into(),
                     target_obj: OBJECTIVE.into(),
                     score: addr + offset as i32,
                 }
@@ -2255,7 +2277,7 @@ pub fn compile_instr(
                     cmds.push(assign(dest.clone(), addr));
                     cmds.push(
                         ScoreAdd {
-                            target: dest.into(),
+                            target: dest.clone().into(),
                             target_obj: OBJECTIVE.into(),
                             score: offset as i32,
                         }
@@ -2264,6 +2286,8 @@ pub fn compile_instr(
                     cmds
                 }
             };
+
+            start_cmds.insert(0, Command::Comment(format!("getelementptr\naddress: {:?}\nindices: {:?}\ndest: {}", address, indices, dest)));
 
             start_cmds.extend(cmds);
 
@@ -2504,6 +2528,8 @@ pub fn compile_instr(
                     .find(|(_, b)| &b.name == block)
                     .unwrap()
                     .0 as i32;
+
+                cmds.push(Command::Comment(format!("block {}\nvalue {:?}", block, value)));
 
                 let (tmp, val) = eval_operand(value, globals);
                 cmds.extend(tmp);

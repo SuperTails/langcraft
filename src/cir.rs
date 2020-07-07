@@ -562,6 +562,7 @@ pub enum Command {
     FuncCall(FuncCall),
     Data(Data),
     Tellraw(Tellraw),
+    Comment(String),
 }
 
 impl fmt::Display for Command {
@@ -577,6 +578,11 @@ impl fmt::Display for Command {
             Command::FuncCall(s) => s.fmt(f),
             Command::Data(s) => s.fmt(f),
             Command::Tellraw(s) => s.fmt(f),
+            Command::Comment(s) => {
+                let mut commented = s.replace('\n', "\n# ");
+                commented.insert_str(0, "# ");
+                write!(f, "{}", commented)
+            }
         }
     }
 }
