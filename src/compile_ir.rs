@@ -53,7 +53,7 @@ pub fn print_entry(location: &McFuncId) -> Command {
             args: Vec::new(),
         }
         .into(),
-        message: format!("[{{\"text\": \"entered block {}\"}}]", location),
+        message: cir::TextBuilder::new().append_text(format!("entered block {}", location)).build(),
     }
     .into()
 }
@@ -416,9 +416,14 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
 
             let base_set = assign(stackbaseptr(), stackptr());
 
+            let message = cir::TextBuilder::new()
+                .append_text(format!("%stackptr at start of {} is ", func.id))
+                .append_score(stackptr(), OBJECTIVE.into(), None)
+                .build();
+
             let save_code = std::iter::once(Tellraw {
                 target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: vec![] }.into(),
-                message: format!("[{{\"text\": \"%stackptr at start of {} is \"}}, {{\"score\": {{\"name\": \"%stackptr\", \"objective\": \"rust\" }} }}]", func.id),
+                message,
             }.into()).chain(clobber_list
                 .get(&func.id.name)
                 .unwrap()
@@ -758,77 +763,6 @@ fn one_global_var_init(
         }
         _ => todo!("{:?}", v.ty),
     }
-
-    /*match &v.initializer {
-        Some(Constant::Int { bits: 32, value }) => vec![Command::from(ScoreSet {
-            target: target.into(),
-            target_obj: OBJECTIVE.to_string(),
-            score: *value as i32,
-        })],
-        Some(Constant::Array {
-            element_type: Type::IntegerType { bits: 8 },
-            elements,
-        }) => {
-            let start = get_alloc(elements.len() as u32);
-
-            if elements.len() != 4 {
-                todo!("{:?}", elements.len())
-            }
-
-            todo!()
-        }
-        Some(Constant::Array {
-            element_type: Type::IntegerType { bits: 32 },
-            elements,
-        }) => {
-            let start = get_alloc(4 * elements.len() as u32);
-
-            let mut cmds = vec![ScoreSet {
-                target: target.into(),
-                target_obj: OBJECTIVE.to_string(),
-                score: start as i32,
-            }
-            .into()];
-
-            for (idx, elem) in elements.iter().enumerate() {
-                let score = if let Constant::Int { bits: 32, value } = elem {
-                    *value as i32
-                } else {
-                    todo!("{:?}", elem);
-                };
-
-                cmds.push(set_memory(score, start as i32 + 4 * idx as i32));
-            }
-
-            cmds
-        }
-        Some(Constant::Struct {
-            name: None,
-            values,
-            is_packed: false,
-        }) => {
-            let start = get_alloc(4 * values.len() as u32);
-
-            let mut cmds = vec![ScoreSet {
-                target: Target::Uuid(target),
-                target_obj: OBJECTIVE.to_string(),
-                score: start as i32,
-            }
-            .into()];
-
-            for (idx, v) in values.iter().enumerate() {
-                // TODO: Support nested structs
-                if let Constant::Int { bits: 32, value } = v {
-                    cmds.push(set_memory(*value as i32, start as i32 + 4 * idx as i32));
-                } else {
-                    todo!("value {:?}", v);
-                }
-            }
-
-            cmds
-        }
-        _ => todo!("constant {:?}", v),
-    }*/
 }
 
 pub fn mc_block_name(func_name: &str, block_name: &Name) -> String {
@@ -976,21 +910,26 @@ fn compile_call(
 
         match name.as_str() {
             "_ZN4core9panicking18panic_bounds_check17h5fbe3c71866b90c6E" => {
+                let message = cir::TextBuilder::new().append_text(name.clone()).build();
+
                  (vec![Tellraw {
                     target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
-                    message: "[{\"text\":\"_ZN4core9panicking18panic_bounds_check17h5fbe3c71866b90c6E\"}]".to_string(),
+                    message,
                 }.into()], None)
             }
             "_ZN4core5slice20slice_index_len_fail17h850600276ec026ffE" => {
+                let message = cir::TextBuilder::new().append_text(name.clone()).build();
                 (vec![Tellraw {
                     target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
-                    message: "[{\"text\":\"_ZN4core5slice20slice_index_len_fail17h850600276ec026ffE\"}]".to_string(),
+                    message,
                 }.into()], None)
             }
             "_ZN4core5slice22slice_index_order_fail17h6ec1edcf70812475E" => {
+                let message = cir::TextBuilder::new().append_text(name.clone()).build();
+
                 (vec![Tellraw {
                     target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
-                    message: "[{\"text\":\"_ZN4core5slice22slice_index_order_fail17h6ec1edcf70812475E\"}]".to_string(),
+                    message,
                 }.into()], None)
             }
             "llvm.assume" => {
@@ -1058,7 +997,7 @@ fn compile_call(
                         args: Vec::new(),
                     }
                     .into(),
-                    message: format!("[{{\"text\":\"{}\"}}]", text)
+                    message: cir::TextBuilder::new().append_text(text.into()).build(),
                 }.into()], None)
             }
             "print" => {
@@ -1076,10 +1015,7 @@ fn compile_call(
                             var: cir::SelectorVariable::AllPlayers,
                             args: vec![],
                         }),
-                        message: format!(
-                            "[{{\"score\": {{\"name\": \"{}\", \"objective\": \"rust\" }} }}]",
-                            name
-                        ),
+                        message: cir::TextBuilder::new().append_score(name, OBJECTIVE.into(), None).build(),
                     }
                     .into(),
                 );
@@ -1627,21 +1563,25 @@ pub fn compile_function(
                             args: Vec::new(),
                         }
                         .into(),
-                        message: "[{\"text\": \"ENTERED UNREACHABLE CODE\"}]".to_string(),
+                        message: cir::TextBuilder::new().append_text("ENTERED UNREACHABLE CODE".into()).build(),
                     }
                     .into(),
                 ),
-                Terminator::Resume(_) => this.cmds.push(
-                    Tellraw {
-                        target: cir::Selector {
-                            var: cir::SelectorVariable::AllPlayers,
-                            args: Vec::new(),
+                Terminator::Resume(_) => {
+                    let message = cir::TextBuilder::new().append_text("OH NO EXCEPTION HANDLING TOOD".into()).build();
+
+                    this.cmds.push(
+                        Tellraw {
+                            target: cir::Selector {
+                                var: cir::SelectorVariable::AllPlayers,
+                                args: Vec::new(),
+                            }
+                            .into(),
+                            message,
                         }
                         .into(),
-                        message: "[{\"text\": \"OH NO EXCEPTION HANDLING TODO\"}]".to_string(),
-                    }
-                    .into(),
-                ),
+                    )
+                }
                 term => todo!("terminator {:?}", term),
             }
 
@@ -1668,7 +1608,7 @@ pub fn compile_function(
     let mut clobbers = BTreeSet::new();
     for cmd in funcs.iter().flat_map(|f| f.cmds.iter()).filter(|cmd| !matches!(cmd, Command::Comment(_))) {
         let cmd_str = cmd.to_string();
-        for mut holder in cmd_str.split_whitespace().filter(|s| s.contains('%')) {
+        for mut holder in cmd_str.split_whitespace().filter(|s| s.contains('%') && !s.contains('{')) {
             if holder.ends_with(',') {
                 holder = &holder[..holder.len() - 1];
             }
@@ -2666,7 +2606,6 @@ pub fn compile_instr(
                         todo!()
                     }
 
-                    // FIXME: If the element is smaller than a register this won't work
                     cmds.push(assign(dest, aggr[offset as usize / 4].clone()))
                 } else if size == 1 {
                     let dest = dest[0].clone();

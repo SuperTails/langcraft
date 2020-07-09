@@ -2,6 +2,9 @@ use llvm_ir::Name;
 use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
+pub use raw_text::*;
+
+mod raw_text;
 
 /// Characters not allowed:
 /// All non-printing characters (anywhere)
@@ -9,7 +12,7 @@ use std::string::ToString;
 /// '*' (by itself)
 /// '@' (as the first character)
 /// '"' (technically allowed, but complicates JSON)
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize)]
 pub struct ScoreHolder(String);
 
 impl ScoreHolder {
@@ -99,7 +102,8 @@ impl fmt::Display for Target {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(into = "String")]
 pub struct Selector {
     pub var: SelectorVariable,
     pub args: Vec<SelectorArg>,
@@ -118,6 +122,12 @@ impl fmt::Display for Selector {
         } else {
             Ok(())
         }
+    }
+}
+
+impl Into<String> for Selector {
+    fn into(self) -> String {
+        self.to_string()
     }
 }
 
@@ -316,7 +326,7 @@ impl fmt::Display for FuncCall {
 /// Execute:
 /// `<TARGET>` is the same as the one for the `data` command
 ///
-/// ```
+/// ```text
 /// execute
 /// ... align <axes> -> execute
 /// ... anchored <anchor> -> execute
@@ -344,7 +354,6 @@ impl fmt::Display for FuncCall {
 ///         ... matches <range> -> [execute]
 /// ... run <command>
 /// ```
-
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct Execute {
     pub subcommands: Vec<ExecuteSubCmd>,
@@ -488,7 +497,7 @@ pub enum ExecuteCondition {
         kind: ExecuteCondKind,
     },
     Block {
-        pos: String,
+        pos: BlockPos,
         block: String,
     },
 }
@@ -561,7 +570,7 @@ pub enum Command {
     Execute(Execute),
     FuncCall(FuncCall),
     Data(Data),
-    Tellraw(Tellraw),
+    Tellraw(Box<Tellraw>),
     Comment(String),
 }
 
@@ -656,26 +665,31 @@ impl From<SetBlock> for Command {
 
 impl From<Tellraw> for Command {
     fn from(t: Tellraw) -> Self {
-        Command::Tellraw(t)
+        Command::Tellraw(Box::new(t))
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Tellraw {
     pub target: Target,
-    pub message: String,
+    pub message: TextComponent,
 }
+
+type NbtPath = String;
+type BlockPos = String;
+type StorageId = String;
+type StringNbt = String;
 
 impl fmt::Display for Tellraw {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "tellraw {} {}", self.target, self.message)
+        write!(f, "tellraw {} {}", self.target, serde_json::to_string(&self.message).unwrap())
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct SetBlock {
     pub pos: String,
-    pub block: String,
+    pub block: BlockPos,
     pub kind: SetBlockKind,
 }
 
