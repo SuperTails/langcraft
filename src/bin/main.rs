@@ -30,4 +30,13 @@ fn main() {
         "Generated {} commands",
         funcs.iter().map(|f| f.cmds.len()).sum::<usize>()
     );
+
+    let ptr_read_small = langcraft::compile_ir::read_ptr_small(
+        langcraft::cir::ScoreHolder::new("%temp1000".to_string()).unwrap(),
+        false,
+    );
+
+    for c in ptr_read_small {
+        println!("{}", c);
+    }
 }

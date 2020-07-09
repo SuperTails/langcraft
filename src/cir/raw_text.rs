@@ -4,19 +4,19 @@ use super::{BlockPos, Selector, NbtPath, StorageId, ScoreHolder, Objective, Stri
 
 #[derive(Default)]
 pub struct TextBuilder {
-    inner: Option<Box<TextComponent>>,
+    inner: Option<Vec<TextComponent>>,
 }
 
 impl TextBuilder {
     fn innermost(&mut self) -> Option<&mut TextComponent> {
-        self.inner.as_mut().map(|i| i.innermost())
+        self.inner.as_mut().map(|i| i.last_mut().unwrap().innermost())
     }
 
     fn push_component(&mut self) {
-        *self.next_component() = Some(Default::default())
+        *self.next_component() = Some(vec![Default::default()])
     }
 
-    fn next_component(&mut self) -> &mut Option<Box<TextComponent>> {
+    fn next_component(&mut self) -> &mut Option<Vec<TextComponent>> {
         if self.inner.is_none() {
             &mut self.inner
         } else {
@@ -28,8 +28,8 @@ impl TextBuilder {
         Default::default()
     }
 
-    pub fn build(&mut self) -> TextComponent {
-        (**self.inner.as_ref().expect("tried to build empty `TextComponent`")).clone()
+    pub fn build(&mut self) -> Vec<TextComponent> {
+        self.inner.as_ref().expect("tried to build empty `TextComponent`").clone()
     }
 
     pub fn color(&mut self, color: Color) -> &mut Self {
@@ -88,7 +88,7 @@ pub struct TextComponent {
     pub storage: Option<StorageId>,
 
     // --- Child component ---
-    pub extra: Option<Box<TextComponent>>,
+    pub extra: Option<Vec<TextComponent>>,
 
     // --- Formatting ---
     pub color: Option<Color>,
@@ -108,7 +108,7 @@ pub struct TextComponent {
 impl TextComponent {
     fn innermost(&mut self) -> &mut TextComponent {
         if self.extra.is_some() {
-            self.extra.as_mut().unwrap().innermost()
+            self.extra.as_mut().unwrap().last_mut().unwrap().innermost()
         } else {
             self
         }

@@ -9,6 +9,7 @@ use crate::cir::{
 use either::Either;
 use lazy_static::lazy_static;
 use llvm_ir::constant::GetElementPtr as GetElementPtrConst;
+use llvm_ir::constant::BitCast as BitCastConst;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractValue, GetElementPtr, ICmp, InsertValue, LShr, Load,
     Mul, Or, Phi, Select, Shl, Store, Sub, Trunc, Xor, ZExt,
@@ -633,6 +634,16 @@ fn compile_global_var_init(
     (cmds, globals)
 }
 
+fn init_array_zeroed(start_addr: u32, element_type: &Type, num_elements: usize) -> Vec<Command> {
+    if !matches!(element_type, Type::IntegerType { bits: 8 }) {
+        todo!("{:?}", element_type)
+    }
+
+    let elements = vec![Constant::Int { bits: 8, value: 0 }; num_elements];
+
+    init_array(start_addr, element_type, &elements)
+}
+
 fn init_array(start_addr: u32, element_type: &Type, elements: &[Constant]) -> Vec<Command> {
     if !matches!(element_type, Type::IntegerType { bits: 8 }) {
         todo!("{:?}", element_type)
@@ -660,6 +671,49 @@ fn init_array(start_addr: u32, element_type: &Type, elements: &[Constant]) -> Ve
             set_memory(value, start_addr as i32 + 4 * word_idx as i32)
         })
         .collect()
+}
+
+fn init_struct_zeroed(start_addr: u32, element_types: &[Type], is_packed: bool) -> Vec<Command> {
+    let values = element_types
+        .iter()
+        .map(|ty| match ty {
+            Type::ArrayType { element_type: ty, num_elements: 0 } if **ty == Type::IntegerType { bits: 8 } => {
+                Constant::Array { element_type: Type::IntegerType { bits: 8 }, elements: Vec::new() }
+            }
+            _ => todo!("{:?}", ty)
+        })
+        .collect::<Vec<_>>();
+    
+    init_struct(start_addr, &values, is_packed)
+}
+
+fn init_struct(start_addr: u32, values: &[Constant], is_packed: bool) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    if is_packed {
+        if let [Constant::Array { elements, .. }] = values {
+            if elements.is_empty() {
+                // do nothing
+            } else {
+                todo!("{:?}", elements)
+            }
+        } else {
+            todo!("{:?}", values)
+        }
+    } else {
+        for (value_idx, value) in values.iter().enumerate() {
+            if let Constant::Int { bits: 32, value } = value {
+                cmds.push(set_memory(
+                    *value as i32,
+                    start_addr as i32 + 4 * value_idx as i32,
+                ));
+            } else {
+                todo!("{:?}", value)
+            }
+        }
+    }
+
+    cmds
 }
 
 fn one_global_var_init(
@@ -690,7 +744,18 @@ fn one_global_var_init(
                 .into(),
             );
 
-            match v.initializer.as_ref().unwrap() {
+            let mut init = v.initializer.clone().unwrap();
+
+            if let Constant::BitCast(bc) = init {
+                let BitCastConst { operand, .. } = *bc;
+
+                init = operand;
+            }
+
+            match init {
+                Constant::AggregateZero(Type::StructType { element_types, is_packed }) => {
+                    cmds.extend(init_struct_zeroed(addr as u32, &element_types, is_packed))
+                }
                 Constant::Struct {
                     values,
                     is_packed: true,
@@ -708,20 +773,37 @@ fn one_global_var_init(
                         ))
                     // FIXME: this should actually increment addr but i don't feel like it
                     } else {
-                        for v in values {
+                        for mut v in values {
+                            if let Constant::BitCast(bc) = v {
+                                v = bc.operand;
+                            }
+
                             match v {
-                                Constant::GetElementPtr(g) => {
-                                    let value = getelementptr_const(g, globals);
+                                Constant::GlobalReference { name, .. } => {
+                                    let value = globals.get(&name).unwrap().0;
+
                                     cmds.push(set_memory(value as i32, addr as i32));
 
                                     // Width of a pointer
                                     addr += 4;
                                 }
+                                Constant::GetElementPtr(g) => {
+                                    let value = getelementptr_const(&*g, globals);
+                                    cmds.push(set_memory(value as i32, addr as i32));
+
+                                    // Width of a pointer
+                                    addr += 4;
+                                }
+                                Constant::AggregateZero(Type::ArrayType { element_type, num_elements }) => {
+                                    let tmp = init_array_zeroed(addr, &element_type, num_elements);
+                                    addr += 4 * tmp.len() as u32;
+                                    cmds.extend(tmp);
+                                }
                                 Constant::Array {
                                     element_type,
                                     elements,
                                 } => {
-                                    let tmp = init_array(addr, element_type, elements);
+                                    let tmp = init_array(addr, &element_type, &elements);
                                     addr += 4 * tmp.len() as u32;
                                     cmds.extend(tmp);
                                 }
@@ -732,31 +814,26 @@ fn one_global_var_init(
                 }
                 Constant::Struct {
                     values,
-                    is_packed: false,
+                    is_packed,
                     ..
                 } => {
-                    for (value_idx, value) in values.iter().enumerate() {
-                        if let Constant::Int { bits: 32, value } = value {
-                            cmds.push(set_memory(
-                                *value as i32,
-                                start as i32 + 4 * value_idx as i32,
-                            ));
-                        } else {
-                            todo!("{:?}", value)
-                        }
-                    }
+                    cmds.extend(init_struct(addr as u32, &values, is_packed));
                 }
                 Constant::Int { bits: 32, value } => {
-                    cmds.push(set_memory(*value as i32, start as i32));
+                    cmds.push(set_memory(value as i32, addr as i32));
                 }
                 Constant::Array {
                     element_type,
                     elements,
                 } => {
                     // FIXME: this should actually increment addr but i don't feel like it
-                    cmds.extend(init_array(start as u32, element_type, elements));
+                    cmds.extend(init_array(addr as u32, &element_type, &elements));
                 }
-                init => todo!("{:?}, {:?}", v.ty, init),
+                init => {
+                    println!("Type: {:?}", v.ty);
+                    println!("Initializer: {:?}", init);
+                    todo!()
+                }
             }
 
             (cmds, start as u32, v.initializer.clone().unwrap())
@@ -909,25 +986,14 @@ fn compile_call(
             .map(|d| ScoreHolder::from_local_name(d, dest_size));
 
         match name.as_str() {
-            "_ZN4core9panicking18panic_bounds_check17h5fbe3c71866b90c6E" => {
+            "_ZN4core9panicking18panic_bounds_check17hcf1f9388101a5606E" |
+            "_ZN4core5slice22slice_index_order_fail17h6ec1edcf70812475E" |
+            "_ZN4core5slice20slice_index_len_fail17h850600276ec026ffE" |
+            "_ZN4core9panicking18panic_bounds_check17h5fbe3c71866b90c6E" |
+            "_ZN4core5slice20slice_index_len_fail17hf94394b79f40f6f8E" => {
                 let message = cir::TextBuilder::new().append_text(name.clone()).build();
 
                  (vec![Tellraw {
-                    target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
-                    message,
-                }.into()], None)
-            }
-            "_ZN4core5slice20slice_index_len_fail17h850600276ec026ffE" => {
-                let message = cir::TextBuilder::new().append_text(name.clone()).build();
-                (vec![Tellraw {
-                    target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
-                    message,
-                }.into()], None)
-            }
-            "_ZN4core5slice22slice_index_order_fail17h6ec1edcf70812475E" => {
-                let message = cir::TextBuilder::new().append_text(name.clone()).build();
-
-                (vec![Tellraw {
                     target: cir::Selector { var: cir::SelectorVariable::AllPlayers, args: Vec::new() }.into(),
                     message,
                 }.into()], None)

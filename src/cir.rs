@@ -672,7 +672,7 @@ impl From<Tellraw> for Command {
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Tellraw {
     pub target: Target,
-    pub message: TextComponent,
+    pub message: Vec<TextComponent>,
 }
 
 type NbtPath = String;
