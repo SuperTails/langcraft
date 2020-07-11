@@ -106,6 +106,43 @@ pub struct TextComponent {
 }
 
 impl TextComponent {
+    pub fn as_string<F>(&self, scores: &F) -> Result<String, String>
+        where
+            F: Fn(&ScoreHolder, &Objective) -> Option<i32>,
+    {
+        let mut result = if let Some(text) = &self.text {
+            text.clone()
+        } else if let Some(translate) = &self.translate {
+            todo!("{:?}", translate)
+        } else if let Some(ScoreComponent { name, objective, value }) = &self.score {
+            let result = if let Some(v) = value {
+                *v
+            } else if let Some(v) = scores(name, objective) {
+                v
+            } else {
+                todo!("how to print undefined score {}", name)
+            };
+
+            result.to_string()
+        } else if let Some(selector) = &self.selector {
+            todo!("{:?}", selector)
+        } else if let Some(keybind) = &self.keybind {
+            todo!("{:?}", keybind)
+        } else if let Some(nbt) = &self.nbt {
+            todo!("{:?}", nbt)
+        } else {
+            panic!("no content tags in `TextComponent`")
+        };
+
+        if let Some(extra) = &self.extra {
+            for ex in extra {
+                result.push_str(&ex.as_string(scores)?);
+            }
+        }
+        
+        Ok(result)
+    }
+
     fn innermost(&mut self) -> &mut TextComponent {
         if self.extra.is_some() {
             self.extra.as_mut().unwrap().last_mut().unwrap().innermost()

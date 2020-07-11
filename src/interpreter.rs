@@ -5,12 +5,16 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 
 pub struct Interpreter {
-    rust_scores: HashMap<ScoreHolder, i32>,
+    pub rust_scores: HashMap<ScoreHolder, i32>,
     call_stack: Vec<(usize, usize)>,
     program: Vec<Function>,
-    memory: [i32; 4096],
+    pub memory: [i32; 4096],
     ptr_pos: (i32, i32, i32),
     turtle_pos: (i32, i32, i32),
+    letters: HashMap<(i32, i32, i32), char>,
+    next_pos: Option<(usize, usize)>,
+    pub output: Vec<String>,
+    commands_run: usize,
 }
 
 impl Interpreter {
@@ -21,6 +25,11 @@ impl Interpreter {
             program.push(func.clone());
         }
 
+        let mut letters = HashMap::new();
+        for (z, letter) in ['A', 'B', 'A', 'A', '[', ']'].iter().enumerate() {
+            letters.insert((-16, 16, -(z as i32)), *letter);
+        }
+
         Interpreter {
             program,
             call_stack: vec![(func_idx, 0)],
@@ -28,6 +37,60 @@ impl Interpreter {
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
+            next_pos: None,
+            commands_run: 0,
+            output: Vec::new(),
+            letters,
+        }
+    }
+
+    pub fn next_command(&self) -> Option<&Command> {
+        if !self.halted() {
+            let (func_idx, cmd_idx) = self.call_stack.last().unwrap();
+            Some(&self.program[*func_idx].cmds[*cmd_idx])
+        } else {
+            None
+        }
+    }
+
+    pub fn eval_message(&self, msg: &[TextComponent]) -> String {
+        let mut result = String::new();
+        let score_getter = |name: &ScoreHolder, obj: &Objective| -> Option<i32> {
+            if obj != "rust" {
+                None
+            } else {
+                self.rust_scores.get(name).copied()
+            }
+        };
+
+        for s in msg.iter().map(|m| m.as_string(&score_getter).unwrap()) {
+            result.push_str(&s);
+        }
+        result
+    }
+
+    fn turtle_pos_set(&mut self, coord: usize, cmd: &Command) {
+        let exec = if let Command::Execute(Execute { run: Some(exec), .. }) = cmd {
+            &**exec
+        } else {
+            unreachable!()
+        };
+
+        if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = exec {
+            if target_obj != OBJECTIVE {
+                todo!("{:?}", target_obj)
+            }
+
+            let value = self.get_rust_score(target).unwrap();
+
+            match coord {
+                0 => self.turtle_pos.0 = value,
+                1 => self.turtle_pos.1 = value,
+                2 => self.turtle_pos.2 = value,
+                _ => panic!("{}", coord),
+            }
+        } else {
+            unreachable!()
         }
     }
 
@@ -111,7 +174,7 @@ impl Interpreter {
                             }
                             ScoreOpKind::AddAssign => {
                                 let mut val = self.get_rust_score(target).unwrap();
-                                val += rhs;
+                                val = val.wrapping_add(rhs);
                                 self.rust_scores.insert(target.clone(), val);
                             }
                             ScoreOpKind::SubAssign => {
@@ -188,7 +251,9 @@ impl Interpreter {
             }
             Command::Tellraw(b) => {
                 let Tellraw { message, target: _target } = &**b;
-                println!("Tellraw with message: {}", serde_json::to_string(message).unwrap());
+                let msg = self.eval_message(&message);
+                println!("\n{}\n", msg);
+                self.output.push(msg);
             }
             Command::SetBlock(SetBlock { pos, block, kind: _kind }) => {
                 if pos.starts_with("-2 1 ") && block == "minecraft:redstone_block" {
@@ -196,7 +261,8 @@ impl Interpreter {
 
                     println!("Branching to {}", self.program[z as usize].id);
 
-                    *self.call_stack.last_mut().unwrap() = (z.try_into().unwrap(), 0);
+                    assert_eq!(self.next_pos, None);
+                    self.next_pos = Some((z.try_into().unwrap(), 0));
                 } else if pos.starts_with("-2 0 ") && block.starts_with("minecraft:command_block") {
                     // Command block placement
                     println!("Command block placement at {} block {}", pos, block);
@@ -205,33 +271,43 @@ impl Interpreter {
 
                     println!("Branching to {}", self.program[z as usize].id);
 
-                    *self.call_stack.last_mut().unwrap() = (z.try_into().unwrap(), 0);
+                    assert_eq!(self.next_pos, None);
+                    self.next_pos = Some((z.try_into().unwrap(), 0));
                 } else if pos.starts_with("~ ~1 ") && block == "minecraft:redstone_block" {
                     let z = pos["~ ~1 ".len()..].parse::<i32>().unwrap();
 
                     println!("Branching to {}", self.program[z as usize].id);
 
-                    *self.call_stack.last_mut().unwrap() = (z.try_into().unwrap(), 0);
+                    assert_eq!(self.next_pos, None);
+                    self.next_pos = Some((z.try_into().unwrap(), 0));
                 } else if pos == "~ ~1 ~" && block == "minecraft:air" {
                     // Clearing command block activation
-                    println!("Signal clear");
                 } else {
                     todo!("{} {}", pos, block)
                 }
             }
-            cmd if cmd.to_string().starts_with("execute as @e[tag=turtle]") => {
-                let (exec, subcmds) = if let Command::Execute(Execute { run: Some(exec), subcommands }) = cmd {
-                    (&**exec, subcmds)
+            cmd if cmd.to_string().starts_with("execute as @e[tag=turtle] store result entity @s Pos[0] double 1 run") => {
+                self.turtle_pos_set(0, cmd)
+            }
+            cmd if cmd.to_string().starts_with("execute as @e[tag=turtle] store result entity @s Pos[1] double 1 run") => {
+                self.turtle_pos_set(1, cmd)
+            }
+            cmd if cmd.to_string().starts_with("execute as @e[tag=turtle] store result entity @s Pos[2] double 1 run") => {
+                self.turtle_pos_set(2, cmd)
+            }
+            cmd if cmd.to_string().starts_with("execute at @e[tag=turtle] if block ~ ~ ~ minecraft:") => {
+                let (run, subcmds) = if let Command::Execute(Execute { run: Some(run), subcommands }) = cmd {
+                    (&**run, subcommands)
                 } else {
-                  unreachable!()
+                    unreachable!()
                 };
 
-                if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = exec {
-                    if target_obj != OBJECTIVE {
-                        todo!("{:?}", target_obj)
+                if let [_at, ExecuteSubCmd::Condition { is_unless: false, cond: ExecuteCondition::Block { block, .. } }] = &subcmds[..] {
+                    let len = block.len();
+                    let letter = block.chars().nth(len - 6).unwrap();
+                    if self.letters.get(&self.turtle_pos) == Some(&letter) {
+                        self.execute_cmd(run);
                     }
-
-                    let value = self.get_rust_score(target).unwrap();
                 } else {
                     unreachable!()
                 }
@@ -239,7 +315,8 @@ impl Interpreter {
             cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~ ~ ~ minecraft:redstone_block replace" => {
                 if self.ptr_pos.0 == -2 || self.ptr_pos.1 == 1 {
                     println!("Return to {}", self.ptr_pos.2);
-                    *self.call_stack.last_mut().unwrap() = (self.ptr_pos.2 as usize, 0);
+                    assert_eq!(self.next_pos, None);
+                    self.next_pos = Some((self.ptr_pos.2 as usize, 0));
                 } else {
                     panic!("attempt to return improperly")
                 }
@@ -340,12 +417,16 @@ impl Interpreter {
                 }
             }
             Command::Execute(Execute { run: Some(run), subcommands }) => {
-                if subcommands.len() != 1 {
-                    todo!("{:?}", subcommands)
-                } else if let ExecuteSubCmd::Condition { is_unless, cond } = &subcommands[0] {
-                    if self.check_cond(*is_unless, cond) {
-                        self.execute_cmd(run)
+                if subcommands.iter().all(|s| matches!(s, ExecuteSubCmd::Condition { .. })) {
+                    if subcommands.iter().all(|s| if let ExecuteSubCmd::Condition { is_unless, cond } = s {
+                        self.check_cond(*is_unless, cond)
+                    } else {
+                        unreachable!()
+                    }) {
+                        self.execute_cmd(run);
                     }
+                } else {
+                    todo!("{:?}", subcommands)
                 }
             }
             Command::Execute(Execute { run: None, subcommands }) => {
@@ -375,17 +456,26 @@ impl Interpreter {
     pub fn step(&mut self) {
         let (func_idx, cmd_idx) = self.call_stack.last_mut().unwrap();
         
-        println!("Function {} at command {}", self.program[*func_idx].id, cmd_idx);
+        //println!("Function {} at command {}", self.program[*func_idx].id, cmd_idx);
 
         let cmd = &self.program[*func_idx].cmds[*cmd_idx].clone();
         *cmd_idx += 1;
         self.execute_cmd(cmd);
 
+        self.commands_run += 1;
+
         loop {
+            if self.call_stack.is_empty() {
+                self.call_stack.push(self.next_pos.take().unwrap());
+                println!("Executed {} commands from function 'TODO:'", self.commands_run);
+                self.commands_run = 0;
+                break;
+            }
+
             let (func_idx, cmd_idx) = self.call_stack.last().unwrap();
 
             if self.program[*func_idx].cmds.len() == *cmd_idx {
-                println!("Returning");
+                //println!("Returning");
                 self.call_stack.pop();
             } else {
                 break
@@ -394,6 +484,6 @@ impl Interpreter {
     }
 
     pub fn halted(&self) -> bool {
-        self.call_stack.is_empty()
+        self.call_stack.last() == Some(&(0xFFFF_FFFF_FFFF_FFFF, 0))
     }
 }

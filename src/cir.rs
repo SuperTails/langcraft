@@ -3,46 +3,97 @@ use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
 use std::str::FromStr;
+use std::collections::HashMap;
+use std::borrow::Cow;
+use std::sync::Mutex;
+use lazy_static::lazy_static;
 pub use raw_text::*;
 
 mod raw_text;
 
+const MAX_HOLDER_LEN: usize = 40;
+const SUFFIX_LEN: usize = 2;
+
+/// Holds a map from a prefix of one (or many) names to the full names it can represent
+struct NameAlloc(HashMap<String, Vec<String>>);
+
+impl NameAlloc {
+    /// This does NOT remove any special characters
+    pub fn get_name<'a>(&'a mut self, name: &'a str) -> Cow<'a, str> {
+        if name.len() < MAX_HOLDER_LEN {
+            Cow::Borrowed(name)
+        } else {
+            let prefix = &name[..MAX_HOLDER_LEN - SUFFIX_LEN];
+            let name_list = self.0.entry(prefix.to_owned()).or_insert_with(Vec::new);
+
+            let idx = if let Some((idx, _)) = name_list.iter().enumerate().find(|(_, n)| n.as_str() == name) {
+                idx
+            } else if name_list.len() < 99 {
+                name_list.push(name.to_owned());
+                name_list.len() - 1
+            } else {
+                panic!("too many names with the prefix {}, try increasing `SUFFIX_LEN`", prefix)
+            };
+
+            Cow::Owned(format!("{}{}", prefix, idx))
+        }
+    }
+}
+
+lazy_static! {
+    static ref NAME_ALLOC: Mutex<NameAlloc> = Mutex::new(NameAlloc(HashMap::new()));
+}
+
 /// Characters not allowed:
-/// All non-printing characters (anywhere)
-/// whitespace (anywhere)
-/// '*' (by itself)
+/// All non-printing characters
+/// whitespace
+/// '*'
 /// '@' (as the first character)
 /// '"' (technically allowed, but complicates JSON)
+/// Length limit of 40 characters
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize, serde::Deserialize)]
 // FIXME: This needs checks on deserialization
 pub struct ScoreHolder(String);
 
 impl ScoreHolder {
-    pub fn new(mut string: String) -> Result<Self, String> {
+    pub fn new(string: String) -> Result<Self, String> {
         if string.is_empty() {
             return Err(string);
         }
 
-        if string.len() == 1 && string == "*" {
+        let mut is_first = true;
+        if string.contains(|c| !Self::legal(c, std::mem::replace(&mut is_first, false))) {
             return Err(string);
         }
 
-        if string.starts_with('@') {
+        if string.len() > MAX_HOLDER_LEN {
             return Err(string);
-        }
-
-        if string.contains(|c: char| c.is_control() || c.is_whitespace()) {
-            return Err(string);
-        }
-
-        if string.contains('"') {
-            println!("TODO: allow quotation marks {:?}", string);
-            string.truncate(string.len() - 1);
-            string.remove(0);
-            assert!(!string.contains('"'))
         }
 
         Ok(ScoreHolder(string))
+    }
+
+    pub fn legal(c: char, is_first: bool) -> bool {
+        match c {
+            '@' if is_first => false,
+            '*' |
+            '"' => false,
+            _ if c.is_whitespace() => false,
+            _ if c.is_control() => false,
+            _ => true,
+        }
+    }
+
+    /// Replaces any characters in the input string that are not valid in a score holder
+    /// with '_', and possibly shortens it if necessary
+    pub fn new_lossy(string: String) -> Self {
+        let mut is_first = true;
+        let result = string.replace(|c| !Self::legal(c, std::mem::replace(&mut is_first, false)), "_");
+
+        let mut name_alloc = NAME_ALLOC.lock().unwrap();
+        let result = name_alloc.get_name(&result).into_owned();
+
+        ScoreHolder::new(result).expect("still had illegal characters")
     }
 
     pub fn from_local_name(name: llvm_ir::Name, type_size: usize) -> Vec<Self> {
@@ -52,15 +103,10 @@ impl ScoreHolder {
         };
 
         (0..((type_size + 3) / 4))
-            .map(|idx| ScoreHolder::new(format!("{}%{}", prefix, idx)).unwrap())
+            .map(|idx| ScoreHolder::new_lossy(format!("{}%{}", prefix, idx)))
             .collect()
     }
 
-    /// Replaces any characters in the input string that are not valid in a score holder
-    /// with '_'
-    pub fn new_lossy(string: String) -> Self {
-        todo!("{:?}", string)
-    }
 }
 
 impl AsRef<str> for ScoreHolder {
@@ -1097,7 +1143,7 @@ impl fmt::Display for SetBlockKind {
     }
 }
 
-type Objective = String;
+pub type Objective = String;
 
 /* Scoreboard (players functions)
 

@@ -3,6 +3,7 @@ use crate::cir::{Function, FunctionId};
 
 static INTRINSIC_STRS: &[(&str, &str)] = &[
     ("memcpy", include_str!("intrinsic/memcpy.mcfunction")),
+    ("memcpy_inner", include_str!("intrinsic/memcpy_inner.mcfunction")),
     ("or", include_str!("intrinsic/or.mcfunction")),
     ("or_inner", include_str!("intrinsic/or_inner.mcfunction")),
     ("pop_and_branch", include_str!("intrinsic/pop_and_branch.mcfunction")),

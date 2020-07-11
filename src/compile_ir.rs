@@ -756,7 +756,7 @@ fn one_global_var_init(
     }
 
     let temp = v.name.to_string();
-    let target = ScoreHolder::new(format!("%@{}", &temp[1..temp.len() - 1])).unwrap();
+    let target = ScoreHolder::new_lossy(format!("%@{}", &temp[1..temp.len() - 1]));
 
     match &v.ty {
         // I'm pretty sure it's *always* a pointer...
@@ -1703,9 +1703,9 @@ pub fn compile_function(
         .collect::<Vec<_>>();
 
     let mut clobbers = BTreeSet::new();
-    for cmd in funcs.iter().flat_map(|f| f.cmds.iter()).filter(|cmd| !matches!(cmd, Command::Comment(_))) {
+    for cmd in funcs.iter().flat_map(|f| f.cmds.iter()).filter(|cmd| !matches!(cmd, Command::Comment(_) | Command::FuncCall(_))) {
         let cmd_str = cmd.to_string();
-        for mut holder in cmd_str.split_whitespace().filter(|s| s.contains('%') && !s.contains('{')) {
+        for mut holder in cmd_str.split_whitespace().filter(|s| s.contains('%') && !s.contains('{') && !s.contains("rust:")) {
             if holder.ends_with(',') {
                 holder = &holder[..holder.len() - 1];
             }
@@ -1805,7 +1805,7 @@ pub fn offset_of(element_types: &[Type], is_packed: bool, field: u32) -> usize {
     } else {
         let mut offset = 0;
         let mut result = Layout::from_size_align(0, 1).unwrap();
-        for elem in &element_types[0..field as usize] {
+        for elem in &element_types[0..field as usize + 1] {
             let (r, o) = result.extend(type_layout(elem)).unwrap();
             offset = o;
             result = r;
@@ -2404,7 +2404,7 @@ pub fn compile_instr(
                     ScoreAdd {
                         target: ptr().into(),
                         target_obj: OBJECTIVE.to_string(),
-                        score: idx as i32,
+                        score: 4 * idx as i32,
                     }
                     .into(),
                 );
@@ -3127,7 +3127,7 @@ pub fn eval_constant(con: &Constant, globals: &HashMap<&Name, (u32, Constant)>) 
     match con {
         Constant::GlobalReference { name, .. } => {
             let temp = name.to_string();
-            let holder = ScoreHolder::new(format!("%@{}", &temp[1..temp.len() - 1])).unwrap();
+            let holder = ScoreHolder::new_lossy(format!("%@{}", &temp[1..temp.len() - 1]));
             MaybeConst::NonConst(vec![], vec![holder])
         }
         Constant::Int { bits: 1, value } => MaybeConst::Const(*value as i32),
@@ -3234,4 +3234,20 @@ fn get_unique_num() -> u32 {
 
 fn get_unique_holder() -> ScoreHolder {
     ScoreHolder::new(format!("%temp{}", get_unique_num())).unwrap()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn struct_offset() {
+        // TODO: More comprehensive test
+        let element_types = vec![Type::IntegerType { bits: 32 }, Type::IntegerType { bits: 32 }];
+        
+        assert_eq!(offset_of(&element_types, false, 0), 0);
+        assert_eq!(offset_of(&element_types, false, 1), 4);
+        assert_eq!(offset_of(&element_types, true, 0), 0);
+        assert_eq!(offset_of(&element_types, true, 1), 4);
+    }
 }
