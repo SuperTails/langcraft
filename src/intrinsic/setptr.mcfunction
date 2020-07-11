@@ -1,0 +1,12 @@
+scoreboard players operation %%ptr rust = %ptr rust
+scoreboard players operation %%ptr rust /= %%FOUR rust
+scoreboard players operation %z rust = %%ptr rust 
+scoreboard players operation %z rust %= %%SIXTEEN rust
+scoreboard players operation %%ptr rust /= %%SIXTEEN rust
+scoreboard players operation %y rust = %%ptr rust
+scoreboard players operation %y rust %= %%SIXTEEN rust
+scoreboard players operation %%ptr rust /= %%SIXTEEN rust
+scoreboard players operation %x rust = %%ptr rust
+execute as @e[tag=ptr] store result entity @s Pos[0] double 1 run scoreboard players get %x rust
+execute as @e[tag=ptr] store result entity @s Pos[1] double 1 run scoreboard players get %y rust
+execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get %z rust

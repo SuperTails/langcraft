@@ -2,6 +2,7 @@ use llvm_ir::Name;
 use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::string::ToString;
+use std::str::FromStr;
 pub use raw_text::*;
 
 mod raw_text;
@@ -12,7 +13,8 @@ mod raw_text;
 /// '*' (by itself)
 /// '@' (as the first character)
 /// '"' (technically allowed, but complicates JSON)
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize, serde::Deserialize)]
+// FIXME: This needs checks on deserialization
 pub struct ScoreHolder(String);
 
 impl ScoreHolder {
@@ -80,6 +82,20 @@ pub enum Target {
     Asterisk,
 }
 
+impl FromStr for Target {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "*" {
+            Ok(Target::Asterisk)
+        } else if s.starts_with('@') {
+            Ok(s.parse::<Selector>()?.into())
+        } else {
+            Ok(ScoreHolder::new(s.into())?.into())
+        }
+    }
+}
+
 impl From<ScoreHolder> for Target {
     fn from(score_holder: ScoreHolder) -> Self {
         Target::Uuid(score_holder)
@@ -102,11 +118,40 @@ impl fmt::Display for Target {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
-#[serde(into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(into = "String", try_from = "&str")]
 pub struct Selector {
     pub var: SelectorVariable,
     pub args: Vec<SelectorArg>,
+}
+
+impl std::convert::TryFrom<&str> for Selector {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
+impl FromStr for Selector {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let var = s[0..2].parse().map_err(|_| format!("invalid selector {}", &s[0..2]))?;
+        let args = &s[2..];
+        let args = if args.is_empty() {
+            Vec::new()
+        } else if !args.starts_with('[') || !args.ends_with(']') {
+            return Err(format!("incorrect brackets in '{}'", args));
+        } else {
+            args[1..args.len() - 1]
+                .split(',')
+                .map(|arg| SelectorArg(arg.to_owned()))
+                .collect()
+        };
+
+        Ok(Selector { var, args })
+    }
 }
 
 impl fmt::Display for Selector {
@@ -151,6 +196,21 @@ pub enum SelectorVariable {
     ThisEntity,
 }
 
+impl FromStr for SelectorVariable {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "@p" => Ok(Self::NearestPlayer),
+            "@r" => Ok(Self::RandomPlayer),
+            "@a" => Ok(Self::AllPlayers),
+            "@e" => Ok(Self::AllEntities),
+            "@s" => Ok(Self::ThisEntity),
+            _ => Err(())
+        }
+    }
+}
+
 impl fmt::Display for SelectorVariable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -176,6 +236,36 @@ impl McRange {
             Self::To(r) => r.contains(&item),
             Self::From(r) => r.contains(&item),
             Self::Between(r) => r.contains(&item),
+        }
+    }
+}
+
+impl FromStr for McRange {
+    type Err = Box<dyn std::error::Error>;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split("..").collect::<Vec<_>>()[..] {
+            [start, end] => {
+                let start = if start.is_empty() {
+                    None
+                } else {
+                    Some(start.parse::<i32>()?)
+                };
+
+                let end = if end.is_empty() {
+                    None
+                } else {
+                    Some(end.parse::<i32>()?)
+                };
+
+                match (start, end) {
+                    (Some(start), Some(end)) => Ok(McRange::Between(start..=end)),
+                    (Some(start), None) => Ok(McRange::From(start..)),
+                    (None, Some(end)) => Ok(McRange::To(..=end)),
+                    (None, None) => Err("at least one bound must be specified".into()),
+                }
+            }
+            _ => Err("wrong number of '..'s in str".into())
         }
     }
 }
@@ -547,6 +637,21 @@ pub enum Relation {
     GreaterThanEq,
 }
 
+impl FromStr for Relation {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "<" => Ok(Relation::LessThan),
+            "<=" => Ok(Relation::LessThanEq),
+            "=" => Ok(Relation::Eq),
+            ">" => Ok(Relation::GreaterThan),
+            ">=" => Ok(Relation::GreaterThanEq),
+            _ => Err(()),
+        }
+    }
+}
+
 impl fmt::Display for Relation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -571,7 +676,251 @@ pub enum Command {
     FuncCall(FuncCall),
     Data(Data),
     Tellraw(Box<Tellraw>),
+    Teleport(Teleport),
     Comment(String),
+}
+
+struct CommandParser<'a> {
+    tail: &'a str,
+}
+
+impl CommandParser<'_> {
+    pub fn next_word(&mut self) -> Option<&str> {
+        if self.tail.is_empty() {
+            return None;
+        }
+
+        if let Some(idx) = self.tail.find(char::is_whitespace) {
+            let result = Some(self.tail[..idx].trim());
+            self.tail = self.tail[idx..].trim();
+            result
+        } else {
+            Some(std::mem::take(&mut self.tail))
+        }
+    }
+
+    pub fn peek_word(&mut self) -> Option<&str> {
+        if self.tail.is_empty() {
+            None
+        } else if let Some(idx) = self.tail.find(char::is_whitespace) {
+            Some(self.tail[..idx].trim())
+        } else {
+            Some(self.tail)
+        }
+    }
+
+    pub fn parse(&mut self) -> Command {
+        println!("parsing {}", self.tail);
+
+        match self.next_word() {
+            Some("#") => Command::Comment(self.tail.into()),
+            Some("scoreboard") => self.parse_scoreboard(),
+            Some("execute") => self.parse_execute(),
+            Some("function") => FuncCall { id: FunctionId::new(self.tail) }.into(),
+            Some("tellraw") => self.parse_tellraw(),
+            Some("data") => self.parse_data(),
+            Some("tp") => self.parse_teleport(),
+            Some("setblock") => self.parse_setblock(),
+            nw => todo!("{:?}", nw),
+        }
+    }
+
+    pub fn parse_setblock(&mut self) -> Command {
+        let pos = self.parse_pos();
+        let block = self.next_word().unwrap().to_owned();
+        let kind = self.next_word().map(|w| w.parse().unwrap()).unwrap_or(SetBlockKind::Replace);
+        SetBlock { pos, block, kind }.into()
+    }
+
+    pub fn parse_teleport(&mut self) -> Command {
+        let target = self.next_word().unwrap().parse().unwrap();
+        let pos = self.parse_pos();
+        Teleport { target, pos }.into()
+    }
+
+    pub fn parse_data(&mut self) -> Command {
+        let is_get = match self.next_word() {
+            Some("get") => true,
+            nw => todo!("{:?}", nw),
+        };
+        let target = self.parse_data_target();
+        let kind = if is_get {
+            let path = self.next_word().unwrap().to_owned();
+            let scale = self.next_word().unwrap().parse::<f32>().unwrap();
+            DataKind::Get { path, scale }
+        } else {
+            todo!()
+        };
+
+        Data { target, kind }.into()
+    }
+
+    pub fn parse_tellraw(&mut self) -> Command {
+        let target = self.next_word().unwrap().parse().unwrap();
+        let message = serde_json::from_str(self.tail).unwrap();
+        Tellraw { target, message }.into()
+    }
+
+    pub fn parse_execute(&mut self) -> Command {
+        let mut cmd = Execute::new();
+
+        loop {
+            if self.peek_word() == Some("run") || self.peek_word().is_none() {
+                break;
+            }
+
+            cmd.with_subcmd(self.parse_execute_subcmd());
+        }
+
+        if self.next_word() == Some("run") {
+            cmd.with_run(self.parse());
+        }
+
+        cmd.into()
+    }
+
+    pub fn parse_execute_subcmd(&mut self) -> ExecuteSubCmd {
+        match self.next_word() {
+            Some("if") => self.parse_execute_cond(false),
+            Some("unless") => self.parse_execute_cond(true),
+            Some("at") => ExecuteSubCmd::At { target: self.next_word().unwrap().parse().unwrap() },
+            Some("as") => ExecuteSubCmd::As { target: self.next_word().unwrap().parse().unwrap() },
+            Some("store") => self.parse_execute_store(),
+            nw => todo!("{:?}", nw),
+        }
+    }
+
+    pub fn parse_execute_store(&mut self) -> ExecuteSubCmd {
+        let is_success = match self.next_word() {
+            Some("result") => false,
+            Some("success") => true,
+            nw => panic!("{:?}", nw),
+        };
+
+        let kind = match self.peek_word() {
+            Some("score") => {
+                self.next_word();
+                let target = self.next_word().unwrap().parse().unwrap();
+                let objective = self.next_word().unwrap().to_owned();
+
+                ExecuteStoreKind::Score { target, objective }
+            }
+            _ => {
+                let target = self.parse_data_target();
+                let path = self.next_word().unwrap().to_owned();
+                let ty = self.next_word().unwrap().to_owned();
+                let scale = self.next_word().unwrap().parse().unwrap();
+
+                ExecuteStoreKind::Data { target, path, ty, scale }
+            }
+        };
+
+        ExecuteSubCmd::Store { is_success, kind }
+    }
+
+    pub fn parse_pos(&mut self) -> BlockPos {
+        let mut coords = Vec::new();
+        coords.push(self.next_word().unwrap().to_string());
+        coords.push(self.next_word().unwrap().to_string());
+        coords.push(self.next_word().unwrap().to_string());
+        coords.join(" ")
+    }
+
+    pub fn parse_data_target(&mut self) -> DataTarget {
+        match self.next_word() {
+            Some("block") => {
+                DataTarget::Block(self.parse_pos())
+            }
+            Some("entity") => {
+                let target = self.next_word().unwrap().parse().unwrap();
+                
+                DataTarget::Entity(target)
+            }
+            nw => todo!("{:?}", nw),
+        }
+    }
+
+    pub fn parse_execute_cond(&mut self, is_unless: bool) -> ExecuteSubCmd {
+        let cond = match self.next_word() {
+            Some("score") => {
+                let target = self.next_word().unwrap().parse().unwrap();
+                let target_obj = self.next_word().unwrap().to_owned();
+                let kind = match self.next_word() {
+                    Some("matches") => {
+                        ExecuteCondKind::Matches(self.next_word().unwrap().parse().unwrap())
+                    }
+                    Some(s) => {
+                        let relation = s.parse().unwrap();
+                        let source = self.next_word().unwrap().parse().unwrap();
+                        let source_obj = self.next_word().unwrap().to_owned();
+                        ExecuteCondKind::Relation { relation, source, source_obj }
+                    }
+                    nw => todo!("{:?}", nw),
+                };
+
+                ExecuteCondition::Score { target, target_obj, kind }
+            }
+            nw => todo!("{:?}", nw),
+        };
+
+        ExecuteSubCmd::Condition { is_unless, cond }
+    }
+
+    pub fn parse_scoreboard(&mut self) -> Command {
+        match self.next_word() {
+            Some("players") => self.parse_players(),
+            nw => todo!("{:?}", nw),
+        }
+    }
+    
+    pub fn parse_players(&mut self) -> Command {
+        match self.next_word() {
+            Some("operation") => self.parse_operation(),
+            Some("add") => self.parse_scoreboard_add(false),
+            Some("remove") => self.parse_scoreboard_add(true),
+            Some("set") => self.parse_scoreboard_set(),
+            Some("get") => self.parse_scoreboard_get(),
+            nw => todo!("{:?}", nw),
+        }
+    }
+
+    pub fn parse_scoreboard_get(&mut self) -> Command {
+        let target = self.next_word().unwrap().parse().unwrap();
+        let target_obj = self.next_word().unwrap().to_owned();
+        ScoreGet { target, target_obj }.into()
+    }
+
+    pub fn parse_scoreboard_set(&mut self) -> Command {
+        let target = self.next_word().unwrap().parse().unwrap();
+        let target_obj = self.next_word().unwrap().to_owned();
+        let score = self.next_word().unwrap().parse::<i32>().unwrap();
+        ScoreSet { target, target_obj, score }.into()
+    }
+
+    pub fn parse_scoreboard_add(&mut self, is_remove: bool) -> Command {
+        let target = self.next_word().unwrap().parse().unwrap();
+        let target_obj = self.next_word().unwrap().to_owned();
+        let score = self.next_word().unwrap().parse::<i32>().unwrap();
+        let score = if is_remove { -score } else { score };
+        ScoreAdd { target, target_obj, score }.into()
+    }
+
+    pub fn parse_operation(&mut self) -> Command {
+        let target = self.next_word().unwrap().parse().unwrap();
+        let target_obj = self.next_word().unwrap().to_owned();
+        let kind = self.next_word().unwrap().parse().unwrap();
+        let source = self.next_word().unwrap().parse().unwrap();
+        let source_obj = self.next_word().unwrap().to_owned();
+        ScoreOp { target, target_obj, kind, source, source_obj }.into()
+    }
+}
+
+impl FromStr for Command {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(CommandParser { tail: s }.parse())
+    }
 }
 
 impl fmt::Display for Command {
@@ -587,6 +936,7 @@ impl fmt::Display for Command {
             Command::FuncCall(s) => s.fmt(f),
             Command::Data(s) => s.fmt(f),
             Command::Tellraw(s) => s.fmt(f),
+            Command::Teleport(s) => s.fmt(f),
             Command::Comment(s) => {
                 let mut commented = s.replace('\n', "\n# ");
                 commented.insert_str(0, "# ");
@@ -606,6 +956,12 @@ pub struct Fill {
 impl fmt::Display for Fill {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "fill {} {} {}", self.start, self.end, self.block)
+    }
+}
+
+impl From<Teleport> for Command {
+    fn from(t: Teleport) -> Self {
+        Command::Teleport(t)
     }
 }
 
@@ -670,6 +1026,18 @@ impl From<Tellraw> for Command {
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
+pub struct Teleport {
+    target: Target,
+    pos: BlockPos,
+}
+
+impl fmt::Display for Teleport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "tp {} {}", self.target, self.pos)
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Tellraw {
     pub target: Target,
     pub message: Vec<TextComponent>,
@@ -698,6 +1066,19 @@ pub enum SetBlockKind {
     Destroy,
     Keep,
     Replace,
+}
+
+impl FromStr for SetBlockKind {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "destroy" => Ok(Self::Destroy),
+            "keep" => Ok(Self::Keep),
+            "replace" => Ok(Self::Replace),
+            _ => Err(()),
+        }
+    }
 }
 
 impl fmt::Display for SetBlock {
@@ -819,6 +1200,25 @@ pub enum ScoreOpKind {
     Swap,
 }
 
+impl FromStr for ScoreOpKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "+=" => Ok(Self::AddAssign),
+            "-=" => Ok(Self::SubAssign),
+            "*=" => Ok(Self::MulAssign),
+            "/=" => Ok(Self::DivAssign),
+            "%=" => Ok(Self::ModAssign),
+            "=" => Ok(Self::Assign),
+            "<" => Ok(Self::Min),
+            ">" => Ok(Self::Max),
+            "><" => Ok(Self::Swap),
+            _ => Err(s.into()),
+        }
+    }
+}
+
 impl fmt::Display for ScoreOpKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -916,7 +1316,7 @@ impl fmt::Display for DataModifySource {
 #[derive(Debug, PartialEq, Clone)]
 pub enum DataTarget {
     // TODO: More
-    Block(String),
+    Block(BlockPos),
     Entity(Target),
 }
 

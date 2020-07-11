@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use serde_with::skip_serializing_none;
 use super::{BlockPos, Selector, NbtPath, StorageId, ScoreHolder, Objective, StringNbt};
 
@@ -67,7 +67,7 @@ impl TextBuilder {
 }
 
 #[skip_serializing_none]
-#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Default)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TextComponent {
     // --- Content tags ---
@@ -115,7 +115,7 @@ impl TextComponent {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Serialize, Deserialize)]
 #[serde(into = "String")]
 pub enum Color {
     Named(String),
@@ -138,7 +138,7 @@ impl Into<String> for Color {
 }
 
 #[skip_serializing_none]
-#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize)]
 #[serde(tag = "action", content = "contents", rename_all = "snake_case")]
 pub enum HoverEvent {
     ShowText(TextComponent),
@@ -155,13 +155,13 @@ pub enum HoverEvent {
     },
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize)]
 pub struct ClickEvent {
     pub action: ClickEventAction,
     pub value: String,
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize)]
 #[serde(into = "&'static str")]
 pub enum ClickEventAction {
     // rename to "open_url"
@@ -192,7 +192,7 @@ impl Into<&'static str> for ClickEventAction {
 }
 
 #[skip_serializing_none]
-#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize)]
+#[derive(Debug, PartialEq, PartialOrd, Clone, Serialize, Deserialize)]
 pub struct ScoreComponent {
     pub name: ScoreHolder,
     pub objective: Objective,

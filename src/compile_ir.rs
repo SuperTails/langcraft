@@ -131,6 +131,14 @@ pub fn assign(target: ScoreHolder, source: ScoreHolder) -> Command {
     .into()
 }
 
+pub fn get_index(x: i32, y: i32, z: i32) -> i32 {
+    assert!(0 <= x && x < 16);
+    assert!(0 <= y && y < 16);
+    assert!(0 <= z && z < 16);
+
+    (x * 16 * 16 + y * 16 + z) * 4
+}
+
 /// Returns xyz
 pub fn get_address(mut address: i32) -> (i32, i32, i32) {
     if address % 4 != 0 {
@@ -365,6 +373,15 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         .into(),
     );
 
+    init_cmds.push(
+        ScoreSet {
+            target: stackbaseptr().into(),
+            target_obj: OBJECTIVE.to_string(),
+            score: 0,
+        }
+        .into()
+    );
+
     let init_func = McFunction {
         id: McFuncId::new("init"),
         cmds: init_cmds,
@@ -526,13 +543,27 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
 
     funcs.push(McFunction {
         id: McFuncId::new("run"),
-        cmds: vec![SetBlock {
+        cmds: vec![
+        McFuncCall {
+            id: McFuncId::new("init"),
+        }
+        .into(),
+        SetBlock {
             pos: format!("-2 1 {}", main_idx),
             block: "minecraft:redstone_block".to_string(),
             kind: SetBlockKind::Replace,
         }
         .into()],
     });
+
+    let mut all_clobbers = BTreeSet::new();
+    for c in clobber_list.values() {
+        all_clobbers.extend(c);
+    }
+
+    funcs[0].cmds.splice(0..0, all_clobbers.iter().map(|c| {
+        ScoreSet { target: (*c).clone().into(), target_obj: OBJECTIVE.into(), score: 0 }.into()
+    }));
 
     funcs
 }
