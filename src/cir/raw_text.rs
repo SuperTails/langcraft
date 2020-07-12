@@ -1,6 +1,6 @@
-use serde::{Serialize, Deserialize};
+use super::{BlockPos, NbtPath, Objective, ScoreHolder, Selector, StorageId, StringNbt};
+use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
-use super::{BlockPos, Selector, NbtPath, StorageId, ScoreHolder, Objective, StringNbt};
 
 #[derive(Default)]
 pub struct TextBuilder {
@@ -9,7 +9,9 @@ pub struct TextBuilder {
 
 impl TextBuilder {
     fn innermost(&mut self) -> Option<&mut TextComponent> {
-        self.inner.as_mut().map(|i| i.last_mut().unwrap().innermost())
+        self.inner
+            .as_mut()
+            .map(|i| i.last_mut().unwrap().innermost())
     }
 
     fn push_component(&mut self) {
@@ -29,11 +31,16 @@ impl TextBuilder {
     }
 
     pub fn build(&mut self) -> Vec<TextComponent> {
-        self.inner.as_ref().expect("tried to build empty `TextComponent`").clone()
+        self.inner
+            .as_ref()
+            .expect("tried to build empty `TextComponent`")
+            .clone()
     }
 
     pub fn color(&mut self, color: Color) -> &mut Self {
-        let inner = self.innermost().expect("tried to set the color of an empty `TextComponent`");
+        let inner = self
+            .innermost()
+            .expect("tried to set the color of an empty `TextComponent`");
 
         assert_eq!(inner.color, None);
 
@@ -51,7 +58,12 @@ impl TextBuilder {
         self
     }
 
-    pub fn append_score(&mut self, name: ScoreHolder, objective: Objective, value: Option<i32>) -> &mut Self {
+    pub fn append_score(
+        &mut self,
+        name: ScoreHolder,
+        objective: Objective,
+        value: Option<i32>,
+    ) -> &mut Self {
         self.push_component();
 
         let inner = self.innermost().unwrap();
@@ -107,14 +119,19 @@ pub struct TextComponent {
 
 impl TextComponent {
     pub fn as_string<F>(&self, scores: &F) -> Result<String, String>
-        where
-            F: Fn(&ScoreHolder, &Objective) -> Option<i32>,
+    where
+        F: Fn(&ScoreHolder, &Objective) -> Option<i32>,
     {
         let mut result = if let Some(text) = &self.text {
             text.clone()
         } else if let Some(translate) = &self.translate {
             todo!("{:?}", translate)
-        } else if let Some(ScoreComponent { name, objective, value }) = &self.score {
+        } else if let Some(ScoreComponent {
+            name,
+            objective,
+            value,
+        }) = &self.score
+        {
             let result = if let Some(v) = value {
                 *v
             } else if let Some(v) = scores(name, objective) {
@@ -139,7 +156,7 @@ impl TextComponent {
                 result.push_str(&ex.as_string(scores)?);
             }
         }
-        
+
         Ok(result)
     }
 
@@ -179,7 +196,7 @@ impl Into<String> for Color {
 #[serde(tag = "action", content = "contents", rename_all = "snake_case")]
 pub enum HoverEvent {
     ShowText(TextComponent),
-    ShowItem{ 
+    ShowItem {
         id: String,
         count: Option<usize>,
         tag: Option<StringNbt>,
@@ -223,7 +240,7 @@ impl Into<&'static str> for ClickEventAction {
             Self::RunCommand => "run_command",
             Self::SuggestCommand => "suggest_command",
             Self::ChangePage => "change_page",
-            Self::CopyToClipboard => "copy_to_clipboard"
+            Self::CopyToClipboard => "copy_to_clipboard",
         }
     }
 }
@@ -242,12 +259,26 @@ mod test {
 
     #[test]
     fn color_serialize() {
-        assert_eq!(serde_json::to_string(&Color::Named("red".to_string())).unwrap(), "\"red\"".to_string());
-        assert_eq!(serde_json::to_string(&Color::Hex(0x00, 0xFF, 0x54)).unwrap(), "\"#00FF54\"".to_string());
+        assert_eq!(
+            serde_json::to_string(&Color::Named("red".to_string())).unwrap(),
+            "\"red\"".to_string()
+        );
+        assert_eq!(
+            serde_json::to_string(&Color::Hex(0x00, 0xFF, 0x54)).unwrap(),
+            "\"#00FF54\"".to_string()
+        );
     }
 
     #[test]
     fn hover_event_serialize() {
-        assert_eq!(r#"{"action":"show_item","contents":{"id":"hi","count":1}}"#, serde_json::to_string(&super::HoverEvent::ShowItem { id: "hi".to_string(), count: Some(1), tag: None }).unwrap());
+        assert_eq!(
+            r#"{"action":"show_item","contents":{"id":"hi","count":1}}"#,
+            serde_json::to_string(&super::HoverEvent::ShowItem {
+                id: "hi".to_string(),
+                count: Some(1),
+                tag: None
+            })
+            .unwrap()
+        );
     }
 }

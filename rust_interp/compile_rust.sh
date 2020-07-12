@@ -1,0 +1,1 @@
+cargo +nightly xbuild --release --verbose --target=i686-unknown-linux-gnu

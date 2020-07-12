@@ -1,6 +1,6 @@
 use cir::Function;
-use std::path::Path;
 pub use interpreter::Interpreter;
+use std::path::Path;
 
 pub mod cir;
 pub mod compile_ir;

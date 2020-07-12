@@ -1,13 +1,13 @@
+use lazy_static::lazy_static;
 use llvm_ir::Name;
+pub use raw_text::*;
+use std::borrow::Cow;
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
-use std::string::ToString;
 use std::str::FromStr;
-use std::collections::HashMap;
-use std::borrow::Cow;
+use std::string::ToString;
 use std::sync::Mutex;
-use lazy_static::lazy_static;
-pub use raw_text::*;
 
 mod raw_text;
 
@@ -26,13 +26,20 @@ impl NameAlloc {
             let prefix = &name[..MAX_HOLDER_LEN - SUFFIX_LEN];
             let name_list = self.0.entry(prefix.to_owned()).or_insert_with(Vec::new);
 
-            let idx = if let Some((idx, _)) = name_list.iter().enumerate().find(|(_, n)| n.as_str() == name) {
+            let idx = if let Some((idx, _)) = name_list
+                .iter()
+                .enumerate()
+                .find(|(_, n)| n.as_str() == name)
+            {
                 idx
             } else if name_list.len() < 99 {
                 name_list.push(name.to_owned());
                 name_list.len() - 1
             } else {
-                panic!("too many names with the prefix {}, try increasing `SUFFIX_LEN`", prefix)
+                panic!(
+                    "too many names with the prefix {}, try increasing `SUFFIX_LEN`",
+                    prefix
+                )
             };
 
             Cow::Owned(format!("{}{}", prefix, idx))
@@ -51,7 +58,9 @@ lazy_static! {
 /// '@' (as the first character)
 /// '"' (technically allowed, but complicates JSON)
 /// Length limit of 40 characters
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize, serde::Deserialize,
+)]
 // FIXME: This needs checks on deserialization
 pub struct ScoreHolder(String);
 
@@ -76,8 +85,7 @@ impl ScoreHolder {
     pub fn legal(c: char, is_first: bool) -> bool {
         match c {
             '@' if is_first => false,
-            '*' |
-            '"' => false,
+            '*' | '"' => false,
             _ if c.is_whitespace() => false,
             _ if c.is_control() => false,
             _ => true,
@@ -88,7 +96,10 @@ impl ScoreHolder {
     /// with '_', and possibly shortens it if necessary
     pub fn new_lossy(string: String) -> Self {
         let mut is_first = true;
-        let result = string.replace(|c| !Self::legal(c, std::mem::replace(&mut is_first, false)), "_");
+        let result = string.replace(
+            |c| !Self::legal(c, std::mem::replace(&mut is_first, false)),
+            "_",
+        );
 
         let mut name_alloc = NAME_ALLOC.lock().unwrap();
         let result = name_alloc.get_name(&result).into_owned();
@@ -106,7 +117,6 @@ impl ScoreHolder {
             .map(|idx| ScoreHolder::new_lossy(format!("{}%{}", prefix, idx)))
             .collect()
     }
-
 }
 
 impl AsRef<str> for ScoreHolder {
@@ -164,7 +174,9 @@ impl fmt::Display for Target {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 #[serde(into = "String", try_from = "&str")]
 pub struct Selector {
     pub var: SelectorVariable,
@@ -183,7 +195,9 @@ impl FromStr for Selector {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let var = s[0..2].parse().map_err(|_| format!("invalid selector {}", &s[0..2]))?;
+        let var = s[0..2]
+            .parse()
+            .map_err(|_| format!("invalid selector {}", &s[0..2]))?;
         let args = &s[2..];
         let args = if args.is_empty() {
             Vec::new()
@@ -252,7 +266,7 @@ impl FromStr for SelectorVariable {
             "@a" => Ok(Self::AllPlayers),
             "@e" => Ok(Self::AllEntities),
             "@s" => Ok(Self::ThisEntity),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -311,7 +325,7 @@ impl FromStr for McRange {
                     (None, None) => Err("at least one bound must be specified".into()),
                 }
             }
-            _ => Err("wrong number of '..'s in str".into())
+            _ => Err("wrong number of '..'s in str".into()),
         }
     }
 }
@@ -762,7 +776,10 @@ impl CommandParser<'_> {
             Some("#") => Command::Comment(self.tail.into()),
             Some("scoreboard") => self.parse_scoreboard(),
             Some("execute") => self.parse_execute(),
-            Some("function") => FuncCall { id: FunctionId::new(self.tail) }.into(),
+            Some("function") => FuncCall {
+                id: FunctionId::new(self.tail),
+            }
+            .into(),
             Some("tellraw") => self.parse_tellraw(),
             Some("data") => self.parse_data(),
             Some("tp") => self.parse_teleport(),
@@ -774,7 +791,10 @@ impl CommandParser<'_> {
     pub fn parse_setblock(&mut self) -> Command {
         let pos = self.parse_pos();
         let block = self.next_word().unwrap().to_owned();
-        let kind = self.next_word().map(|w| w.parse().unwrap()).unwrap_or(SetBlockKind::Replace);
+        let kind = self
+            .next_word()
+            .map(|w| w.parse().unwrap())
+            .unwrap_or(SetBlockKind::Replace);
         SetBlock { pos, block, kind }.into()
     }
 
@@ -829,8 +849,12 @@ impl CommandParser<'_> {
         match self.next_word() {
             Some("if") => self.parse_execute_cond(false),
             Some("unless") => self.parse_execute_cond(true),
-            Some("at") => ExecuteSubCmd::At { target: self.next_word().unwrap().parse().unwrap() },
-            Some("as") => ExecuteSubCmd::As { target: self.next_word().unwrap().parse().unwrap() },
+            Some("at") => ExecuteSubCmd::At {
+                target: self.next_word().unwrap().parse().unwrap(),
+            },
+            Some("as") => ExecuteSubCmd::As {
+                target: self.next_word().unwrap().parse().unwrap(),
+            },
             Some("store") => self.parse_execute_store(),
             nw => todo!("{:?}", nw),
         }
@@ -857,7 +881,12 @@ impl CommandParser<'_> {
                 let ty = self.next_word().unwrap().to_owned();
                 let scale = self.next_word().unwrap().parse().unwrap();
 
-                ExecuteStoreKind::Data { target, path, ty, scale }
+                ExecuteStoreKind::Data {
+                    target,
+                    path,
+                    ty,
+                    scale,
+                }
             }
         };
 
@@ -874,12 +903,10 @@ impl CommandParser<'_> {
 
     pub fn parse_data_target(&mut self) -> DataTarget {
         match self.next_word() {
-            Some("block") => {
-                DataTarget::Block(self.parse_pos())
-            }
+            Some("block") => DataTarget::Block(self.parse_pos()),
             Some("entity") => {
                 let target = self.next_word().unwrap().parse().unwrap();
-                
+
                 DataTarget::Entity(target)
             }
             nw => todo!("{:?}", nw),
@@ -899,12 +926,20 @@ impl CommandParser<'_> {
                         let relation = s.parse().unwrap();
                         let source = self.next_word().unwrap().parse().unwrap();
                         let source_obj = self.next_word().unwrap().to_owned();
-                        ExecuteCondKind::Relation { relation, source, source_obj }
+                        ExecuteCondKind::Relation {
+                            relation,
+                            source,
+                            source_obj,
+                        }
                     }
                     nw => todo!("{:?}", nw),
                 };
 
-                ExecuteCondition::Score { target, target_obj, kind }
+                ExecuteCondition::Score {
+                    target,
+                    target_obj,
+                    kind,
+                }
             }
             nw => todo!("{:?}", nw),
         };
@@ -918,7 +953,7 @@ impl CommandParser<'_> {
             nw => todo!("{:?}", nw),
         }
     }
-    
+
     pub fn parse_players(&mut self) -> Command {
         match self.next_word() {
             Some("operation") => self.parse_operation(),
@@ -940,7 +975,12 @@ impl CommandParser<'_> {
         let target = self.next_word().unwrap().parse().unwrap();
         let target_obj = self.next_word().unwrap().to_owned();
         let score = self.next_word().unwrap().parse::<i32>().unwrap();
-        ScoreSet { target, target_obj, score }.into()
+        ScoreSet {
+            target,
+            target_obj,
+            score,
+        }
+        .into()
     }
 
     pub fn parse_scoreboard_add(&mut self, is_remove: bool) -> Command {
@@ -948,7 +988,12 @@ impl CommandParser<'_> {
         let target_obj = self.next_word().unwrap().to_owned();
         let score = self.next_word().unwrap().parse::<i32>().unwrap();
         let score = if is_remove { -score } else { score };
-        ScoreAdd { target, target_obj, score }.into()
+        ScoreAdd {
+            target,
+            target_obj,
+            score,
+        }
+        .into()
     }
 
     pub fn parse_operation(&mut self) -> Command {
@@ -957,7 +1002,14 @@ impl CommandParser<'_> {
         let kind = self.next_word().unwrap().parse().unwrap();
         let source = self.next_word().unwrap().parse().unwrap();
         let source_obj = self.next_word().unwrap().to_owned();
-        ScoreOp { target, target_obj, kind, source, source_obj }.into()
+        ScoreOp {
+            target,
+            target_obj,
+            kind,
+            source,
+            source_obj,
+        }
+        .into()
     }
 }
 
@@ -1096,7 +1148,12 @@ type StringNbt = String;
 
 impl fmt::Display for Tellraw {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "tellraw {} {}", self.target, serde_json::to_string(&self.message).unwrap())
+        write!(
+            f,
+            "tellraw {} {}",
+            self.target,
+            serde_json::to_string(&self.message).unwrap()
+        )
     }
 }
 

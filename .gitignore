@@ -1,10 +1,7 @@
 /target
+/rust_interp/target
 /out
 
 mcfunction.bc
 mcfunction.ll
 mcfunction.c
-
-rustfunction.bc
-rustfunction.ll
-rustfunction.rs

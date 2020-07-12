@@ -1,0 +1,20 @@
+[package]
+name = "rust_interp"
+version = "0.1.0"
+authors = ["Carson Swoveland <sciencedude2003@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.dev]
+panic = "abort"
+debug = true
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+debug = true
+
+[dependencies]
+arrayvec = { version = "0.5", default-features = false }

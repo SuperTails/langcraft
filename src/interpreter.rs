@@ -1,14 +1,32 @@
 use crate::cir::*;
-use crate::compile_ir::{OBJECTIVE, get_index};
+use crate::compile_ir::{get_index, OBJECTIVE};
 use crate::intrinsics::INTRINSICS;
 use std::collections::HashMap;
 use std::convert::TryInto;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpError {
+    OutOfBoundsAccess(i32, i32, i32),
+}
+
+impl std::fmt::Display for InterpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InterpError::OutOfBoundsAccess(x, y, z) => {
+                write!(f, "out of bounds access at x={}, y={}, z={}", x, y, z)
+            }
+
+        }
+    }
+}
+
+impl std::error::Error for InterpError {}
 
 pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
     call_stack: Vec<(usize, usize)>,
     program: Vec<Function>,
-    pub memory: [i32; 4096],
+    pub memory: [i32; 8192],
     ptr_pos: (i32, i32, i32),
     turtle_pos: (i32, i32, i32),
     letters: HashMap<(i32, i32, i32), char>,
@@ -26,14 +44,19 @@ impl Interpreter {
         }
 
         let mut letters = HashMap::new();
-        for (z, letter) in ['A', 'B', 'A', 'A', '[', ']'].iter().enumerate() {
-            letters.insert((-16, 16, -(z as i32)), *letter);
+        for (z, letter) in ['F', 'N', ' ', 'A', 'B', 'C', '(', ')', '{', '}']
+            .iter()
+            .enumerate()
+        {
+            if *letter != ' ' {
+                letters.insert((-16, 16, -(z as i32)), *letter);
+            }
         }
 
         Interpreter {
             program,
             call_stack: vec![(func_idx, 0)],
-            memory: [0; 4096],
+            memory: [0; 8192],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
@@ -70,13 +93,20 @@ impl Interpreter {
     }
 
     fn turtle_pos_set(&mut self, coord: usize, cmd: &Command) {
-        let exec = if let Command::Execute(Execute { run: Some(exec), .. }) = cmd {
+        let exec = if let Command::Execute(Execute {
+            run: Some(exec), ..
+        }) = cmd
+        {
             &**exec
         } else {
             unreachable!()
         };
 
-        if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = exec {
+        if let Command::ScoreGet(ScoreGet {
+            target: Target::Uuid(target),
+            target_obj,
+        }) = exec
+        {
             if target_obj != OBJECTIVE {
                 todo!("{:?}", target_obj)
             }
@@ -95,12 +125,19 @@ impl Interpreter {
     }
 
     pub fn get_rust_score(&self, holder: &ScoreHolder) -> Result<i32, String> {
-        self.rust_scores.get(&holder).copied().ok_or_else(|| format!("read from uninitialized variable {}", holder))
+        self.rust_scores
+            .get(&holder)
+            .copied()
+            .ok_or_else(|| format!("read from uninitialized variable {}", holder))
     }
 
     pub fn check_cond(&self, is_unless: bool, cond: &ExecuteCondition) -> bool {
         let result = match cond {
-            ExecuteCondition::Score { target: Target::Uuid(target), target_obj, kind } => {
+            ExecuteCondition::Score {
+                target: Target::Uuid(target),
+                target_obj,
+                kind,
+            } => {
                 if target_obj != OBJECTIVE {
                     todo!("{:?}", target_obj)
                 }
@@ -108,11 +145,15 @@ impl Interpreter {
                 let target = self.get_rust_score(target).unwrap();
 
                 match kind {
-                    ExecuteCondKind::Relation { relation, source: Target::Uuid(source), source_obj } => {
+                    ExecuteCondKind::Relation {
+                        relation,
+                        source: Target::Uuid(source),
+                        source_obj,
+                    } => {
                         if source_obj != OBJECTIVE {
                             todo!("{:?}", source_obj)
                         }
-                        
+
                         let source = self.get_rust_score(source).unwrap();
 
                         match relation {
@@ -120,16 +161,14 @@ impl Interpreter {
                             Relation::LessThanEq => target <= source,
                             Relation::Eq => target == source,
                             Relation::GreaterThan => target > source,
-                            Relation::GreaterThanEq => target >= source
+                            Relation::GreaterThanEq => target >= source,
                         }
                     }
-                    ExecuteCondKind::Matches(m) => {
-                        m.contains(target)
-                    }
-                    _ => todo!("{:?}", kind)
+                    ExecuteCondKind::Matches(m) => m.contains(target),
+                    _ => todo!("{:?}", kind),
                 }
             }
-            _ => todo!("{:?}", cond)
+            _ => todo!("{:?}", cond),
         };
 
         if is_unless {
@@ -139,12 +178,13 @@ impl Interpreter {
         }
     }
 
-    fn read_mem(&self) -> i32 {
-        let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2);
-        self.memory[index as usize / 4]
+    fn read_mem(&self) -> Result<i32, InterpError> {
+        let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
+        Ok(self.memory[index as usize / 4])
     }
 
-    fn execute_cmd(&mut self, cmd: &Command) {
+    fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
+        println!("{}", cmd);
         match cmd {
             Command::ScoreAdd(ScoreAdd { target: Target::Uuid(target), target_obj, score }) => {
                 if target_obj != OBJECTIVE {
@@ -184,7 +224,7 @@ impl Interpreter {
                             }
                             ScoreOpKind::MulAssign => {
                                 let mut val = self.get_rust_score(target).unwrap();
-                                val *= rhs;
+                                val = val.wrapping_mul(rhs);
                                 self.rust_scores.insert(target.clone(), val);
                             }
                             ScoreOpKind::DivAssign => {
@@ -209,9 +249,7 @@ impl Interpreter {
                     todo!("{}", target)
                 }
             }
-            Command::Comment(c) => {
-                println!("# {}", c)
-            }
+            Command::Comment(_) => {}
             Command::FuncCall(FuncCall { id }) => {
                 let called_idx = self.program.iter().enumerate().find(|(_, f)| &f.id == id).unwrap_or_else(|| todo!("{:?}", id)).0;
                 self.call_stack.push((called_idx, 0));
@@ -228,7 +266,7 @@ impl Interpreter {
                             let DataModifySource::Value(score) = source;
 
                             if let [x, y, z] = block.split_whitespace().map(|c| c.parse::<i32>().unwrap()).collect::<Vec<_>>()[..] {
-                                self.memory[get_index(x, y, z) as usize / 4] = *score;
+                                self.memory[get_index(x, y, z)? as usize / 4] = *score;
                             }
                         } else {
                             todo!("{}", path)
@@ -306,7 +344,7 @@ impl Interpreter {
                     let len = block.len();
                     let letter = block.chars().nth(len - 6).unwrap();
                     if self.letters.get(&self.turtle_pos) == Some(&letter) {
-                        self.execute_cmd(run);
+                        self.execute_cmd(run)?;
                     }
                 } else {
                     unreachable!()
@@ -337,7 +375,7 @@ impl Interpreter {
                         todo!("{:?}", path);
                     }
 
-                    let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2);
+                    let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
 
                     self.memory[index as usize / 4] = *v;
                 } else {
@@ -361,8 +399,10 @@ impl Interpreter {
                     }
 
                     if run.to_string() == "data get block ~ ~ ~ RecordItem.tag.Memory 1" {
-                        let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2);
+                        let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
                         self.rust_scores.insert(target.clone(), self.memory[index as usize / 4]);
+                    } else {
+                        todo!()
                     }
                 } else if subcmds[1].to_string() == "store result block ~ ~ ~ RecordItem.tag.Memory int 1" {
                     if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = &**run {
@@ -371,7 +411,7 @@ impl Interpreter {
                         }
 
                         let val = *self.rust_scores.get(target).unwrap_or_else(|| panic!("read from uninitialized variable {}", target));
-                        let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2);
+                        let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
                         self.memory[index as usize / 4] = val;
                     }
                 } else {
@@ -391,7 +431,7 @@ impl Interpreter {
                 self.ptr_pos.2 = val;
             }
             cmd if cmd.to_string() == "execute as @e[tag=ptr] at @s store result entity @s Pos[2] double 1 run data get block ~ ~ ~ RecordItem.tag.Memory 1" => {
-                self.ptr_pos.2 = self.read_mem();
+                self.ptr_pos.2 = self.read_mem()?;
             }
             cmd if cmd.to_string() == "execute as @e[tag=ptr] at @s run tp @s -2 1 ~" => {
                 self.ptr_pos.0 = -2;
@@ -410,7 +450,7 @@ impl Interpreter {
                     }
 
                     let val = *self.rust_scores.get(target).unwrap_or_else(|| panic!("read from uninitialized variable {}", target));
-                    let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2);
+                    let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
                     self.memory[index as usize / 4] = val;
                 } else {
                     todo!("{:?}", sg)
@@ -423,7 +463,7 @@ impl Interpreter {
                     } else {
                         unreachable!()
                     }) {
-                        self.execute_cmd(run);
+                        self.execute_cmd(run)?;
                     }
                 } else {
                     todo!("{:?}", subcommands)
@@ -440,6 +480,10 @@ impl Interpreter {
                     todo!("{:?}", subcommands[0])
                 };
 
+                if subcommands.len() != 2 {
+                    todo!()
+                }
+
                 if let ExecuteSubCmd::Condition { is_unless, cond } = &subcommands[1] {
                     let value = self.check_cond(*is_unless, cond) as i32;
 
@@ -449,25 +493,29 @@ impl Interpreter {
                 };
             }
             cmd => todo!("{}", cmd)
-
         }
+
+        Ok(())
     }
 
-    pub fn step(&mut self) {
+    pub fn step(&mut self) -> Result<(), InterpError> {
         let (func_idx, cmd_idx) = self.call_stack.last_mut().unwrap();
-        
+
         //println!("Function {} at command {}", self.program[*func_idx].id, cmd_idx);
 
         let cmd = &self.program[*func_idx].cmds[*cmd_idx].clone();
         *cmd_idx += 1;
-        self.execute_cmd(cmd);
+        self.execute_cmd(cmd)?;
 
         self.commands_run += 1;
 
         loop {
             if self.call_stack.is_empty() {
                 self.call_stack.push(self.next_pos.take().unwrap());
-                println!("Executed {} commands from function 'TODO:'", self.commands_run);
+                println!(
+                    "Executed {} commands from function 'TODO:'",
+                    self.commands_run
+                );
                 self.commands_run = 0;
                 break;
             }
@@ -475,12 +523,13 @@ impl Interpreter {
             let (func_idx, cmd_idx) = self.call_stack.last().unwrap();
 
             if self.program[*func_idx].cmds.len() == *cmd_idx {
-                //println!("Returning");
                 self.call_stack.pop();
             } else {
-                break
+                break;
             }
         }
+
+        Ok(())
     }
 
     pub fn halted(&self) -> bool {

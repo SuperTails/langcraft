@@ -1,0 +1,5 @@
+[term]
+verbose = true
+
+[target.i686-unknown-linux-gnu]
+rustflags = ["-C", "embed-bitcode=yes", "-C", "lto", "--emit=llvm-ir,llvm-bc", "-Z", "pre-link-arg=-nostartfiles"]
