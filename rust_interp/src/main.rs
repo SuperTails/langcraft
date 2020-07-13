@@ -19,7 +19,7 @@ pub enum McBlock {
     RedstoneBlock,
 }
 
-pub static MC_BLOCKS: [McBlock; 10] = [
+static MC_BLOCKS: [McBlock; 10] = [
     McBlock::Air,
     McBlock::Cobblestone,
     McBlock::Granite,
@@ -89,14 +89,14 @@ fn panic(_info: &PanicInfo) -> ! {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Ident(u32);
+struct Ident(u32);
 
 const KEY_FN: Ident = Ident(u32::from_be_bytes(*b"\0\0FN"));
 const KEY_LET: Ident = Ident(u32::from_be_bytes(*b"\0LET"));
 const KEY_WHIL: Ident = Ident(u32::from_be_bytes(*b"WHIL"));
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum Token {
+enum Token {
     OpenSquare,
     CloseSquare,
     OpenCurly,
@@ -125,7 +125,7 @@ impl Token {
     }
 }
 
-pub unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
+unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
     turtle_x(-16);
     turtle_y(16);
 
@@ -263,7 +263,7 @@ impl FuncDecl {
 type Block = ArrayVec<[Stmt; 4]>;
 
 #[derive(Clone, PartialEq)]
-pub enum Stmt {
+enum Stmt {
     While {
         cond: (),
         body: usize,
@@ -399,7 +399,23 @@ impl Parser<'_> {
 
 #[no_mangle]
 pub fn main() {
-    let tokens = unsafe { tokenize() };
+    unsafe {
+        turtle_x(-16);
+        turtle_y(16);
+        let mut result = ArrayVec::<[u8; 16]>::new();
+        for idx in 0..16 {
+            turtle_z(-idx);
+            let got = turtle_get_char();
+            if got != b' ' {
+                result.push(got);
+            }
+        }
+
+        for r in result.iter() {
+            print(*r as i32);
+        }
+    }
+    /*let tokens = unsafe { tokenize() };
 
     unsafe { print_str!(b"tokens:") };
     for token in tokens.iter() {
@@ -414,5 +430,5 @@ pub fn main() {
             unsafe { print_str!(b"encountered error:") };
             err.print_self();
         }
-    }
+    }*/
 }

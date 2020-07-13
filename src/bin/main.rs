@@ -13,30 +13,56 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
             input = input.trim().to_string();
 
             if input == "" || input == "STEP" {
-                println!("{}", interp.next_command().unwrap());
+                eprintln!("{}", interp.next_command().unwrap());
                 interp.step()?;
             } else if input == "CONT" {
-                println!("Continuing");
+                eprintln!("Continuing");
                 hit_breakpoint = false;
             } else if input.starts_with("REG") {
                 let words = input.split_whitespace().collect::<Vec<_>>();
                 match &words[..] {
                     ["REG", reg] => {
-                        let holder = langcraft::cir::ScoreHolder::new(reg.to_string()).unwrap();
-                        if let Some(score) = interp.rust_scores.get(&holder) {
-                            println!("Holder {} has score {}", holder, score);
+                        if let Ok(holder) = langcraft::cir::ScoreHolder::new(reg.to_string()) {
+                            if let Some(score) = interp.rust_scores.get(&holder) {
+                                eprintln!("Holder {} has score {}", holder, score);
+                            } else {
+                                eprintln!("Holder {} has no score", holder);
+                            }
                         } else {
-                            println!("Holder {} has no score", holder);
+                            eprintln!("Invalid register name")
                         }
                     }
                     _ => eprintln!("Too many arguments to `REG`"),
                 }
             } else if input.starts_with("MEM") {
+                let words = input.split_whitespace().collect::<Vec<_>>();
+                match &words[..] {
+                    ["MEM", mem] => {
+                        let mem_idx = if mem.starts_with("0x") {
+                            usize::from_str_radix(&mem[2..], 16)
+                        }  else {
+                            usize::from_str_radix(mem, 10)
+                        };
+
+                        match mem_idx {
+                            Ok(mem_idx) => {
+                                eprintln!("Word at index {:#X} has value {}", mem_idx, interp.memory[mem_idx]);
+                            }
+                            Err(err) => {
+                                eprintln!("Invalid word index {:?}", err)
+                            }
+                        }
+                    }
+                    _ => eprintln!("Wrong number of arguments to `MEM`"),
+                }
                 eprintln!("TODO: `MEM`");
             } else {
                 eprintln!("Invalid input {:?}", input);
             }
         } else {
+            if interp.next_command().map(|c| c.to_string().contains("block main-blockbb5_preheader_i_i_i_i_i_i")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }
             /*if interp.next_command().map(|c| c.to_string()) == Some("execute at @e[tag=ptr] store result score %41%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1".to_string()) {
                 hit_breakpoint = true;
             }*/
@@ -128,7 +154,7 @@ fn main() {
         funcs.iter().map(|f| f.cmds.len()).sum::<usize>()
     );
 
-    let mut interp = Interpreter::new(funcs);
+    let mut interp = Interpreter::new(funcs, "FN ABC(){}");
 
     match run_interpreter(&mut interp) {
         Ok(()) => {

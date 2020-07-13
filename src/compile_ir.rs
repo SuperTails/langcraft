@@ -15,6 +15,7 @@ use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractValue, GetElementPtr, ICmp, InsertValue, LShr, Load,
     Mul, Or, Phi, PtrToInt, IntToPtr, Select, Shl, Store, Sub, Trunc, Xor, ZExt, ShuffleVector, ExtractElement,
 };
+use llvm_ir::debugloc::HasDebugLoc;
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
 use llvm_ir::types::Typed;
@@ -690,6 +691,7 @@ fn compile_global_var_init<'a>(
         ("%%SIXTEEN", 16),
         ("%%256", 256),
         ("%%2", 2),
+        ("%%-1", -1),
     ];
 
     for (name, value) in CONSTANTS {
@@ -1659,6 +1661,10 @@ pub fn compile_function(
                 id: McFuncId::new_sub(func.name.clone(), block.name.clone(), sub),
                 cmds: vec![],
             };
+            
+            if !block.instrs.is_empty() {
+                println!("{:?}", block.instrs[0].get_debug_loc());
+            }
 
             let mut this = make_new_func(sub);
             sub += 1;
@@ -3893,7 +3899,7 @@ mod test {
             num_elements: 4,
         };
 
-        assert_eq!(type_layout(&ty), Layout::from_size_align(4, 1).unwrap());
+        assert_eq!(type_layout(&ty), Layout::from_size_align(4, 4).unwrap());
     }
 
     #[test]

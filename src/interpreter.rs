@@ -36,20 +36,14 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    pub fn new(mut program: Vec<Function>) -> Self {
+    /// Does not include any intrinsics
+    pub fn new_raw(program: Vec<Function>, input: &str) -> Self {
         let func_idx = program.len() - 1;
 
-        for func in INTRINSICS.iter() {
-            program.push(func.clone());
-        }
-
         let mut letters = HashMap::new();
-        for (z, letter) in ['F', 'N', ' ', 'A', 'B', 'C', '(', ')', '{', '}']
-            .iter()
-            .enumerate()
-        {
-            if *letter != ' ' {
-                letters.insert((-16, 16, -(z as i32)), *letter);
+        for (z, letter) in input.chars().enumerate() {
+            if letter != ' ' {
+                letters.insert((-16, 16, -(z as i32)), letter);
             }
         }
 
@@ -65,6 +59,42 @@ impl Interpreter {
             output: Vec::new(),
             letters,
         }
+    }
+
+    pub fn new(mut program: Vec<Function>, input: &str) -> Self {
+        let func_idx = program.len() - 1;
+
+        for func in INTRINSICS.iter() {
+            program.push(func.clone());
+        }
+
+        let mut letters = HashMap::new();
+        for (z, letter) in input.chars().enumerate() {
+            if letter != ' ' {
+                letters.insert((-16, 16, -(z as i32)), letter);
+            }
+        }
+
+        Interpreter {
+            program,
+            call_stack: vec![(func_idx, 0)],
+            memory: [0; 8192],
+            rust_scores: HashMap::new(),
+            ptr_pos: (0, 0, 0),
+            turtle_pos: (0, 0, 0),
+            next_pos: None,
+            commands_run: 0,
+            output: Vec::new(),
+            letters,
+        }
+    }
+
+    /// Runs until the program halts
+    pub fn run_to_end(&mut self) -> Result<(), InterpError> {
+        while !self.halted() {
+            self.step()?
+        }
+        Ok(())
     }
 
     pub fn next_command(&self) -> Option<&Command> {
@@ -511,7 +541,9 @@ impl Interpreter {
 
         loop {
             if self.call_stack.is_empty() {
-                self.call_stack.push(self.next_pos.take().unwrap());
+                if let Some(n) = self.next_pos.take() {
+                    self.call_stack.push(n);
+                }
                 println!(
                     "Executed {} commands from function 'TODO:'",
                     self.commands_run
@@ -533,6 +565,6 @@ impl Interpreter {
     }
 
     pub fn halted(&self) -> bool {
-        self.call_stack.last() == Some(&(0xFFFF_FFFF_FFFF_FFFF, 0))
+        self.call_stack.last() == Some(&(0xFFFF_FFFF_FFFF_FFFF, 0)) || self.call_stack.is_empty()
     }
 }

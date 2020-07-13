@@ -914,6 +914,7 @@ impl CommandParser<'_> {
     }
 
     pub fn parse_execute_cond(&mut self, is_unless: bool) -> ExecuteSubCmd {
+        println!("remaining: {:?}", self.tail);
         let cond = match self.next_word() {
             Some("score") => {
                 let target = self.next_word().unwrap().parse().unwrap();
