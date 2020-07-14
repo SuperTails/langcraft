@@ -2,30 +2,33 @@ use crate::cir::{Function, FunctionId};
 use lazy_static::lazy_static;
 
 static INTRINSIC_STRS: &[(&str, &str)] = &[
-    ("memcpy", include_str!("intrinsic/memcpy.mcfunction")),
+    ("intrinsic:lshr", include_str!("intrinsic/lshr.mcfunction")),
+    ("intrinsic/lshr:getshift", include_str!("intrinsic/lshr/getshift.mcfunction")),
+    ("intrinsic/lshr:inner", include_str!("intrinsic/lshr/inner.mcfunction")),
+    ("intrinsic:memcpy", include_str!("intrinsic/memcpy.mcfunction")),
     (
-        "memcpy_inner",
+        "intrinsic:memcpy_inner",
         include_str!("intrinsic/memcpy_inner.mcfunction"),
     ),
-    ("or", include_str!("intrinsic/or.mcfunction")),
-    ("or_inner", include_str!("intrinsic/or_inner.mcfunction")),
+    ("intrinsic:or", include_str!("intrinsic/or.mcfunction")),
+    ("intrinsic:or_inner", include_str!("intrinsic/or_inner.mcfunction")),
     (
-        "pop_and_branch",
+        "intrinsic:pop_and_branch",
         include_str!("intrinsic/pop_and_branch.mcfunction"),
     ),
-    ("setptr", include_str!("intrinsic/setptr.mcfunction")),
+    ("intrinsic:setptr", include_str!("intrinsic/setptr.mcfunction")),
     (
-        "shift_from_ptr",
+        "intrinsic:shift_from_ptr",
         include_str!("intrinsic/shift_from_ptr.mcfunction"),
     ),
     (
-        "shift_from_ptr_inner",
+        "intrinsic:shift_from_ptr_inner",
         include_str!("intrinsic/shift_from_ptr_inner.mcfunction"),
     ),
-    ("xor", include_str!("intrinsic/xor.mcfunction")),
-    ("xor_inner", include_str!("intrinsic/xor_inner.mcfunction")),
-    ("and", include_str!("intrinsic/and.mcfunction")),
-    ("and_inner", include_str!("intrinsic/and_inner.mcfunction")),
+    ("intrinsic:xor", include_str!("intrinsic/xor.mcfunction")),
+    ("intrinsic:xor_inner", include_str!("intrinsic/xor_inner.mcfunction")),
+    ("intrinsic:and", include_str!("intrinsic/and.mcfunction")),
+    ("intrinsic:and_inner", include_str!("intrinsic/and_inner.mcfunction")),
 ];
 
 lazy_static! {
@@ -33,7 +36,7 @@ lazy_static! {
         INTRINSIC_STRS
             .iter()
             .map(|(name, body)| {
-                let id = FunctionId::new(format!("intrinsic:{}", name));
+                let id = FunctionId::new(name.to_owned());
                 let cmds = body
                     .lines()
                     .filter(|l| !l.is_empty())
@@ -52,6 +55,70 @@ mod test {
     use crate::cir;
     use crate::compile_ir::{self, param, return_holder};
     use super::*;
+
+    fn test_lshr(a: i32, shift: i32) {
+        let expected = (a as u32 >> shift) as i32;
+        let mut interp = Interpreter::new_raw(vec![
+            get_by_name("intrinsic/lshr:getshift").clone(),
+            get_by_name("intrinsic/lshr:inner").clone(),
+            get_by_name("intrinsic:lshr").clone(),
+        ], "");
+        interp.rust_scores.insert(param(0, 0), a);
+        interp.rust_scores.insert(param(1, 0), shift);
+        interp.rust_scores.insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        interp.run_to_end().unwrap();
+        let actual = *interp.rust_scores.get(&param(0, 0)).unwrap();
+
+        if expected != actual {
+            println!("Shift: {}", shift);
+            println!("Input:    {:>10} ({:#010X})", a, a);
+            println!("Expected: {:>10} ({:#010X})", expected, expected);
+            println!("Actual:   {:>10} ({:#010X})", actual, actual);
+            panic!();
+        }
+    }
+
+    #[test]
+    fn lshr_i32_min() {
+        for shift in 0..32 {
+            test_lshr(i32::MIN, shift);
+        }
+    }
+
+    #[test]
+    fn lshr_i32_max() {
+        for shift in 0..32 {
+            test_lshr(i32::MAX, shift);
+        }
+    }
+
+    #[test]
+    fn lshr_zero() {
+        for shift in 0..32 {
+            test_lshr(0, shift);
+        }
+    }
+
+    #[test]
+    fn lshr_neg_one() {
+        for shift in 0..32 {
+            test_lshr(-1, shift);
+        }
+    }
+
+    #[test]
+    fn lshr_other_positive() {
+        for shift in 0..32 {
+            test_lshr(1234567890, shift)
+        }
+    }
+
+    #[test]
+    fn lshr_other_negative() {
+        for shift in 0..32 {
+            test_lshr(-1234567890, shift)
+        }
+    }
 
     fn get_by_name(name: &str) -> &'static Function {
         INTRINSICS.iter().find(|f| f.id == FunctionId::new(name)).unwrap_or_else(|| panic!("Could not find {:?}", name))

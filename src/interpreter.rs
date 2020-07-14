@@ -7,6 +7,7 @@ use std::convert::TryInto;
 #[derive(Debug, Clone, PartialEq)]
 pub enum InterpError {
     OutOfBoundsAccess(i32, i32, i32),
+    MaxCommandsRun,
 }
 
 impl std::fmt::Display for InterpError {
@@ -15,7 +16,7 @@ impl std::fmt::Display for InterpError {
             InterpError::OutOfBoundsAccess(x, y, z) => {
                 write!(f, "out of bounds access at x={}, y={}, z={}", x, y, z)
             }
-
+            InterpError::MaxCommandsRun => write!(f, "ran too many commands at once"),
         }
     }
 }
@@ -24,7 +25,7 @@ impl std::error::Error for InterpError {}
 
 pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
-    call_stack: Vec<(usize, usize)>,
+    pub(crate) call_stack: Vec<(usize, usize)>,
     program: Vec<Function>,
     pub memory: [i32; 8192],
     ptr_pos: (i32, i32, i32),
@@ -222,7 +223,7 @@ impl Interpreter {
                 }
 
                 let mut lhs = self.get_rust_score(target).unwrap();
-                lhs += *score;
+                lhs = lhs.wrapping_add(*score);
                 self.rust_scores.insert(target.clone(), lhs);
             }
             Command::ScoreOp(ScoreOp { target, target_obj, kind, source, source_obj }) => {
@@ -529,6 +530,11 @@ impl Interpreter {
     }
 
     pub fn step(&mut self) -> Result<(), InterpError> {
+        // TODO: This may be off by one       
+        if self.commands_run >= 10_000 {
+            return Err(InterpError::MaxCommandsRun);
+        }
+
         let (func_idx, cmd_idx) = self.call_stack.last_mut().unwrap();
 
         //println!("Function {} at command {}", self.program[*func_idx].id, cmd_idx);

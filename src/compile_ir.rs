@@ -83,16 +83,61 @@ pub fn read_ptr_small(dest: ScoreHolder, is_halfword: bool) -> Vec<Command> {
         .into(),
     );
     cmds.push(read_ptr(param(0, 0)));
-    cmds.push(
-        McFuncCall {
-            id: McFuncId::new("intrinsic:shift_from_ptr"),
-        }
-        .into(),
-    );
-    cmds.extend(truncate_to(param(0, 0), if is_halfword { 2 } else { 1 }));
-    cmds.push(assign(dest, param(0, 0)));
 
-    cmds
+    if is_halfword {
+        todo!("halfword read")
+    } else {
+        // %param1%0 = shifts[ptr % 4]
+
+        cmds.push(assign(param(1, 0), ptr()));
+        cmds.push(ScoreOp {
+            target: param(1, 0).into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ScoreOpKind::ModAssign,
+            source: ScoreHolder::new("%%FOUR".into()).unwrap().into(),
+            source_obj: OBJECTIVE.into(),
+        }.into());
+
+        let shifts = [3, 2, 1, 0];
+        for (idx, byte_amt) in shifts.iter().copied().enumerate() {
+            let shift = 1 << (8 * byte_amt);
+
+            let mut exec = Execute::new();
+            exec.with_if(ExecuteCondition::Score {
+                target: param(1, 0).into(),
+                target_obj: OBJECTIVE.into(),
+                kind: ExecuteCondKind::Matches((idx as i32..=idx as i32).into()),
+            });
+            exec.with_run(ScoreSet {
+                target: param(1, 0).into(),
+                target_obj: OBJECTIVE.into(),
+                score: shift,
+            });
+            cmds.push(exec.into());
+        }
+
+        cmds.push(ScoreOp {
+            target: param(0, 0).into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ScoreOpKind::MulAssign,
+            source: param(1, 0).into(),
+            source_obj: OBJECTIVE.into(),
+        }.into());
+
+        cmds.push(ScoreSet {
+            target: param(1, 0).into(),
+            target_obj: OBJECTIVE.into(),
+            score: 24,
+        }.into());
+
+        cmds.push(McFuncCall {
+            id: McFuncId::new("intrinsic:lshr"),
+        }.into());
+
+        cmds.push(assign(dest, param(0, 0)));
+
+        cmds
+    }
 }
 
 /// Reads the current pointer location into some target for objective `rust`
@@ -3891,6 +3936,31 @@ fn get_unique_holder() -> ScoreHolder {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::interpreter::Interpreter;
+
+    #[test]
+    fn read_ptr_byte() {
+        let func = McFunction {
+            id: McFuncId::new("read_ptr_small"),
+            cmds: read_ptr_small(ScoreHolder::new("dest".into()).unwrap(), false),
+        };
+
+        let mut interp = Interpreter::new(vec![func], "");
+        let word = [0x12, 0xEA, 0x56, 0x78];
+        interp.rust_scores.insert(ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
+        interp.rust_scores.insert(ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
+        interp.rust_scores.insert(ScoreHolder::new("%%256".into()).unwrap(), 256);
+        interp.rust_scores.insert(ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        interp.memory[1] = i32::from_le_bytes(word);
+
+        for (pt, expected) in word.iter().copied().enumerate() {
+            interp.call_stack = vec![(0, 0)];
+            interp.rust_scores.insert(ptr(), pt as i32 + 4);
+            interp.run_to_end().unwrap();
+            let result = *interp.rust_scores.get(&ScoreHolder::new("dest".into()).unwrap()).unwrap();
+            assert_eq!(result, expected as i32);
+        }
+    }
 
     #[test]
     fn vector_layout() {
