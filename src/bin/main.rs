@@ -56,19 +56,23 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                     }
                     _ => eprintln!("Wrong number of arguments to `MEM`"),
                 }
-                eprintln!("TODO: `MEM`");
             } else {
                 eprintln!("Invalid input {:?}", input);
             }
         } else {
-            /*if interp.next_command().map(|c| c.to_string().contains("block main-blockbb5_preheader_i_i_i_i_i_i")).unwrap_or(false) {
-                hit_breakpoint = true;
-            }*/
-            /*if interp.next_command().map(|c| c.to_string()) == Some("execute at @e[tag=ptr] store result score %41%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1".to_string()) {
-                hit_breakpoint = true;
-            }*/
-
             interp.step()?;
+
+            if interp.next_command().map(|c| c.to_string().contains("tokens:")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }
+
+            if interp.next_command().map(|c| c.to_string() == "scoreboard players operation %ptr rust = iter.sroa.0.0105%0 rust").unwrap_or(false) {
+                hit_breakpoint = true;
+            }
+
+            if interp.next_command().map(|c| c.to_string().contains("UNREACHABLE")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }
         }
     }
 
@@ -167,6 +171,7 @@ fn main() {
             compare_output(&interp);
         }
         Err(err) => {
+            eprintln!("==========================================");
             eprintln!("Encountered interpreter error: {}", err);
             eprintln!("Output:");
             for i in interp.output.iter() {

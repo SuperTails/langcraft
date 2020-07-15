@@ -5,7 +5,7 @@
 
 scoreboard players operation %temp1a rust = %param2%0 rust
 scoreboard players operation %temp1a rust %= %%FOUR rust
-execute if score %temp1a rust matches 1..3 run tellraw @a [{"text": "MEMCPY WITH NON MULTIPLE OF FOUR"}]
+# !INTERPRETER: ASSERT if score %temp1a rust matches 0..0
 
 # FIXME: This will break once we support smaller memcpy lengths
 scoreboard players operation %param2%0 rust /= %%FOUR rust

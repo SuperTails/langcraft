@@ -3,11 +3,15 @@ use crate::compile_ir::{get_index, OBJECTIVE};
 use crate::intrinsics::INTRINSICS;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InterpError {
     OutOfBoundsAccess(i32, i32, i32),
     MaxCommandsRun,
+    EnteredUnreachable,
+    EnteredTodo,   
+    AssertionFailed,
 }
 
 impl std::fmt::Display for InterpError {
@@ -17,6 +21,9 @@ impl std::fmt::Display for InterpError {
                 write!(f, "out of bounds access at x={}, y={}, z={}", x, y, z)
             }
             InterpError::MaxCommandsRun => write!(f, "ran too many commands at once"),
+            InterpError::EnteredUnreachable => write!(f, "entered unreachable code"),
+            InterpError::EnteredTodo => write!(f, "entered code not yet implemented"),
+            InterpError::AssertionFailed => write!(f, "assertion failed"),
         }
     }
 }
@@ -88,6 +95,12 @@ impl Interpreter {
             output: Vec::new(),
             letters,
         }
+    }
+
+    pub fn set_byte(&mut self, value: u8, addr: usize) {
+        let mut bytes = self.memory[addr / 4].to_le_bytes();
+        bytes[addr % 4] = value;
+        self.memory[addr / 4] = i32::from_le_bytes(bytes);
     }
 
     /// Runs until the program halts
@@ -280,7 +293,6 @@ impl Interpreter {
                     todo!("{}", target)
                 }
             }
-            Command::Comment(_) => {}
             Command::FuncCall(FuncCall { id }) => {
                 let called_idx = self.program.iter().enumerate().find(|(_, f)| &f.id == id).unwrap_or_else(|| todo!("{:?}", id)).0;
                 self.call_stack.push((called_idx, 0));
@@ -523,6 +535,29 @@ impl Interpreter {
                     todo!("{:?}", subcommands[1])
                 };
             }
+            Command::Comment(c) if c == "!INTERPRETER: TODO" => {
+                return Err(InterpError::EnteredTodo);
+            }
+            Command::Comment(c) if c == "!INTERPRETER: UNREACHABLE" => {
+                return Err(InterpError::EnteredUnreachable);
+            }
+            Command::Comment(c) if c.starts_with("!INTERPRETER: ASSERT ") => {
+                let c = &c["!INTERPRETER: ASSERT ".len()..];
+                let (c, is_unless) = if c.starts_with("unless ") {
+                    (&c["unless ".len()..], true)
+                } else if c.starts_with("if ") {
+                    (&c["if ".len()..], false)
+                } else {
+                    todo!()
+                };
+
+                let cond = ExecuteCondition::from_str(c).unwrap();
+
+                if !self.check_cond(is_unless, &cond) {
+                    return Err(InterpError::AssertionFailed);
+                }
+            }
+            Command::Comment(_) => {}
             cmd => todo!("{}", cmd)
         }
 

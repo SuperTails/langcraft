@@ -88,14 +88,38 @@ fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Ident(u32);
+#[derive(Clone, PartialEq, Eq)]
+struct Ident(ArrayVec::<[u8; 8]>);
 
-const KEY_FN: Ident = Ident(u32::from_be_bytes(*b"\0\0FN"));
-const KEY_LET: Ident = Ident(u32::from_be_bytes(*b"\0LET"));
-const KEY_WHIL: Ident = Ident(u32::from_be_bytes(*b"WHIL"));
+impl Ident {
+    pub fn new() -> Self {
+        Ident(ArrayVec::new())
+    }
 
-#[derive(Clone, Copy, PartialEq)]
+    pub fn print_self(&self) {
+        let mut word = [0, 0, 0, 0];
+        for (idx, byte) in word.iter_mut().enumerate() {
+            if let Some(b) = self.0.get(idx).copied() {
+                *byte = b;
+            }
+        }
+        unsafe { print(i32::from_ne_bytes(word)) };
+    }
+
+    pub fn is_key_fn(&self) -> bool {
+        &self.0[..] == &b"FN"[..]
+    }
+
+    pub fn is_key_let(&self) -> bool {
+        &self.0[..] == &b"LET"[..]
+    }
+
+    pub fn is_key_while(&self) -> bool {
+        &self.0[..] == &b"WHILE"[..]
+    }
+}
+
+#[derive(Clone, PartialEq)]
 enum Token {
     OpenSquare,
     CloseSquare,
@@ -107,6 +131,14 @@ enum Token {
 }
 
 impl Token {
+    pub fn is_key_fn(&self) -> bool {
+        if let Token::Ident(i) = self {
+            i.is_key_fn()
+        } else {
+            false
+        }
+    }
+
     pub fn print_self(&self) {
         unsafe { 
             match self {
@@ -116,9 +148,9 @@ impl Token {
                 Token::CloseCurly => print_str!("}"),
                 Token::OpenParen => print_str!("("),
                 Token::CloseParen => print_str!(")"),
-                Token::Ident(Ident(i)) => {
+                Token::Ident(i) => {
                     print_str!("ident:");
-                    print(*i as i32)
+                    i.print_self();
                 }
             }
         }
@@ -134,7 +166,7 @@ unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
         .peekable();
 
     let mut current_token = None;
-    let mut tokens = ArrayVec::new();
+    let mut tokens = ArrayVec::<[Token; 16]>::new();
 
     loop {
         if let Some(c) = char_iter.next() {
@@ -202,14 +234,15 @@ unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
                     print_str!("Part of an ident");
 
                     if let Some(Token::Ident(Ident(i))) = current_token.as_mut() {
-                        *i <<= 8;
-                        *i += c as u32;
+                        i.push(c);
                     } else {
                         if let Some(t) = current_token.take() {
                             tokens.push(t);
                         }
 
-                        current_token = Some(Token::Ident(Ident(c as u32)));
+                        let mut ident = Ident::new();
+                        ident.0.push(c);
+                        current_token = Some(Token::Ident(ident));
                     }
                 }
                 _ => {
@@ -224,6 +257,11 @@ unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
         } else {
             break;
         }
+    }
+
+    unsafe { print_str!(b"tokens2:") };
+    for token in tokens.iter() {
+        token.print_self();
     }
 
     tokens
@@ -250,7 +288,7 @@ impl FuncDecl {
     pub fn print_self(&self, blocks: &[Block]) {
         unsafe {
             print_str!("function declaration with name:");
-            print(self.name.0 as i32);
+            self.name.print_self();
             print_str!("and body:");
             for stmt in blocks[self.body].iter() {
                 stmt.print_self(blocks);
@@ -320,20 +358,20 @@ fn parse_ast(tokens: &[Token]) -> Result<Ast, ParseError> {
 }
 
 impl Parser<'_> {
-    pub fn peek_token(&self) -> Option<Token> {
-        self.tokens.get(0).copied()
+    pub fn peek_token(&self) -> Option<&Token> {
+        self.tokens.get(0)
     }
 
-    pub fn next_token(&mut self) -> Result<Token, ParseError> {
+    pub fn next_token(&mut self) -> Result<&Token, ParseError> {
         if let Some((head, tail)) = self.tokens.split_first() {
             self.tokens = tail;
-            Ok(*head)
+            Ok(head)
         } else {
             Err(ParseError::Eof)
         }
     }
 
-    pub fn expect_token(&mut self, expected: Token) -> Result<(), ParseError> {
+    pub fn expect_token(&mut self, expected: &Token) -> Result<(), ParseError> {
         if self.next_token()? == expected {
             Ok(())
         } else {
@@ -344,7 +382,7 @@ impl Parser<'_> {
     pub fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
         let token = self.next_token()?;
         match token {
-            Token::Ident(KEY_WHIL) => {
+            Token::Ident(i) if i.is_key_while() => {
                 // TODO: Parse condition
                 let cond = ();
 
@@ -359,14 +397,14 @@ impl Parser<'_> {
     }
 
     pub fn parse_block(&mut self) -> Result<usize, ParseError> {
-        self.expect_token(Token::OpenCurly)?;
+        self.expect_token(&Token::OpenCurly)?;
 
         let mut block = Block::new();
-        while self.peek_token() != Some(Token::CloseCurly) {
+        while self.peek_token() != Some(&Token::CloseCurly) {
             block.push(self.parse_stmt()?);
         }
 
-        self.expect_token(Token::CloseCurly)?;
+        self.expect_token(&Token::CloseCurly)?;
 
         let result = self.blocks.len();
         self.blocks.push(block);
@@ -374,20 +412,20 @@ impl Parser<'_> {
     }
 
     pub fn parse_func_decl(&mut self) -> Result<FuncDecl, ParseError> {
-        if self.next_token()? != Token::Ident(KEY_FN) {
+        if !self.next_token()?.is_key_fn() {
             return Err(ParseError::UnexpectedToken)
         }
         
         let name = match self.next_token()? {
-            Token::Ident(i) => i,
+            Token::Ident(i) => i.clone(),
             _token => return Err(ParseError::UnexpectedToken),
         };
 
-        self.expect_token(Token::OpenParen)?;
+        self.expect_token(&Token::OpenParen)?;
 
         // TODO: Parse args
 
-        self.expect_token(Token::CloseParen)?;
+        self.expect_token(&Token::CloseParen)?;
 
         // TODO: Parse return type
 
@@ -399,22 +437,33 @@ impl Parser<'_> {
 
 #[no_mangle]
 pub fn main() {
-    /*unsafe {
+    unsafe {
+        print_str!(b"Size and align of an ident:");
+        print(core::mem::size_of::<Ident>() as i32);
+        print(core::mem::align_of::<Ident>() as i32);
+        print_str!("Size of a token:");
+        print(core::mem::size_of::<Token>() as i32);
+    }
+
+    unsafe {
         turtle_x(-16);
         turtle_y(16);
-        let mut result = ArrayVec::<[u8; 16]>::new();
+        let mut result = ArrayVec::<[Token; 16]>::new();
         for idx in 0..16 {
             turtle_z(-idx);
             let got = turtle_get_char();
             if got != b' ' {
-                result.push(got);
+                let mut av = ArrayVec::new();
+                av.push(got);
+                result.push(Token::Ident(Ident(av)));
             }
         }
 
         for r in result.iter() {
-            print(*r as i32);
+            r.print_self();
         }
-    }*/
+    }
+
     let tokens = unsafe { tokenize() };
 
     unsafe { print_str!(b"tokens:") };

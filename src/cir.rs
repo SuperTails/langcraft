@@ -652,6 +652,14 @@ pub enum ExecuteCondition {
     },
 }
 
+impl FromStr for ExecuteCondition {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(CommandParser { tail: s }.parse_execute_cond())
+    }
+}
+
 impl fmt::Display for ExecuteCondition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -847,8 +855,8 @@ impl CommandParser<'_> {
 
     pub fn parse_execute_subcmd(&mut self) -> ExecuteSubCmd {
         match self.next_word() {
-            Some("if") => self.parse_execute_cond(false),
-            Some("unless") => self.parse_execute_cond(true),
+            Some("if") => ExecuteSubCmd::Condition { is_unless: false, cond: self.parse_execute_cond() },
+            Some("unless") => ExecuteSubCmd::Condition { is_unless: true, cond: self.parse_execute_cond() },
             Some("at") => ExecuteSubCmd::At {
                 target: self.next_word().unwrap().parse().unwrap(),
             },
@@ -913,9 +921,8 @@ impl CommandParser<'_> {
         }
     }
 
-    pub fn parse_execute_cond(&mut self, is_unless: bool) -> ExecuteSubCmd {
-        println!("remaining: {:?}", self.tail);
-        let cond = match self.next_word() {
+    pub fn parse_execute_cond(&mut self) -> ExecuteCondition {
+        match self.next_word() {
             Some("score") => {
                 let target = self.next_word().unwrap().parse().unwrap();
                 let target_obj = self.next_word().unwrap().to_owned();
@@ -943,9 +950,7 @@ impl CommandParser<'_> {
                 }
             }
             nw => todo!("{:?}", nw),
-        };
-
-        ExecuteSubCmd::Condition { is_unless, cond }
+        }
     }
 
     pub fn parse_scoreboard(&mut self) -> Command {

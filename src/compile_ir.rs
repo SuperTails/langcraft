@@ -11,6 +11,8 @@ use either::Either;
 use lazy_static::lazy_static;
 use llvm_ir::constant::BitCast as BitCastConst;
 use llvm_ir::constant::GetElementPtr as GetElementPtrConst;
+use llvm_ir::constant::Select as SelectConst;
+use llvm_ir::constant::ICmp as ICmpConst;
 use llvm_ir::debugloc::HasDebugLoc;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
@@ -64,6 +66,25 @@ pub fn print_entry(location: &McFuncId) -> Command {
     .into()
 }
 
+pub fn mark_todo() -> Command {
+    Command::Comment("!INTERPRETER: TODO".into())
+}
+
+pub fn mark_unreachable() -> Command {
+    Command::Comment("!INTERPRETER: UNREACHABLE".into())
+}
+
+pub fn mark_assertion(is_unless: bool, cond: &ExecuteCondition) -> Command {
+    let mut text = "!INTERPRETER: ASSERT ".to_string();
+    if is_unless {
+        text.push_str("unless ");
+    } else {
+        text.push_str("if ");
+    }
+    text.push_str(&cond.to_string());
+    Command::Comment(text)
+}
+
 // %ptr, %x, %y, %z, %param<X> are caller-saved registers
 // all other registers are callee-saved
 // %stackptr is... weird
@@ -71,81 +92,18 @@ pub fn print_entry(location: &McFuncId) -> Command {
 
 // `intrinsic:setptr` sets the pointer to the value in `%ptr` for objective `rust`
 
-/// This reads from %ptr, does a %setptr, and then gets either a halfword or a byte
+/// This reads from %ptr, does a setptr, and then gets either a halfword or a byte
 ///
-/// ... and clobbers %param0%0 in the process
+/// ... and clobbers %param0%0 and %param1%0 in the process
 pub fn read_ptr_small(dest: ScoreHolder, is_halfword: bool) -> Vec<Command> {
     let mut cmds = Vec::new();
-
-    cmds.push(
-        McFuncCall {
-            id: McFuncId::new("intrinsic:setptr"),
-        }
-        .into(),
-    );
-    cmds.push(read_ptr(param(0, 0)));
 
     if is_halfword {
         todo!("halfword read")
     } else {
-        // %param1%0 = shifts[ptr % 4]
-
-        cmds.push(assign(param(1, 0), ptr()));
-        cmds.push(
-            ScoreOp {
-                target: param(1, 0).into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ScoreOpKind::ModAssign,
-                source: ScoreHolder::new("%%FOUR".into()).unwrap().into(),
-                source_obj: OBJECTIVE.into(),
-            }
-            .into(),
-        );
-
-        let shifts = [3, 2, 1, 0];
-        for (idx, byte_amt) in shifts.iter().copied().enumerate() {
-            let shift = 1 << (8 * byte_amt);
-
-            let mut exec = Execute::new();
-            exec.with_if(ExecuteCondition::Score {
-                target: param(1, 0).into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((idx as i32..=idx as i32).into()),
-            });
-            exec.with_run(ScoreSet {
-                target: param(1, 0).into(),
-                target_obj: OBJECTIVE.into(),
-                score: shift,
-            });
-            cmds.push(exec.into());
-        }
-
-        cmds.push(
-            ScoreOp {
-                target: param(0, 0).into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ScoreOpKind::MulAssign,
-                source: param(1, 0).into(),
-                source_obj: OBJECTIVE.into(),
-            }
-            .into(),
-        );
-
-        cmds.push(
-            ScoreSet {
-                target: param(1, 0).into(),
-                target_obj: OBJECTIVE.into(),
-                score: 24,
-            }
-            .into(),
-        );
-
-        cmds.push(
-            McFuncCall {
-                id: McFuncId::new("intrinsic:lshr"),
-            }
-            .into(),
-        );
+        cmds.push(McFuncCall {
+            id: McFuncId::new("intrinsic:load_byte")
+        }.into());
 
         cmds.push(assign(dest, param(0, 0)));
 
@@ -626,9 +584,9 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 .unwrap_or_else(|| panic!("could not find main"))
         });
 
-    for func in &mut funcs[1..] {
+    /*for func in &mut funcs[1..] {
         func.cmds.insert(0, print_entry(&func.id));
-    }
+    }*/
 
     funcs.push(McFunction {
         id: McFuncId::new("run"),
@@ -1233,7 +1191,16 @@ fn compile_call(
                 assert!(dest.is_none());
                 println!("Assumption {:?}", arguments[0]);
 
-                let cmds = vec![Command::Comment(format!("assumption {:?}", arguments[0]))];
+                let (mut cmds, op) = eval_operand(&arguments[0].0, globals);
+
+                cmds.push(
+                    mark_assertion(false, &ExecuteCondition::Score {
+                        target: op[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((1..=1).into()),
+                    })
+                );
+
                 (cmds, None)
             }
             "print_raw" => {
@@ -1593,6 +1560,19 @@ fn compile_call(
                 assert_eq!(dest, None);
                 (vec![], None)
             }
+            "bcmp" => {
+                assert_eq!(arguments.len(), 3);
+
+                let mut cmds = Vec::new();
+                
+                cmds.extend(setup_arguments(arguments, globals));
+
+                cmds.push(McFuncCall {
+                    id: McFuncId::new("intrinsic:bcmp"),
+                }.into());
+
+                (cmds, None)
+            }
             _ => {
                 // TODO: Determine if we need %%fixup
                 let mut callee_id = McFuncId::new(name);
@@ -1714,6 +1694,7 @@ fn compile_call(
         todo!("{:?}", function)
     }
 }
+
 
 pub fn compile_function(
     func: &Function,
@@ -1969,20 +1950,25 @@ pub fn compile_function(
 
                     this.cmds.push(default_cmd.into());
                 }
-                Terminator::Unreachable(Unreachable { .. }) => this.cmds.push(
-                    Tellraw {
-                        target: cir::Selector {
-                            var: cir::SelectorVariable::AllPlayers,
-                            args: Vec::new(),
+                Terminator::Unreachable(Unreachable { .. }) => {
+                    this.cmds.push(mark_unreachable());
+                    this.cmds.push(
+                        Tellraw {
+                            target: cir::Selector {
+                                var: cir::SelectorVariable::AllPlayers,
+                                args: Vec::new(),
+                            }
+                            .into(),
+                            message: cir::TextBuilder::new()
+                                .append_text("ENTERED UNREACHABLE CODE".into())
+                                .build(),
                         }
                         .into(),
-                        message: cir::TextBuilder::new()
-                            .append_text("ENTERED UNREACHABLE CODE".into())
-                            .build(),
-                    }
-                    .into(),
-                ),
+                    );
+                }
                 Terminator::Resume(_) => {
+                    this.cmds.push(mark_todo());
+
                     let message = cir::TextBuilder::new()
                         .append_text("OH NO EXCEPTION HANDLING TOOD".into())
                         .build();
@@ -3991,6 +3977,55 @@ pub fn eval_constant(
                 todo!("{:?}", elems);
             }
         }
+        Constant::ICmp(icmp) => {
+            let ICmpConst { predicate, operand0, operand1 } = &**icmp;
+            if let MaybeConst::Const(op0) = eval_constant(operand0, globals) {
+                if let MaybeConst::Const(op1) = eval_constant(operand1, globals) {
+                    let result = match predicate {
+                        IntPredicate::NE => op0 != op1,
+                        _ => todo!("{:?}", predicate),
+                    };
+                    MaybeConst::Const(result as i32)
+                } else {
+                    todo!("{:?}", operand1)
+                }
+            } else {
+                todo!("{:?}", operand0)
+            }
+        }
+        Constant::Select(s) => {
+            let SelectConst { condition, true_value, false_value } = &**s;
+            let condition = match condition {
+                Constant::ICmp(i) => {
+                    let ICmpConst { predicate, operand0, operand1 } = &**i;
+                    if let Constant::BitCast(bc) = operand0 {
+                        if let BitCastConst { operand: Constant::GlobalReference { name, .. }, .. } = &**bc {
+                            let value = globals.get(name).unwrap().0;
+                            if let Constant::Null(_) = operand1 {
+                                #[allow(clippy::absurd_extreme_comparisons)]
+                                match predicate {
+                                    IntPredicate::ULE => (value as u32) <= 0,
+                                    IntPredicate::NE => (value as u32) != 0,
+                                    _ => todo!("{:?}", predicate),
+                                }
+                            } else {
+                                todo!("{:?}", operand1)
+                            }
+                        } else {
+                            todo!("{:?}", bc)
+                        }
+                    } else {
+                        todo!("{:?}", operand0)
+                    }
+                }
+                _ => todo!("{:?}", condition),
+            };
+            if condition {
+                eval_constant(true_value, globals)
+            } else {
+                eval_constant(false_value, globals)
+            }
+        }
         _ => todo!("evaluate constant {:?}", con),
     }
 }
@@ -4049,42 +4084,6 @@ fn get_unique_holder() -> ScoreHolder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::interpreter::Interpreter;
-
-    #[test]
-    fn read_ptr_byte() {
-        let func = McFunction {
-            id: McFuncId::new("read_ptr_small"),
-            cmds: read_ptr_small(ScoreHolder::new("dest".into()).unwrap(), false),
-        };
-
-        let mut interp = Interpreter::new(vec![func], "");
-        let word = [0x12, 0xEA, 0x56, 0x78];
-        interp
-            .rust_scores
-            .insert(ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp
-            .rust_scores
-            .insert(ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(ScoreHolder::new("%%-1".into()).unwrap(), -1);
-        interp.memory[1] = i32::from_le_bytes(word);
-
-        for (pt, expected) in word.iter().copied().enumerate() {
-            interp.call_stack = vec![(0, 0)];
-            interp.rust_scores.insert(ptr(), pt as i32 + 4);
-            interp.run_to_end().unwrap();
-            let result = *interp
-                .rust_scores
-                .get(&ScoreHolder::new("dest".into()).unwrap())
-                .unwrap();
-            assert_eq!(result, expected as i32);
-        }
-    }
 
     #[test]
     fn vector_layout() {
