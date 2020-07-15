@@ -399,7 +399,7 @@ impl Parser<'_> {
 
 #[no_mangle]
 pub fn main() {
-    unsafe {
+    /*unsafe {
         turtle_x(-16);
         turtle_y(16);
         let mut result = ArrayVec::<[u8; 16]>::new();
@@ -414,8 +414,8 @@ pub fn main() {
         for r in result.iter() {
             print(*r as i32);
         }
-    }
-    /*let tokens = unsafe { tokenize() };
+    }*/
+    let tokens = unsafe { tokenize() };
 
     unsafe { print_str!(b"tokens:") };
     for token in tokens.iter() {
@@ -430,5 +430,5 @@ pub fn main() {
             unsafe { print_str!(b"encountered error:") };
             err.print_self();
         }
-    }*/
+    }
 }

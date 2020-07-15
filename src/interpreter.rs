@@ -530,7 +530,7 @@ impl Interpreter {
     }
 
     pub fn step(&mut self) -> Result<(), InterpError> {
-        // TODO: This may be off by one       
+        // TODO: This may be off by one
         if self.commands_run >= 10_000 {
             return Err(InterpError::MaxCommandsRun);
         }

@@ -40,17 +40,18 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                     ["MEM", mem] => {
                         let mem_idx = if mem.starts_with("0x") {
                             usize::from_str_radix(&mem[2..], 16)
-                        }  else {
+                        } else {
                             usize::from_str_radix(mem, 10)
                         };
 
                         match mem_idx {
                             Ok(mem_idx) => {
-                                eprintln!("Word at index {:#X} has value {}", mem_idx, interp.memory[mem_idx]);
+                                eprintln!(
+                                    "Word at index {:#X} has value {}",
+                                    mem_idx, interp.memory[mem_idx]
+                                );
                             }
-                            Err(err) => {
-                                eprintln!("Invalid word index {:?}", err)
-                            }
+                            Err(err) => eprintln!("Invalid word index {:?}", err),
                         }
                     }
                     _ => eprintln!("Wrong number of arguments to `MEM`"),
@@ -60,9 +61,9 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 eprintln!("Invalid input {:?}", input);
             }
         } else {
-            if interp.next_command().map(|c| c.to_string().contains("block main-blockbb5_preheader_i_i_i_i_i_i")).unwrap_or(false) {
+            /*if interp.next_command().map(|c| c.to_string().contains("block main-blockbb5_preheader_i_i_i_i_i_i")).unwrap_or(false) {
                 hit_breakpoint = true;
-            }
+            }*/
             /*if interp.next_command().map(|c| c.to_string()) == Some("execute at @e[tag=ptr] store result score %41%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1".to_string()) {
                 hit_breakpoint = true;
             }*/
@@ -96,7 +97,6 @@ fn compare_output(interp: &Interpreter) {
         println!("[{:>3}] {}", out.0, out.1);
     }
     println!();
-
 
     let mut match_success = true;
     for idx in 0..output.len().max(interp.output.len()) {

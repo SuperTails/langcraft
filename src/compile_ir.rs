@@ -1,21 +1,22 @@
 use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
 use crate::cir::FunctionId as McFuncId;
-use crate::interpreter::InterpError;
 use crate::cir::{
     self, Command, Data, DataKind, DataTarget, Execute, ExecuteCondKind, ExecuteCondition,
     ExecuteStoreKind, ExecuteSubCmd, ScoreAdd, ScoreGet, ScoreHolder, ScoreOp, ScoreOpKind,
     ScoreSet, SetBlock, SetBlockKind, Target, Tellraw,
 };
+use crate::interpreter::InterpError;
 use either::Either;
 use lazy_static::lazy_static;
 use llvm_ir::constant::BitCast as BitCastConst;
 use llvm_ir::constant::GetElementPtr as GetElementPtrConst;
-use llvm_ir::instruction::{
-    Add, Alloca, And, BitCast, Call, ExtractValue, GetElementPtr, ICmp, InsertValue, LShr, Load,
-    Mul, Or, Phi, PtrToInt, IntToPtr, Select, Shl, Store, Sub, Trunc, Xor, ZExt, ShuffleVector, ExtractElement,
-};
 use llvm_ir::debugloc::HasDebugLoc;
+use llvm_ir::instruction::{
+    Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
+    InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, Select, Shl, ShuffleVector, Store,
+    Sub, Trunc, Xor, ZExt,
+};
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
 use llvm_ir::types::Typed;
@@ -90,13 +91,16 @@ pub fn read_ptr_small(dest: ScoreHolder, is_halfword: bool) -> Vec<Command> {
         // %param1%0 = shifts[ptr % 4]
 
         cmds.push(assign(param(1, 0), ptr()));
-        cmds.push(ScoreOp {
-            target: param(1, 0).into(),
-            target_obj: OBJECTIVE.into(),
-            kind: ScoreOpKind::ModAssign,
-            source: ScoreHolder::new("%%FOUR".into()).unwrap().into(),
-            source_obj: OBJECTIVE.into(),
-        }.into());
+        cmds.push(
+            ScoreOp {
+                target: param(1, 0).into(),
+                target_obj: OBJECTIVE.into(),
+                kind: ScoreOpKind::ModAssign,
+                source: ScoreHolder::new("%%FOUR".into()).unwrap().into(),
+                source_obj: OBJECTIVE.into(),
+            }
+            .into(),
+        );
 
         let shifts = [3, 2, 1, 0];
         for (idx, byte_amt) in shifts.iter().copied().enumerate() {
@@ -116,23 +120,32 @@ pub fn read_ptr_small(dest: ScoreHolder, is_halfword: bool) -> Vec<Command> {
             cmds.push(exec.into());
         }
 
-        cmds.push(ScoreOp {
-            target: param(0, 0).into(),
-            target_obj: OBJECTIVE.into(),
-            kind: ScoreOpKind::MulAssign,
-            source: param(1, 0).into(),
-            source_obj: OBJECTIVE.into(),
-        }.into());
+        cmds.push(
+            ScoreOp {
+                target: param(0, 0).into(),
+                target_obj: OBJECTIVE.into(),
+                kind: ScoreOpKind::MulAssign,
+                source: param(1, 0).into(),
+                source_obj: OBJECTIVE.into(),
+            }
+            .into(),
+        );
 
-        cmds.push(ScoreSet {
-            target: param(1, 0).into(),
-            target_obj: OBJECTIVE.into(),
-            score: 24,
-        }.into());
+        cmds.push(
+            ScoreSet {
+                target: param(1, 0).into(),
+                target_obj: OBJECTIVE.into(),
+                score: 24,
+            }
+            .into(),
+        );
 
-        cmds.push(McFuncCall {
-            id: McFuncId::new("intrinsic:lshr"),
-        }.into());
+        cmds.push(
+            McFuncCall {
+                id: McFuncId::new("intrinsic:lshr"),
+            }
+            .into(),
+        );
 
         cmds.push(assign(dest, param(0, 0)));
 
@@ -411,7 +424,8 @@ fn apply_fixups(funcs: &mut [McFunction]) {
 }
 
 pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
-    let (mut init_cmds, mut globals) = compile_global_var_init(&module.global_vars, &module.functions);
+    let (mut init_cmds, mut globals) =
+        compile_global_var_init(&module.global_vars, &module.functions);
 
     for (idx, func) in module.functions.iter().enumerate() {
         let name = Box::leak(Box::new(Name::Name(func.name.clone())));
@@ -728,14 +742,19 @@ fn compile_global_var_init<'a>(
     // %%SIXTEEN
     // %%256
     // %%2
+    // %%1
+    // %%65536
 
     // TODO: This needs a better system
     static CONSTANTS: &[(&str, i32)] = &[
         ("%%31BITSHIFT", 1 << 31),
         ("%%FOUR", 4),
+        ("%%16777216", 16777216),
         ("%%SIXTEEN", 16),
+        ("%%65536", 65536),
         ("%%256", 256),
         ("%%2", 2),
+        ("%%1", 1),
         ("%%-1", -1),
     ];
 
@@ -1147,7 +1166,10 @@ fn compile_memcpy(
     }
 }
 
-fn setup_arguments(arguments: &[(Operand, Vec<llvm_ir::function::Attribute>)], globals: &HashMap<&Name, (u32, Option<Constant>)>) -> Vec<Command> {
+fn setup_arguments(
+    arguments: &[(Operand, Vec<llvm_ir::function::Attribute>)],
+    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+) -> Vec<Command> {
     let mut before_cmds = Vec::new();
 
     // Set arguments
@@ -1600,17 +1622,23 @@ fn compile_call(
         }
     } else if let Operand::LocalOperand {
         name: _name,
-        ty: Type::PointerType {
-            pointee_type,
-            addr_space: _addr_space
-        },
+        ty:
+            Type::PointerType {
+                pointee_type,
+                addr_space: _addr_space,
+            },
     } = function
     {
         let (mut before_cmds, func_ptr) = eval_operand(function, globals);
         assert_eq!(func_ptr.len(), 1);
         let func_ptr = func_ptr.into_iter().next().unwrap();
 
-        if let Type::FuncType { result_type, is_var_arg: false, .. } = &**pointee_type {
+        if let Type::FuncType {
+            result_type,
+            is_var_arg: false,
+            ..
+        } = &**pointee_type
+        {
             let dest_size = type_layout(result_type).size();
             let dest = dest
                 .clone()
@@ -1624,21 +1652,27 @@ fn compile_call(
             // execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get func_ptr 1
             // Set the ptr's Z coordinate to `func_ptr`
             let mut set_z = Execute::new();
-            set_z.with_as(cir::Selector {
-                var: cir::SelectorVariable::AllEntities,
-                args: vec![cir::SelectorArg("tag=ptr".into())],
-            }.into());
+            set_z.with_as(
+                cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=ptr".into())],
+                }
+                .into(),
+            );
             set_z.with_subcmd(ExecuteSubCmd::Store {
                 is_success: false,
                 kind: ExecuteStoreKind::Data {
-                    target: DataTarget::Entity(cir::Selector {
-                        var: cir::SelectorVariable::ThisEntity,
-                        args: Vec::new(),
-                    }.into()),
+                    target: DataTarget::Entity(
+                        cir::Selector {
+                            var: cir::SelectorVariable::ThisEntity,
+                            args: Vec::new(),
+                        }
+                        .into(),
+                    ),
                     path: "Pos[2]".into(),
                     ty: "double".into(),
                     scale: 1.0,
-                }
+                },
             });
             set_z.with_run(ScoreGet {
                 target: func_ptr.into(),
@@ -1648,10 +1682,13 @@ fn compile_call(
             before_cmds.push(set_z.into());
 
             let mut set_block = Execute::new();
-            set_block.with_at(cir::Selector {
-                var: cir::SelectorVariable::AllEntities,
-                args: vec![cir::SelectorArg("tag=ptr".into())],
-            }.into());
+            set_block.with_at(
+                cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=ptr".into())],
+                }
+                .into(),
+            );
             set_block.with_run(SetBlock {
                 pos: "-2 1 ~".into(),
                 block: "minecraft:redstone_block".into(),
@@ -1706,7 +1743,7 @@ pub fn compile_function(
                 id: McFuncId::new_sub(func.name.clone(), block.name.clone(), sub),
                 cmds: vec![],
             };
-            
+
             if !block.instrs.is_empty() {
                 println!("{:?}", block.instrs[0].get_debug_loc());
             }
@@ -2019,7 +2056,11 @@ pub fn compile_arithmetic(
 
     let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
 
-    if let Type::VectorType { element_type, num_elements } = operand0.get_type() {
+    if let Type::VectorType {
+        element_type,
+        num_elements,
+    } = operand0.get_type()
+    {
         if !matches!(&*element_type, Type::IntegerType { bits: 32 }) {
             todo!("{:?}", element_type)
         }
@@ -2033,7 +2074,10 @@ pub fn compile_arithmetic(
         assert_eq!(dest.len(), 1);
     };
 
-    for (source0, (source1, dest)) in source0.into_iter().zip(source1.into_iter().zip(dest.into_iter())) {
+    for (source0, (source1, dest)) in source0
+        .into_iter()
+        .zip(source1.into_iter().zip(dest.into_iter()))
+    {
         cmds.push(assign(dest.clone(), source0));
         cmds.push(
             ScoreOp {
@@ -2426,7 +2470,10 @@ pub fn shift_right_bytes(holder: ScoreHolder, byte: u32) -> Vec<Command> {
 pub fn zero_low_bytes(holder: ScoreHolder, bytes: u32) -> Vec<Command> {
     let mut cmds = Vec::new();
 
-    cmds.push(Command::Comment(format!("zero {} lowest bytes of {}", bytes, holder)));
+    cmds.push(Command::Comment(format!(
+        "zero {} lowest bytes of {}",
+        bytes, holder
+    )));
 
     for _ in 0..bytes {
         // Zero out the lower bits
@@ -2466,7 +2513,10 @@ pub fn truncate_to(holder: ScoreHolder, bytes: u32) -> Vec<Command> {
 
     let top_bits = get_unique_holder();
 
-    cmds.push(Command::Comment(format!("truncate {} to {} bytes", holder, bytes)));
+    cmds.push(Command::Comment(format!(
+        "truncate {} to {} bytes",
+        holder, bytes
+    )));
 
     cmds.push(assign(top_bits.clone(), holder.clone()));
 
@@ -2668,7 +2718,10 @@ pub fn compile_instr(
 
             let cond = cond[0].clone();
 
-            for (true_val, (false_val, dest)) in true_val.into_iter().zip(false_val.into_iter().zip(dest.into_iter())) {
+            for (true_val, (false_val, dest)) in true_val
+                .into_iter()
+                .zip(false_val.into_iter().zip(dest.into_iter()))
+            {
                 let mut true_cmd = Execute::new();
                 true_cmd.with_if(ExecuteCondition::Score {
                     target: cond.clone().into(),
@@ -2697,34 +2750,52 @@ pub fn compile_instr(
 
             let addr = addr[0].clone();
 
-            // If we're directly storing a constant,
-            // we can skip writing to a temporary value
-            let write_cmds = match eval_maybe_const(value, globals) {
-                MaybeConst::Const(value) => vec![write_ptr_const(value)],
-                MaybeConst::NonConst(eval_cmds, ids) => {
-                    cmds.extend(eval_cmds);
+            let value_size = type_layout(&value.get_type()).size();
+            if value_size % 4 == 0 {
+                // If we're directly storing a constant,
+                // we can skip writing to a temporary value
+                let write_cmds = match eval_maybe_const(value, globals) {
+                    MaybeConst::Const(value) => vec![write_ptr_const(value)],
+                    MaybeConst::NonConst(eval_cmds, ids) => {
+                        cmds.extend(eval_cmds);
 
-                    ids.into_iter().map(write_ptr).collect()
-                }
-            };
-
-            for (idx, write_cmd) in write_cmds.into_iter().enumerate() {
-                cmds.push(assign(ptr(), addr.clone()));
-                cmds.push(
-                    ScoreAdd {
-                        target: ptr().into(),
-                        target_obj: OBJECTIVE.to_string(),
-                        score: 4 * idx as i32,
+                        ids.into_iter().map(write_ptr).collect()
                     }
-                    .into(),
-                );
+                };
+
+                for (idx, write_cmd) in write_cmds.into_iter().enumerate() {
+                    cmds.push(assign(ptr(), addr.clone()));
+                    cmds.push(
+                        ScoreAdd {
+                            target: ptr().into(),
+                            target_obj: OBJECTIVE.to_string(),
+                            score: 4 * idx as i32,
+                        }
+                        .into(),
+                    );
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:setptr"),
+                        }
+                        .into(),
+                    );
+                    cmds.push(write_cmd);
+                }
+            } else if value_size == 1 {
+                let (eval_cmds, value) = eval_operand(value, globals);
+                let value = value.into_iter().next().unwrap();
+
+                cmds.extend(eval_cmds);
+                cmds.push(assign(ptr(), addr));
+                cmds.push(assign(param(2, 0), value));
                 cmds.push(
                     McFuncCall {
-                        id: McFuncId::new("intrinsic:setptr"),
+                        id: McFuncId::new("intrinsic:store_byte"),
                     }
                     .into(),
-                );
-                cmds.push(write_cmd);
+                )
+            } else {
+                todo!("{:?}", value)
             }
 
             cmds
@@ -3222,7 +3293,14 @@ pub fn compile_instr(
 
             cmds.push(assign(dst[0].clone(), op[0].clone()));
             for dst in dst[1..].iter().cloned() {
-                cmds.push(ScoreSet { target: dst.into(), target_obj: OBJECTIVE.into(), score: 0 }.into());
+                cmds.push(
+                    ScoreSet {
+                        target: dst.into(),
+                        target_obj: OBJECTIVE.into(),
+                        score: 0,
+                    }
+                    .into(),
+                );
             }
 
             cmds
@@ -3341,7 +3419,10 @@ pub fn compile_instr(
 
                     cmds
                 }
-                Type::VectorType { element_type, num_elements: 4 } if matches!(&*element_type, Type::IntegerType { bits: 8 }) => {
+                Type::VectorType {
+                    element_type,
+                    num_elements: 4,
+                } if matches!(&*element_type, Type::IntegerType { bits: 8 }) => {
                     // TODO: This is exactly the same as all the others but matches are hard
                     cmds.push(assign(param(0, 0), op0[0].clone()));
                     cmds.push(assign(param(1, 0), op1[0].clone()));
@@ -3362,8 +3443,7 @@ pub fn compile_instr(
 
                     cmds
                 }
-                Type::IntegerType { bits: 8 } |
-                Type::IntegerType { bits: 32 } => {
+                Type::IntegerType { bits: 8 } | Type::IntegerType { bits: 32 } => {
                     cmds.push(assign(param(0, 0), op0[0].clone()));
                     cmds.push(assign(param(1, 0), op1[0].clone()));
 
@@ -3579,10 +3659,8 @@ pub fn compile_instr(
                 } else {
                     todo!()
                 }
-            } else if let Operand::ConstantOperand(Constant::Int {
-                bits: 32,
-                value: 1,
-            }) = operand1 {
+            } else if let Operand::ConstantOperand(Constant::Int { bits: 32, value: 1 }) = operand1
+            {
                 // FIXME: This implements an *arithmetic* right shift
                 if matches!(operand0.get_type(), Type::IntegerType { bits: 32 }) {
                     let dest = ScoreHolder::from_local_name(dest.clone(), 4)
@@ -3592,13 +3670,16 @@ pub fn compile_instr(
 
                     cmds.push(assign(dest.clone(), op0[0].clone()));
 
-                    cmds.push(ScoreOp {
-                        target: dest.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ScoreOpKind::DivAssign,
-                        source: ScoreHolder::new("%%2".into()).unwrap().into(),
-                        source_obj: OBJECTIVE.into(),
-                    }.into());
+                    cmds.push(
+                        ScoreOp {
+                            target: dest.into(),
+                            target_obj: OBJECTIVE.into(),
+                            kind: ScoreOpKind::DivAssign,
+                            source: ScoreHolder::new("%%2".into()).unwrap().into(),
+                            source_obj: OBJECTIVE.into(),
+                        }
+                        .into(),
+                    );
                 } else {
                     todo!()
                 }
@@ -3657,7 +3738,13 @@ pub fn compile_instr(
 
             cmds
         }
-        Instruction::ShuffleVector(ShuffleVector { operand0, operand1, dest, mask, .. }) => {
+        Instruction::ShuffleVector(ShuffleVector {
+            operand0,
+            operand1,
+            dest,
+            mask,
+            ..
+        }) => {
             let (mut cmds, op0) = eval_operand(operand0, globals);
             let (tmp, op1) = eval_operand(operand1, globals);
             cmds.extend(tmp);
@@ -3677,7 +3764,7 @@ pub fn compile_instr(
             } else {
                 unreachable!()
             };
-            
+
             let mask_vals = if let Constant::Vector(v) = mask {
                 &v[..]
             } else {
@@ -3686,7 +3773,7 @@ pub fn compile_instr(
 
             let dest_type = Type::VectorType {
                 element_type,
-                num_elements: mask_vals.len(), 
+                num_elements: mask_vals.len(),
             };
 
             let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&dest_type).size());
@@ -3712,7 +3799,12 @@ pub fn compile_instr(
 
             cmds
         }
-        Instruction::ExtractElement(ExtractElement { vector, index, dest, .. }) => {
+        Instruction::ExtractElement(ExtractElement {
+            vector,
+            index,
+            dest,
+            ..
+        }) => {
             let element_type = if let Type::VectorType { element_type, .. } = vector.get_type() {
                 element_type
             } else {
@@ -3723,7 +3815,10 @@ pub fn compile_instr(
                 todo!("{:?}", vector)
             }
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), 4).into_iter().next().unwrap();
+            let dest = ScoreHolder::from_local_name(dest.clone(), 4)
+                .into_iter()
+                .next()
+                .unwrap();
 
             let (mut cmds, vec) = eval_operand(vector, globals);
 
@@ -3731,9 +3826,7 @@ pub fn compile_instr(
                 MaybeConst::Const(c) => {
                     cmds.push(assign(dest, vec[c as usize].clone()));
                 }
-                MaybeConst::NonConst(_, _) => {
-                    todo!("{:?}", index)
-                }
+                MaybeConst::NonConst(_, _) => todo!("{:?}", index),
             }
 
             cmds
@@ -3780,8 +3873,15 @@ pub fn eval_constant(
             MaybeConst::NonConst(vec![], vec![holder])
         }
         Constant::PtrToInt(tmp) => {
-            if let llvm_ir::constant::PtrToInt { operand: Constant::GlobalReference { name, .. }, .. } = &**tmp {
-                let addr = globals.get(name).unwrap_or_else(|| panic!("failed to get {:?}", name)).0;
+            if let llvm_ir::constant::PtrToInt {
+                operand: Constant::GlobalReference { name, .. },
+                ..
+            } = &**tmp
+            {
+                let addr = globals
+                    .get(name)
+                    .unwrap_or_else(|| panic!("failed to get {:?}", name))
+                    .0;
                 MaybeConst::Const(addr as i32)
             } else {
                 todo!("{:?}", tmp)
@@ -3841,7 +3941,10 @@ pub fn eval_constant(
         }
         Constant::GetElementPtr(g) => MaybeConst::Const(getelementptr_const(&g, globals) as i32),
         Constant::Null(_) => MaybeConst::Const(0),
-        Constant::AggregateZero(Type::VectorType { element_type, num_elements }) => {
+        Constant::AggregateZero(Type::VectorType {
+            element_type,
+            num_elements,
+        }) => {
             let size = type_layout(&element_type).size() * num_elements;
             if size % 4 == 0 {
                 let num = get_unique_num();
@@ -3867,13 +3970,23 @@ pub fn eval_constant(
             }
         }
         Constant::Vector(elems) => {
-            if let [
-                Constant::Int { bits: 8, value: val0 },
-                Constant::Int { bits: 8, value: val1 },
-                Constant::Int { bits: 8, value: val2 },
-                Constant::Int { bits: 8, value: val3 },
-            ] = elems[..] {
-                MaybeConst::Const(i32::from_le_bytes([val0 as u8, val1 as u8, val2 as u8, val3 as u8]))
+            if let [Constant::Int {
+                bits: 8,
+                value: val0,
+            }, Constant::Int {
+                bits: 8,
+                value: val1,
+            }, Constant::Int {
+                bits: 8,
+                value: val2,
+            }, Constant::Int {
+                bits: 8,
+                value: val3,
+            }] = elems[..]
+            {
+                MaybeConst::Const(i32::from_le_bytes([
+                    val0 as u8, val1 as u8, val2 as u8, val3 as u8,
+                ]))
             } else {
                 todo!("{:?}", elems);
             }
@@ -3947,17 +4060,28 @@ mod test {
 
         let mut interp = Interpreter::new(vec![func], "");
         let word = [0x12, 0xEA, 0x56, 0x78];
-        interp.rust_scores.insert(ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp.rust_scores.insert(ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp.rust_scores.insert(ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp.rust_scores.insert(ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        interp
+            .rust_scores
+            .insert(ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
+        interp
+            .rust_scores
+            .insert(ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
+        interp
+            .rust_scores
+            .insert(ScoreHolder::new("%%256".into()).unwrap(), 256);
+        interp
+            .rust_scores
+            .insert(ScoreHolder::new("%%-1".into()).unwrap(), -1);
         interp.memory[1] = i32::from_le_bytes(word);
 
         for (pt, expected) in word.iter().copied().enumerate() {
             interp.call_stack = vec![(0, 0)];
             interp.rust_scores.insert(ptr(), pt as i32 + 4);
             interp.run_to_end().unwrap();
-            let result = *interp.rust_scores.get(&ScoreHolder::new("dest".into()).unwrap()).unwrap();
+            let result = *interp
+                .rust_scores
+                .get(&ScoreHolder::new("dest".into()).unwrap())
+                .unwrap();
             assert_eq!(result, expected as i32);
         }
     }

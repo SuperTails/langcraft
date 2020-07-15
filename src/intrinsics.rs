@@ -3,20 +3,35 @@ use lazy_static::lazy_static;
 
 static INTRINSIC_STRS: &[(&str, &str)] = &[
     ("intrinsic:lshr", include_str!("intrinsic/lshr.mcfunction")),
-    ("intrinsic/lshr:getshift", include_str!("intrinsic/lshr/getshift.mcfunction")),
-    ("intrinsic/lshr:inner", include_str!("intrinsic/lshr/inner.mcfunction")),
-    ("intrinsic:memcpy", include_str!("intrinsic/memcpy.mcfunction")),
+    (
+        "intrinsic/lshr:getshift",
+        include_str!("intrinsic/lshr/getshift.mcfunction"),
+    ),
+    (
+        "intrinsic/lshr:inner",
+        include_str!("intrinsic/lshr/inner.mcfunction"),
+    ),
+    (
+        "intrinsic:memcpy",
+        include_str!("intrinsic/memcpy.mcfunction"),
+    ),
     (
         "intrinsic:memcpy_inner",
         include_str!("intrinsic/memcpy_inner.mcfunction"),
     ),
     ("intrinsic:or", include_str!("intrinsic/or.mcfunction")),
-    ("intrinsic:or_inner", include_str!("intrinsic/or_inner.mcfunction")),
+    (
+        "intrinsic:or_inner",
+        include_str!("intrinsic/or_inner.mcfunction"),
+    ),
     (
         "intrinsic:pop_and_branch",
         include_str!("intrinsic/pop_and_branch.mcfunction"),
     ),
-    ("intrinsic:setptr", include_str!("intrinsic/setptr.mcfunction")),
+    (
+        "intrinsic:setptr",
+        include_str!("intrinsic/setptr.mcfunction"),
+    ),
     (
         "intrinsic:shift_from_ptr",
         include_str!("intrinsic/shift_from_ptr.mcfunction"),
@@ -26,9 +41,19 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         include_str!("intrinsic/shift_from_ptr_inner.mcfunction"),
     ),
     ("intrinsic:xor", include_str!("intrinsic/xor.mcfunction")),
-    ("intrinsic:xor_inner", include_str!("intrinsic/xor_inner.mcfunction")),
+    (
+        "intrinsic:xor_inner",
+        include_str!("intrinsic/xor_inner.mcfunction"),
+    ),
     ("intrinsic:and", include_str!("intrinsic/and.mcfunction")),
-    ("intrinsic:and_inner", include_str!("intrinsic/and_inner.mcfunction")),
+    (
+        "intrinsic:and_inner",
+        include_str!("intrinsic/and_inner.mcfunction"),
+    ),
+    (
+        "intrinsic:store_byte",
+        include_str!("intrinsic/store_byte.mcfunction"),
+    ),
 ];
 
 lazy_static! {
@@ -51,21 +76,76 @@ lazy_static! {
 
 #[cfg(test)]
 mod test {
-    use crate::Interpreter;
+    use super::*;
     use crate::cir;
     use crate::compile_ir::{self, param, return_holder};
-    use super::*;
+    use crate::Interpreter;
+
+    #[test]
+    fn store_byte() {
+        let mut interp = Interpreter::new_raw(
+            vec![
+                get_by_name("intrinsic:setptr").clone(),
+                get_by_name("intrinsic:and").clone(),
+                get_by_name("intrinsic:and_inner").clone(),
+                get_by_name("intrinsic:store_byte").clone(),
+            ],
+            "",
+        );
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%1".into()).unwrap(), 1);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%65536".into()).unwrap(), 65536);
+        interp.rust_scores.insert(
+            cir::ScoreHolder::new("%%16777216".into()).unwrap(),
+            16777216,
+        );
+
+        let bytes = [0x12, 0xEA, 0x34, 0xBC];
+
+        let mut expected = 0;
+        for (idx, byte) in bytes.iter().copied().enumerate() {
+            interp.call_stack = vec![(3, 0)];
+            interp.rust_scores.insert(compile_ir::ptr(), 8 + idx as i32);
+            interp.rust_scores.insert(param(2, 0), byte as i32);
+            interp.run_to_end().unwrap();
+            expected += (bytes[idx] as i32) << (8 * idx);
+
+            let actual = interp.memory[2];
+            if expected != actual {
+                println!("Expected: {:>11} ({:#010X})", expected, expected);
+                println!("Actual:   {:>11} ({:#010X})", actual, actual);
+                panic!();
+            }
+        }
+    }
 
     fn test_lshr(a: i32, shift: i32) {
         let expected = (a as u32 >> shift) as i32;
-        let mut interp = Interpreter::new_raw(vec![
-            get_by_name("intrinsic/lshr:getshift").clone(),
-            get_by_name("intrinsic/lshr:inner").clone(),
-            get_by_name("intrinsic:lshr").clone(),
-        ], "");
+        let mut interp = Interpreter::new_raw(
+            vec![
+                get_by_name("intrinsic/lshr:getshift").clone(),
+                get_by_name("intrinsic/lshr:inner").clone(),
+                get_by_name("intrinsic:lshr").clone(),
+            ],
+            "",
+        );
         interp.rust_scores.insert(param(0, 0), a);
         interp.rust_scores.insert(param(1, 0), shift);
-        interp.rust_scores.insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
         interp.run_to_end().unwrap();
         let actual = *interp.rust_scores.get(&param(0, 0)).unwrap();
 
@@ -121,15 +201,30 @@ mod test {
     }
 
     fn get_by_name(name: &str) -> &'static Function {
-        INTRINSICS.iter().find(|f| f.id == FunctionId::new(name)).unwrap_or_else(|| panic!("Could not find {:?}", name))
+        INTRINSICS
+            .iter()
+            .find(|f| f.id == FunctionId::new(name))
+            .unwrap_or_else(|| panic!("Could not find {:?}", name))
     }
 
     fn test_shift_from_ptr(a: i32, ptr: i32) {
         let expected = (a as u32 >> (8 * (ptr % 4))) as i32;
-        let mut interp = Interpreter::new_raw(vec![get_by_name("intrinsic:shift_from_ptr_inner").clone(), get_by_name("intrinsic:shift_from_ptr").clone()], "");
-        interp.rust_scores.insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp.rust_scores.insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp.rust_scores.insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        let mut interp = Interpreter::new_raw(
+            vec![
+                get_by_name("intrinsic:shift_from_ptr_inner").clone(),
+                get_by_name("intrinsic:shift_from_ptr").clone(),
+            ],
+            "",
+        );
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
         interp.rust_scores.insert(param(0, 0), a as i32);
         interp.rust_scores.insert(compile_ir::ptr(), ptr);
         interp.run_to_end().unwrap();
@@ -178,7 +273,13 @@ mod test {
     }
 
     fn call_bitwise_intrin(a: i32, b: i32, expected: i32, name: &str) {
-        let mut interp = Interpreter::new_raw(vec![get_by_name(&format!("{}_inner", name)).clone(), get_by_name(name).clone()], "");
+        let mut interp = Interpreter::new_raw(
+            vec![
+                get_by_name(&format!("{}_inner", name)).clone(),
+                get_by_name(name).clone(),
+            ],
+            "",
+        );
         interp.rust_scores.insert(param(0, 0), a);
         interp.rust_scores.insert(param(1, 0), b);
         interp.run_to_end().unwrap();
