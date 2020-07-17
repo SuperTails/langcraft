@@ -79,7 +79,7 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
     Ok(())
 }
 
-fn compare_output(interp: &Interpreter) {
+pub fn compare_output(interp: &Interpreter) {
     let output = std::fs::read_to_string("latest.log")
         .unwrap()
         .lines()
@@ -168,7 +168,9 @@ fn main() {
                 eprintln!("{}", i);
             }
 
-            compare_output(&interp);
+            assert_eq!(interp.get_rust_score(&langcraft::cir::ScoreHolder::new("%return%0".into()).unwrap()).unwrap(), 0);
+
+            //compare_output(&interp);
         }
         Err(err) => {
             eprintln!("==========================================");

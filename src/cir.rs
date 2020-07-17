@@ -561,6 +561,20 @@ impl Execute {
         self.run = Some(Box::new(cmd.into()));
         self
     }
+
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+
+        for subcmd in self.subcommands.iter() {
+            merge_uses(&mut result, &subcmd.holder_uses());
+        }
+
+        if let Some(run) = &self.run {
+            merge_uses(&mut result, &run.holder_uses());
+        }
+
+        result
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -580,6 +594,47 @@ pub enum ExecuteSubCmd {
     At {
         target: Target,
     },
+}
+
+impl ExecuteSubCmd {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        match self {
+            Self::Condition { is_unless: _, cond } => {
+                match cond {
+                    ExecuteCondition::Score { target, kind, .. } => {
+                        let mut result = HashMap::new();
+
+                        if let Target::Uuid(target) = target {
+                            merge_use(&mut result, target, HolderUse::ReadOnly)
+                        }
+
+                        if let ExecuteCondKind::Relation { source: Target::Uuid(source), .. } = kind {
+                            merge_use(&mut result, source, HolderUse::ReadOnly)
+                        }
+
+                        result
+                    }
+                    ExecuteCondition::Block { .. } => HashMap::new(),
+                }
+            }
+            Self::Store { is_success: _, kind } => {
+                match kind {
+                    ExecuteStoreKind::Data { .. } => HashMap::new(),
+                    ExecuteStoreKind::Score { target, .. } => {
+                        let mut result = HashMap::new();
+
+                        if let Target::Uuid(target) = target {
+                            merge_use(&mut result, target, HolderUse::WriteOnly);
+                        }
+
+                        result
+                    }
+                }
+            }
+            Self::At { .. } |
+            Self::As { .. } => HashMap::new(),
+        }
+    }
 }
 
 impl fmt::Display for ExecuteSubCmd {
@@ -748,6 +803,32 @@ pub enum Command {
     Comment(String),
 }
 
+impl Command {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        match self {
+            Self::ScoreOp(c) => c.holder_uses(),
+            Self::ScoreSet(c) => c.holder_uses(),
+            Self::ScoreGet(c) => c.holder_uses(),
+            Self::ScoreAdd(c) => c.holder_uses(),
+            Self::Execute(c) => c.holder_uses(),
+            Self::Tellraw(c) => (&**c).holder_uses(),
+            Self::Data(_) | 
+            Self::SetBlock(_) |
+            Self::FuncCall(_) |
+            Self::Teleport(_) |
+            Self::Fill(_) |
+            Self::Comment(_) => HashMap::new()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum HolderUse {
+    ReadOnly,
+    WriteOnly,
+    ReadWrite,
+}
+
 struct CommandParser<'a> {
     tail: &'a str,
 }
@@ -778,8 +859,6 @@ impl CommandParser<'_> {
     }
 
     pub fn parse(&mut self) -> Command {
-        println!("parsing {}", self.tail);
-
         match self.next_word() {
             Some("#") => Command::Comment(self.tail.into()),
             Some("scoreboard") => self.parse_scoreboard(),
@@ -1147,6 +1226,18 @@ pub struct Tellraw {
     pub message: Vec<TextComponent>,
 }
 
+impl Tellraw {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+
+        for m in self.message.iter() {
+            merge_uses(&mut result, &m.holder_uses())
+        }
+
+        result
+    }
+}
+
 type NbtPath = String;
 type BlockPos = String;
 type StorageId = String;
@@ -1219,6 +1310,20 @@ pub struct ScoreGet {
     pub target_obj: Objective,
 }
 
+impl ScoreGet {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+
+        if let Target::Uuid(target) = &self.target {
+            merge_use(&mut result, target, HolderUse::ReadOnly);
+        };
+
+        result
+    }
+}
+
+
+
 impl fmt::Display for ScoreGet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -1235,6 +1340,18 @@ pub struct ScoreAdd {
     pub target: Target,
     pub target_obj: Objective,
     pub score: i32,
+}
+
+impl ScoreAdd {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+
+        if let Target::Uuid(target) = &self.target {
+            merge_use(&mut result, target, HolderUse::ReadWrite);
+        };
+
+        result
+    }
 }
 
 impl fmt::Display for ScoreAdd {
@@ -1260,6 +1377,18 @@ pub struct ScoreSet {
     pub score: i32,
 }
 
+impl ScoreSet {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+
+        if let Target::Uuid(target) = &self.target {
+            merge_use(&mut result, target, HolderUse::WriteOnly);
+        }
+
+        result
+    }
+}
+
 impl fmt::Display for ScoreSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -1267,6 +1396,22 @@ impl fmt::Display for ScoreSet {
             "scoreboard players set {} {} {}",
             self.target, self.target_obj, self.score
         )
+    }
+}
+
+pub fn merge_uses<'a>(all: &mut HashMap<&'a ScoreHolder, HolderUse>, other: &HashMap<&'a ScoreHolder, HolderUse>) {
+    for (k, v) in other.iter() {
+        merge_use(all, k, *v);
+    }
+}
+
+pub fn merge_use<'a>(all: &mut HashMap<&'a ScoreHolder, HolderUse>, holder: &'a ScoreHolder, holder_use: HolderUse) {
+    if let Some(prev) = all.get_mut(holder) {
+        if *prev != holder_use {
+            *prev = HolderUse::ReadWrite;
+        }
+    } else {
+        all.insert(holder, holder_use);
     }
 }
 
@@ -1284,6 +1429,34 @@ pub struct ScoreOp {
     pub kind: ScoreOpKind,
     pub source: Target,
     pub source_obj: Objective,
+}
+
+impl ScoreOp {
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+        
+        if let Target::Uuid(target) = &self.target {
+            let target_use = if self.kind == ScoreOpKind::Assign {
+                HolderUse::WriteOnly
+            } else {
+                HolderUse::ReadOnly
+            };
+
+            merge_use(&mut result, target, target_use);
+        }
+
+        if let Target::Uuid(source) = &self.source {
+            let source_use = if self.kind == ScoreOpKind::Swap {
+                HolderUse::ReadWrite
+            } else {
+                HolderUse::ReadOnly
+            };
+
+            merge_use(&mut result, source, source_use);
+        }
+
+        result
+    }
 }
 
 impl fmt::Display for ScoreOp {

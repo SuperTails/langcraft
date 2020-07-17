@@ -97,6 +97,10 @@ impl Interpreter {
         }
     }
 
+    pub fn get_byte(&mut self, addr: usize) -> u8 {
+        self.memory[addr / 4].to_le_bytes()[addr % 4]
+    }
+
     pub fn set_byte(&mut self, value: u8, addr: usize) {
         let mut bytes = self.memory[addr / 4].to_le_bytes();
         bytes[addr % 4] = value;
@@ -228,7 +232,10 @@ impl Interpreter {
     }
 
     fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
-        println!("{}", cmd);
+        if !self.call_stack.iter().any(|(i, _)| self.program[*i].id.name.contains("intrinsic")) {
+            println!("{}", cmd);
+        }
+
         match cmd {
             Command::ScoreAdd(ScoreAdd { target: Target::Uuid(target), target_obj, score }) => {
                 if target_obj != OBJECTIVE {
@@ -403,13 +410,13 @@ impl Interpreter {
                 }
             }
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr] run") => {
-                let data = if let Command::Execute(Execute { run: Some(d), .. }) = cmd {
+                let run = if let Command::Execute(Execute { run: Some(d), .. }) = cmd {
                     &**d
                 } else {
                     unreachable!()
                 };
 
-                if let Command::Data(Data { target: DataTarget::Block(block), kind: DataKind::Modify { path, kind: DataModifyKind::Set, source: DataModifySource::Value(v) } }) = data {
+                if let Command::Data(Data { target: DataTarget::Block(block), kind: DataKind::Modify { path, kind: DataModifyKind::Set, source: DataModifySource::Value(v) } }) = run {
                     if block != "~ ~ ~" {
                         todo!("{:?}", block);
                     }
@@ -421,8 +428,15 @@ impl Interpreter {
                     let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
 
                     self.memory[index as usize / 4] = *v;
+                } else if let Command::SetBlock(SetBlock { pos, block, kind: SetBlockKind::Replace }) = run {
+                    if pos == "-2 1 ~" && block == "minecraft:redstone_block" {
+                        assert_eq!(self.next_pos, None);
+                        self.next_pos = Some((self.ptr_pos.2.try_into().unwrap(), 0));
+                    } else {
+                        todo!("{:?}", run)
+                    }
                 } else {
-                    todo!("{:?}", data)
+                    todo!("{:?}", run)
                 }
             }
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr]") => {
@@ -479,6 +493,23 @@ impl Interpreter {
             cmd if cmd.to_string() == "execute as @e[tag=ptr] at @s run tp @s -2 1 ~" => {
                 self.ptr_pos.0 = -2;
                 self.ptr_pos.1 = 1;
+            }
+            cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get") => {
+                let sg = if let Command::Execute(Execute { run: Some(sg), .. }) = cmd {
+                    &**sg
+                } else {
+                    unreachable!()
+                };
+
+                if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = sg {
+                    if target_obj != OBJECTIVE {
+                        todo!("{:?}", target_obj)
+                    }
+
+                    self.ptr_pos.2 = *self.rust_scores.get(target).unwrap_or_else(|| panic!("read from uninitialized variable {}", target));
+                } else {
+                    todo!("{:?}", sg)
+                }
             }
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run") => {
                 let sg = if let Command::Execute(Execute { run: Some(sg), .. }) = cmd {
@@ -566,7 +597,7 @@ impl Interpreter {
 
     pub fn step(&mut self) -> Result<(), InterpError> {
         // TODO: This may be off by one
-        if self.commands_run >= 10_000 {
+        if self.commands_run >= 20_000 {
             return Err(InterpError::MaxCommandsRun);
         }
 

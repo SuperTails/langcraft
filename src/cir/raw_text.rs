@@ -1,6 +1,7 @@
-use super::{BlockPos, NbtPath, Objective, ScoreHolder, Selector, StorageId, StringNbt};
+use super::{BlockPos, NbtPath, Objective, ScoreHolder, Selector, StorageId, StringNbt, HolderUse, merge_use, merge_uses};
 use serde::{Deserialize, Serialize};
 use serde_with::skip_serializing_none;
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct TextBuilder {
@@ -166,6 +167,22 @@ impl TextComponent {
         } else {
             self
         }
+    }
+
+    pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
+        let mut result = HashMap::new();
+
+        if let Some(ScoreComponent { name, value: None, .. }) = &self.score {
+            merge_use(&mut result, name, HolderUse::ReadOnly);
+        }
+
+        if let Some(extra) = &self.extra {
+            for ex in extra {
+                merge_uses(&mut result, &(&*ex).holder_uses())
+            }
+        }
+
+        result
     }
 }
 
