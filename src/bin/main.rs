@@ -62,7 +62,19 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
         } else {
             interp.step()?;
 
-            if interp.next_command().map(|c| c.to_string().contains("tokens:")).unwrap_or(false) {
+            /*if interp.next_command().map(|c| c.to_string().contains("tokens:")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }
+
+            if interp.next_command().map(|c| c.to_string().contains("intrinsic:bcmp")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }*/
+
+            if interp.next_command().map(|c| c.to_string().contains("block count before printing:")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }
+
+            if interp.next_command().map(|c| c.to_string().contains("Panic")).unwrap_or(false) {
                 hit_breakpoint = true;
             }
 

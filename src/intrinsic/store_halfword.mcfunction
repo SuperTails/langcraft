@@ -13,7 +13,7 @@ function intrinsic:setptr
 execute at @e[tag=ptr] store result score %param0%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
 
 scoreboard players operation %%temp0_store_byte rust = %ptr rust
-scoreboard players operation %%temp0_store_byte rust %= %%FOUR rust
+scoreboard players operation %%temp0_store_byte rust %= %%4 rust
 
 # 0xFFFF_0000
 execute if score %%temp0_store_byte rust matches 0..0 run scoreboard players set %param1%0 rust -65536

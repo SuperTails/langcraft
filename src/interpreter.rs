@@ -285,10 +285,11 @@ impl Interpreter {
                             }
                             ScoreOpKind::ModAssign => {
                                 let mut val = self.get_rust_score(target).unwrap();
-                                if val < 0 {
+                                if rhs < 0 {
                                     todo!("DETERMINE BEHAVIOR")
+                                } else {
+                                    val = val.rem_euclid(rhs);
                                 }
-                                val %= rhs;
                                 self.rust_scores.insert(target.clone(), val);
                             }
                             _ => todo!("{}", kind)
@@ -597,7 +598,7 @@ impl Interpreter {
 
     pub fn step(&mut self) -> Result<(), InterpError> {
         // TODO: This may be off by one
-        if self.commands_run >= 20_000 {
+        if self.commands_run >= 30_000 {
             return Err(InterpError::MaxCommandsRun);
         }
 

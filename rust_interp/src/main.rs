@@ -103,6 +103,7 @@ impl Ident {
                 *byte = b;
             }
         }
+        unsafe { print(self.0.len() as i32) };
         unsafe { print(i32::from_ne_bytes(word)) };
     }
 
@@ -183,7 +184,6 @@ unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
 
                     tokens.push(Token::OpenParen);
                 }
-
                 b')' => {
                     print_str!(b"Close parenthesis token");
                     
@@ -274,6 +274,11 @@ struct Ast {
 
 impl Ast {
     pub fn print_self(&self) {
+        unsafe {
+            print_str!("number of blocks:");
+            print(self.blocks.len() as i32);
+            print_str!("root:");
+        }
         self.root.print_self(&self.blocks);
     }
 }
@@ -328,29 +333,35 @@ impl Stmt {
 
 struct Parser<'a> {
     tokens: &'a [Token],
+    current_idx: usize,
     blocks: ArrayVec<[Block; 8]>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum ParseError {
     Eof,
-    UnexpectedToken,
+    UnexpectedToken(usize),
 }
 
 impl ParseError {
-    pub fn print_self(self) {
+    pub fn print_self(&self) {
         unsafe {
-            match self {
+            match &self {
                 ParseError::Eof => print_str!(b"eof"),
-                ParseError::UnexpectedToken => print_str!("unexpected token"),
+                ParseError::UnexpectedToken(t) => {
+                    print_str!("unexpected token at index:");
+                    print(*t as i32);
+                }
             }
         }
     }
 }
 
 fn parse_ast(tokens: &[Token]) -> Result<Ast, ParseError> {
-    let mut parser = Parser { tokens, blocks: ArrayVec::new() };
+    let mut parser = Parser { tokens, current_idx: 0, blocks: ArrayVec::new() };
     let root = parser.parse_func_decl()?;
+    unsafe { print_str!("parser block count:");
+    print(parser.blocks.len() as i32); };
     Ok(Ast {
         blocks: parser.blocks,
         root,
@@ -363,6 +374,8 @@ impl Parser<'_> {
     }
 
     pub fn next_token(&mut self) -> Result<&Token, ParseError> {
+        self.current_idx += 1;
+
         if let Some((head, tail)) = self.tokens.split_first() {
             self.tokens = tail;
             Ok(head)
@@ -372,10 +385,12 @@ impl Parser<'_> {
     }
 
     pub fn expect_token(&mut self, expected: &Token) -> Result<(), ParseError> {
-        if self.next_token()? == expected {
+        let next = self.next_token()?;
+
+        if next == expected {
             Ok(())
         } else {
-            Err(ParseError::UnexpectedToken)
+            Err(ParseError::UnexpectedToken(self.current_idx - 1))
         }
     }
 
@@ -392,7 +407,7 @@ impl Parser<'_> {
                     body,
                 })
             }
-            _ => Err(ParseError::UnexpectedToken)
+            _ => Err(ParseError::UnexpectedToken(self.current_idx - 1))
         }
     }
 
@@ -413,12 +428,12 @@ impl Parser<'_> {
 
     pub fn parse_func_decl(&mut self) -> Result<FuncDecl, ParseError> {
         if !self.next_token()?.is_key_fn() {
-            return Err(ParseError::UnexpectedToken)
+            return Err(ParseError::UnexpectedToken(self.current_idx - 1))
         }
-        
+
         let name = match self.next_token()? {
             Token::Ident(i) => i.clone(),
-            _token => return Err(ParseError::UnexpectedToken),
+            tok => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
         };
 
         self.expect_token(&Token::OpenParen)?;
@@ -473,6 +488,9 @@ pub fn main() {
 
     match parse_ast(&tokens) {
         Ok(func) => {
+            unsafe { print_str!(b"block count before printing:") };
+            unsafe { print(func.blocks.len() as i32) };
+
             func.print_self();
         }
         Err(err) => {

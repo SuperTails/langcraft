@@ -59,12 +59,20 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         include_str!("intrinsic/store_halfword.mcfunction"),
     ),
     (
+        "intrinsic:store_halfword_unaligned",
+        include_str!("intrinsic/store_halfword_unaligned.mcfunction"),
+    ),
+    (
         "intrinsic:load_byte",
         include_str!("intrinsic/load_byte.mcfunction"),
     ),
     (
         "intrinsic:load_halfword",
         include_str!("intrinsic/load_halfword.mcfunction"),
+    ),
+    (
+        "intrinsic:load_halfword_unaligned",
+        include_str!("intrinsic/load_halfword_unaligned.mcfunction"),
     ),
     (
         "intrinsic:bcmp",
@@ -82,7 +90,14 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         "intrinsic:memset_inner",
         include_str!("intrinsic/memset_inner.mcfunction")
     ),
-
+    (
+        "intrinsic:store_word_unaligned",
+        include_str!("intrinsic/store_word_unaligned.mcfunction"),
+    ),
+    (
+        "intrinsic:load_word_unaligned",
+        include_str!("intrinsic/load_word_unaligned.mcfunction"),
+    )
 ];
 
 lazy_static! {
@@ -111,17 +126,16 @@ mod test {
     use crate::Interpreter;
     use std::convert::TryInto;
 
-    fn test_bcmp(mem_a: &[u8], mem_b: &[u8], start: usize, len: usize) {
-        let mut interp = Interpreter::new(vec![
-            get_by_name("intrinsic:lshr").clone(),
-            get_by_name("intrinsic:load_byte").clone(),
-            get_by_name("intrinsic:bcmp_inner").clone(),
-            get_by_name("intrinsic:bcmp").clone(),
-        ], "");
+    fn create_interp(start_func: &str) -> Interpreter {
+        let idx = INTRINSICS.iter().enumerate().find(|(_, f)| f.id == FunctionId::new(start_func)).unwrap().0;
+
+        let mut interp = Interpreter::new_raw(INTRINSICS.clone(), "");
+
+        interp.call_stack = vec![(idx, 0)];
 
         interp
             .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
+            .insert(cir::ScoreHolder::new("%%4".into()).unwrap(), 4);
         interp
             .rust_scores
             .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
@@ -131,6 +145,26 @@ mod test {
         interp
             .rust_scores
             .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%1".into()).unwrap(), 1);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%2".into()).unwrap(), 2);
+        interp
+            .rust_scores
+            .insert(cir::ScoreHolder::new("%%65536".into()).unwrap(), 65536);
+        interp.rust_scores.insert(
+            cir::ScoreHolder::new("%%16777216".into()).unwrap(),
+            16777216,
+        );
+
+        interp
+    }
+
+    fn test_bcmp(mem_a: &[u8], mem_b: &[u8], start: usize, len: usize) {
+        let mut interp = create_interp("intrinsic:bcmp");
+
         interp
             .rust_scores
             .insert(param(0, 0), start as i32);
@@ -158,37 +192,53 @@ mod test {
     }
 
     #[test]
-    fn memcpy() {
-        let mut interp = Interpreter::new(vec![
-            get_by_name("intrinsic:lshr").clone(),
-            get_by_name("intrinsic:load_byte").clone(),
-            get_by_name("intrinsic:store_byte").clone(),
-            get_by_name("intrinsic:and").clone(),
-            get_by_name("intrinsic:memcpy").clone(),
-        ], "");
+    fn store_word_unaligned() {
+        let mut interp = create_interp("intrinsic:store_word_unaligned");
 
-        interp
+        let lo_word = [0xAA, 0xAA, 0xAA, 0x12];
+        let hi_word = [0xEA, 0x56, 0x88, 0xAA];
+
+        interp.memory[1] = 0xAAAA_AAAA_u32 as i32;
+        interp.memory[2] = 0xAAAA_AAAA_u32 as i32;
+
+        interp.rust_scores.insert(compile_ir::ptr(), 7);
+        interp.rust_scores.insert(param(0, 0), i32::from_le_bytes([0x12, 0xEA, 0x56, 0x88]));
+        interp.run_to_end().unwrap();
+
+        assert_eq!(interp.memory[1].to_le_bytes(), lo_word);
+        assert_eq!(interp.memory[2].to_le_bytes(), hi_word);
+    }
+
+    #[test]
+    fn load_word_unaligned() {
+        let mut interp = create_interp("intrinsic:load_word_unaligned");
+
+        let lo_word = [0xAA, 0xAA, 0xAA, 0x12];
+        let hi_word = [0xEA, 0x56, 0x78, 0xAA];
+
+        let expected = 0x78_56_EA_12_i32;
+
+        interp.memory[1] = i32::from_le_bytes(lo_word);
+        interp.memory[2] = i32::from_le_bytes(hi_word);
+
+        interp.rust_scores.insert(compile_ir::ptr(), 7);
+        interp.run_to_end().unwrap();
+
+        let actual = *interp
             .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%1".into()).unwrap(), 1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%65536".into()).unwrap(), 65536);
-        interp.rust_scores.insert(
-            cir::ScoreHolder::new("%%16777216".into()).unwrap(),
-            16777216,
-        );
+            .get(&return_holder(0))
+            .unwrap();
+
+        if actual != expected {
+            println!("Expected: {:>11} ({:#010X})", expected, expected);
+            println!("Actual:   {:>11} ({:#010X})", actual, actual);
+            panic!();
+        }
+    }
+
+    #[test]
+    fn memcpy() {
+        let mut interp = create_interp("intrinsic:memcpy");
 
         for idx in 0..30 {
             interp.set_byte(0xAA, idx);
@@ -239,27 +289,15 @@ mod test {
 
     #[test]
     fn load_byte() {
-        let mut interp = Interpreter::new(vec![
-            get_by_name("intrinsic:lshr").clone(),
-            get_by_name("intrinsic:load_byte").clone()
-        ], "");
+        let mut interp = create_interp("intrinsic:load_byte");
+        let start_stack = interp.call_stack.clone();
+
         let word = [0x12, 0xEA, 0x56, 0x78];
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
+
         interp.memory[1] = i32::from_le_bytes(word);
 
         for (pt, expected) in word.iter().copied().enumerate() {
-            interp.call_stack = vec![(1, 0)];
+            interp.call_stack = start_stack.clone();
             interp.rust_scores.insert(compile_ir::ptr(), pt as i32 + 4);
             interp.run_to_end().unwrap();
             let result = *interp
@@ -273,32 +311,16 @@ mod test {
 
     #[test]
     fn load_halfword() {
-        let mut interp = Interpreter::new(vec![
-            get_by_name("intrinsic:lshr").clone(),
-            get_by_name("intrinsic:load_halfword").clone()
-        ], "");
+        let mut interp = create_interp("intrinsic:load_halfword");
+        let start_stack = interp.call_stack.clone();
+
         let word = [0x12, 0xEA, 0x56, 0x78];
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%2".into()).unwrap(), 2);
         interp.memory[1] = i32::from_le_bytes(word);
 
         for (pt, expected) in word.chunks_exact(2).enumerate() {
             let expected = u16::from_le_bytes(expected.try_into().unwrap()) as i32;
 
-            interp.call_stack = vec![(1, 0)];
+            interp.call_stack = start_stack.clone();
             interp.rust_scores.insert(compile_ir::ptr(), 2 * pt as i32 + 4);
             interp.run_to_end().unwrap();
             let result = *interp
@@ -311,37 +333,8 @@ mod test {
 
     #[test]
     fn store_halfword() {
-        let mut interp = Interpreter::new_raw(
-            vec![
-                get_by_name("intrinsic:setptr").clone(),
-                get_by_name("intrinsic:and").clone(),
-                get_by_name("intrinsic:and_inner").clone(),
-                get_by_name("intrinsic:store_halfword").clone(),
-            ],
-            "",
-        );
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%1".into()).unwrap(), 1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%2".into()).unwrap(), 2);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%65536".into()).unwrap(), 65536);
-        interp.rust_scores.insert(
-            cir::ScoreHolder::new("%%16777216".into()).unwrap(),
-            16777216,
-        );
+        let mut interp = create_interp("intrinsic:store_halfword");
+        let start_stack = interp.call_stack.clone();
 
         let bytes = [0x12, 0xEA, 0x34, 0xBC];
 
@@ -349,7 +342,7 @@ mod test {
         for (idx, halfword) in bytes.chunks_exact(2).enumerate() {
             let halfword = u16::from_le_bytes(halfword.try_into().unwrap()) as i32;
 
-            interp.call_stack = vec![(3, 0)];
+            interp.call_stack = start_stack.clone();
             interp.rust_scores.insert(compile_ir::ptr(), 8 + 2 * idx as i32);
             interp.rust_scores.insert(param(2, 0), halfword);
             interp.run_to_end().unwrap();
@@ -369,40 +362,14 @@ mod test {
 
     #[test]
     fn store_byte() {
-        let mut interp = Interpreter::new_raw(
-            vec![
-                get_by_name("intrinsic:setptr").clone(),
-                get_by_name("intrinsic:and").clone(),
-                get_by_name("intrinsic:and_inner").clone(),
-                get_by_name("intrinsic:store_byte").clone(),
-            ],
-            "",
-        );
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%1".into()).unwrap(), 1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%65536".into()).unwrap(), 65536);
-        interp.rust_scores.insert(
-            cir::ScoreHolder::new("%%16777216".into()).unwrap(),
-            16777216,
-        );
+        let mut interp = create_interp("intrinsic:store_byte");
+        let start_stack = interp.call_stack.clone();
 
         let bytes = [0x12, 0xEA, 0x34, 0xBC];
 
         let mut expected = 0;
         for (idx, byte) in bytes.iter().copied().enumerate() {
-            interp.call_stack = vec![(3, 0)];
+            interp.call_stack = start_stack.clone();
             interp.rust_scores.insert(compile_ir::ptr(), 8 + idx as i32);
             interp.rust_scores.insert(param(2, 0), byte as i32);
             interp.run_to_end().unwrap();
@@ -419,19 +386,9 @@ mod test {
 
     fn test_lshr(a: i32, shift: i32) {
         let expected = (a as u32 >> shift) as i32;
-        let mut interp = Interpreter::new_raw(
-            vec![
-                get_by_name("intrinsic/lshr:getshift").clone(),
-                get_by_name("intrinsic/lshr:inner").clone(),
-                get_by_name("intrinsic:lshr").clone(),
-            ],
-            "",
-        );
+        let mut interp = create_interp("intrinsic:lshr");
         interp.rust_scores.insert(param(0, 0), a);
         interp.rust_scores.insert(param(1, 0), shift);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
         interp.run_to_end().unwrap();
         let actual = *interp.rust_scores.get(&param(0, 0)).unwrap();
 
@@ -445,6 +402,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn memset() {
         todo!("THIS TEST")
     }
@@ -491,31 +449,10 @@ mod test {
         }
     }
 
-    fn get_by_name(name: &str) -> &'static Function {
-        INTRINSICS
-            .iter()
-            .find(|f| f.id == FunctionId::new(name))
-            .unwrap_or_else(|| panic!("Could not find {:?}", name))
-    }
-
     fn test_shift_from_ptr(a: i32, ptr: i32) {
         let expected = (a as u32 >> (8 * (ptr % 4))) as i32;
-        let mut interp = Interpreter::new_raw(
-            vec![
-                get_by_name("intrinsic:shift_from_ptr_inner").clone(),
-                get_by_name("intrinsic:shift_from_ptr").clone(),
-            ],
-            "",
-        );
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%FOUR".into()).unwrap(), 4);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
+        let mut interp = create_interp("intrinsic:shift_from_ptr");
+
         interp.rust_scores.insert(param(0, 0), a as i32);
         interp.rust_scores.insert(compile_ir::ptr(), ptr);
         interp.run_to_end().unwrap();
@@ -564,19 +501,12 @@ mod test {
     }
 
     fn call_bitwise_intrin(a: i32, b: i32, expected: i32, name: &str) {
-        let mut interp = Interpreter::new_raw(
-            vec![
-                get_by_name(&format!("{}_inner", name)).clone(),
-                get_by_name(name).clone(),
-            ],
-            "",
-        );
+        let mut interp = create_interp(name);
         interp.rust_scores.insert(param(0, 0), a);
         interp.rust_scores.insert(param(1, 0), b);
         interp.run_to_end().unwrap();
         let result = *interp.rust_scores.get(&return_holder(0)).unwrap();
         assert_eq!(result, expected);
-        assert_eq!(interp.rust_scores.len(), 3);
     }
 
     fn test_and(a: i32, b: i32) {

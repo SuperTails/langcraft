@@ -8,6 +8,7 @@ use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::str::FromStr;
 use std::string::ToString;
 use std::sync::Mutex;
+use std::convert::TryFrom;
 
 mod raw_text;
 
@@ -61,7 +62,7 @@ lazy_static! {
 #[derive(
     Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, serde::Serialize, serde::Deserialize,
 )]
-// FIXME: This needs checks on deserialization
+#[serde(try_from = "String")]
 pub struct ScoreHolder(String);
 
 impl ScoreHolder {
@@ -116,6 +117,14 @@ impl ScoreHolder {
         (0..((type_size + 3) / 4))
             .map(|idx| ScoreHolder::new_lossy(format!("{}%{}", prefix, idx)))
             .collect()
+    }
+}
+
+impl TryFrom<String> for ScoreHolder {
+    type Error = String;
+
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        ScoreHolder::new(s)
     }
 }
 

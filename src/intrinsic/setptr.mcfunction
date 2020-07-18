@@ -1,5 +1,5 @@
 scoreboard players operation %%ptr rust = %ptr rust
-scoreboard players operation %%ptr rust /= %%FOUR rust
+scoreboard players operation %%ptr rust /= %%4 rust
 scoreboard players operation %z rust = %%ptr rust 
 scoreboard players operation %z rust %= %%SIXTEEN rust
 scoreboard players operation %%ptr rust /= %%SIXTEEN rust
