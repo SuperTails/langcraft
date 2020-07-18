@@ -70,21 +70,40 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 hit_breakpoint = true;
             }*/
 
-            if interp.next_command().map(|c| c.to_string().contains("block count before printing:")).unwrap_or(false) {
+            /*if interp
+                .next_command()
+                .map(|c| c.to_string().contains("block count before printing:"))
+                .unwrap_or(false)
+            {
                 hit_breakpoint = true;
             }
 
-            if interp.next_command().map(|c| c.to_string().contains("Panic")).unwrap_or(false) {
+            if interp
+                .next_command()
+                .map(|c| c.to_string().contains("Panic"))
+                .unwrap_or(false)
+            {
                 hit_breakpoint = true;
             }
 
-            if interp.next_command().map(|c| c.to_string() == "scoreboard players operation %ptr rust = iter.sroa.0.0105%0 rust").unwrap_or(false) {
+            if interp
+                .next_command()
+                .map(|c| {
+                    c.to_string()
+                        == "scoreboard players operation %ptr rust = iter.sroa.0.0105%0 rust"
+                })
+                .unwrap_or(false)
+            {
                 hit_breakpoint = true;
             }
 
-            if interp.next_command().map(|c| c.to_string().contains("UNREACHABLE")).unwrap_or(false) {
+            if interp
+                .next_command()
+                .map(|c| c.to_string().contains("UNREACHABLE"))
+                .unwrap_or(false)
+            {
                 hit_breakpoint = true;
-            }
+            }*/
         }
     }
 
@@ -180,7 +199,12 @@ fn main() {
                 eprintln!("{}", i);
             }
 
-            assert_eq!(interp.get_rust_score(&langcraft::cir::ScoreHolder::new("%return%0".into()).unwrap()).unwrap(), 0);
+            assert_eq!(
+                interp
+                    .get_rust_score(&langcraft::cir::ScoreHolder::new("%return%0".into()).unwrap())
+                    .unwrap(),
+                0
+            );
 
             //compare_output(&interp);
         }

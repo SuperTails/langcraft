@@ -3,12 +3,12 @@ use llvm_ir::Name;
 pub use raw_text::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::ops::{RangeFrom, RangeInclusive, RangeToInclusive};
 use std::str::FromStr;
 use std::string::ToString;
 use std::sync::Mutex;
-use std::convert::TryFrom;
 
 mod raw_text;
 
@@ -608,40 +608,42 @@ pub enum ExecuteSubCmd {
 impl ExecuteSubCmd {
     pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
         match self {
-            Self::Condition { is_unless: _, cond } => {
-                match cond {
-                    ExecuteCondition::Score { target, kind, .. } => {
-                        let mut result = HashMap::new();
+            Self::Condition { is_unless: _, cond } => match cond {
+                ExecuteCondition::Score { target, kind, .. } => {
+                    let mut result = HashMap::new();
 
-                        if let Target::Uuid(target) = target {
-                            merge_use(&mut result, target, HolderUse::ReadOnly)
-                        }
-
-                        if let ExecuteCondKind::Relation { source: Target::Uuid(source), .. } = kind {
-                            merge_use(&mut result, source, HolderUse::ReadOnly)
-                        }
-
-                        result
+                    if let Target::Uuid(target) = target {
+                        merge_use(&mut result, target, HolderUse::ReadOnly)
                     }
-                    ExecuteCondition::Block { .. } => HashMap::new(),
-                }
-            }
-            Self::Store { is_success: _, kind } => {
-                match kind {
-                    ExecuteStoreKind::Data { .. } => HashMap::new(),
-                    ExecuteStoreKind::Score { target, .. } => {
-                        let mut result = HashMap::new();
 
-                        if let Target::Uuid(target) = target {
-                            merge_use(&mut result, target, HolderUse::WriteOnly);
-                        }
-
-                        result
+                    if let ExecuteCondKind::Relation {
+                        source: Target::Uuid(source),
+                        ..
+                    } = kind
+                    {
+                        merge_use(&mut result, source, HolderUse::ReadOnly)
                     }
+
+                    result
                 }
-            }
-            Self::At { .. } |
-            Self::As { .. } => HashMap::new(),
+                ExecuteCondition::Block { .. } => HashMap::new(),
+            },
+            Self::Store {
+                is_success: _,
+                kind,
+            } => match kind {
+                ExecuteStoreKind::Data { .. } => HashMap::new(),
+                ExecuteStoreKind::Score { target, .. } => {
+                    let mut result = HashMap::new();
+
+                    if let Target::Uuid(target) = target {
+                        merge_use(&mut result, target, HolderUse::WriteOnly);
+                    }
+
+                    result
+                }
+            },
+            Self::At { .. } | Self::As { .. } => HashMap::new(),
         }
     }
 }
@@ -821,12 +823,12 @@ impl Command {
             Self::ScoreAdd(c) => c.holder_uses(),
             Self::Execute(c) => c.holder_uses(),
             Self::Tellraw(c) => (&**c).holder_uses(),
-            Self::Data(_) | 
-            Self::SetBlock(_) |
-            Self::FuncCall(_) |
-            Self::Teleport(_) |
-            Self::Fill(_) |
-            Self::Comment(_) => HashMap::new()
+            Self::Data(_)
+            | Self::SetBlock(_)
+            | Self::FuncCall(_)
+            | Self::Teleport(_)
+            | Self::Fill(_)
+            | Self::Comment(_) => HashMap::new(),
         }
     }
 }
@@ -943,8 +945,14 @@ impl CommandParser<'_> {
 
     pub fn parse_execute_subcmd(&mut self) -> ExecuteSubCmd {
         match self.next_word() {
-            Some("if") => ExecuteSubCmd::Condition { is_unless: false, cond: self.parse_execute_cond() },
-            Some("unless") => ExecuteSubCmd::Condition { is_unless: true, cond: self.parse_execute_cond() },
+            Some("if") => ExecuteSubCmd::Condition {
+                is_unless: false,
+                cond: self.parse_execute_cond(),
+            },
+            Some("unless") => ExecuteSubCmd::Condition {
+                is_unless: true,
+                cond: self.parse_execute_cond(),
+            },
             Some("at") => ExecuteSubCmd::At {
                 target: self.next_word().unwrap().parse().unwrap(),
             },
@@ -1331,8 +1339,6 @@ impl ScoreGet {
     }
 }
 
-
-
 impl fmt::Display for ScoreGet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -1408,13 +1414,20 @@ impl fmt::Display for ScoreSet {
     }
 }
 
-pub fn merge_uses<'a>(all: &mut HashMap<&'a ScoreHolder, HolderUse>, other: &HashMap<&'a ScoreHolder, HolderUse>) {
+pub fn merge_uses<'a>(
+    all: &mut HashMap<&'a ScoreHolder, HolderUse>,
+    other: &HashMap<&'a ScoreHolder, HolderUse>,
+) {
     for (k, v) in other.iter() {
         merge_use(all, k, *v);
     }
 }
 
-pub fn merge_use<'a>(all: &mut HashMap<&'a ScoreHolder, HolderUse>, holder: &'a ScoreHolder, holder_use: HolderUse) {
+pub fn merge_use<'a>(
+    all: &mut HashMap<&'a ScoreHolder, HolderUse>,
+    holder: &'a ScoreHolder,
+    holder_use: HolderUse,
+) {
     if let Some(prev) = all.get_mut(holder) {
         if *prev != holder_use {
             *prev = HolderUse::ReadWrite;
@@ -1443,7 +1456,7 @@ pub struct ScoreOp {
 impl ScoreOp {
     pub fn holder_uses(&self) -> HashMap<&ScoreHolder, HolderUse> {
         let mut result = HashMap::new();
-        
+
         if let Target::Uuid(target) = &self.target {
             let target_use = if self.kind == ScoreOpKind::Assign {
                 HolderUse::WriteOnly

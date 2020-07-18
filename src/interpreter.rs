@@ -10,7 +10,7 @@ pub enum InterpError {
     OutOfBoundsAccess(i32, i32, i32),
     MaxCommandsRun,
     EnteredUnreachable,
-    EnteredTodo,   
+    EnteredTodo,
     AssertionFailed,
 }
 
@@ -232,7 +232,11 @@ impl Interpreter {
     }
 
     fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
-        if !self.call_stack.iter().any(|(i, _)| self.program[*i].id.name.contains("intrinsic")) {
+        if !self
+            .call_stack
+            .iter()
+            .any(|(i, _)| self.program[*i].id.name.contains("intrinsic"))
+        {
             println!("{}", cmd);
         }
 

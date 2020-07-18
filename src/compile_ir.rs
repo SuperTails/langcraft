@@ -4,20 +4,20 @@ use crate::cir::FunctionId as McFuncId;
 use crate::cir::{
     self, Command, Data, DataKind, DataTarget, Execute, ExecuteCondKind, ExecuteCondition,
     ExecuteStoreKind, ExecuteSubCmd, ScoreAdd, ScoreGet, ScoreHolder, ScoreOp, ScoreOpKind,
-    ScoreSet, SetBlock, SetBlockKind, Target, Tellraw, 
+    ScoreSet, SetBlock, SetBlockKind, Target, Tellraw,
 };
 use crate::interpreter::InterpError;
 use either::Either;
 use lazy_static::lazy_static;
 use llvm_ir::constant::BitCast as BitCastConst;
 use llvm_ir::constant::GetElementPtr as GetElementPtrConst;
-use llvm_ir::constant::Select as SelectConst;
 use llvm_ir::constant::ICmp as ICmpConst;
+use llvm_ir::constant::Select as SelectConst;
 use llvm_ir::debugloc::HasDebugLoc;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
-    InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, Select, Shl, ShuffleVector, Store,
-    Sub, Trunc, Xor, ZExt, SDiv, SRem, SExt,
+    InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem, Select, Shl,
+    ShuffleVector, Store, Sub, Trunc, Xor, ZExt,
 };
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
@@ -26,7 +26,7 @@ use llvm_ir::{
     Constant, Function, Instruction, IntPredicate, Module, Name, Operand, Terminator, Type,
 };
 use std::alloc::Layout;
-use std::collections::{BTreeSet, BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Mutex;
 
@@ -101,17 +101,23 @@ pub fn read_ptr_small(dest: ScoreHolder, is_halfword: bool) -> Vec<Command> {
     let mut cmds = Vec::new();
 
     if is_halfword {
-        cmds.push(McFuncCall {
-            id: McFuncId::new("intrinsic:load_halfword")
-        }.into());
+        cmds.push(
+            McFuncCall {
+                id: McFuncId::new("intrinsic:load_halfword"),
+            }
+            .into(),
+        );
 
         cmds.push(assign(dest, param(0, 0)));
 
         cmds
     } else {
-        cmds.push(McFuncCall {
-            id: McFuncId::new("intrinsic:load_byte")
-        }.into());
+        cmds.push(
+            McFuncCall {
+                id: McFuncId::new("intrinsic:load_byte"),
+            }
+            .into(),
+        );
 
         cmds.push(assign(dest, param(0, 0)));
 
@@ -153,7 +159,8 @@ macro_rules! make_op {
             target: $lhs.into(),
             target_obj: OBJECTIVE.into(),
             score: $rhs,
-        }.into()
+        }
+        .into()
     };
     ($lhs:expr, -=, $rhs:literal) => {
         ScoreAdd {
@@ -163,7 +170,11 @@ macro_rules! make_op {
         }
     };
     ($lhs:expr, $kind:tt, $rhs:literal) => {
-        make_op!($lhs, $kind, ScoreHolder::new(concat!("%%", stringify!($rhs)).to_string()).unwrap())
+        make_op!(
+            $lhs,
+            $kind,
+            ScoreHolder::new(concat!("%%", stringify!($rhs)).to_string()).unwrap()
+        )
     };
     ($lhs:expr, +=, $rhs:expr) => {
         make_op($lhs, $crate::cir::ScoreOpKind::AddAssign, $rhs)
@@ -189,7 +200,8 @@ pub fn make_op(lhs: ScoreHolder, kind: ScoreOpKind, rhs: ScoreHolder) -> Command
         kind,
         source: rhs.into(),
         source_obj: OBJECTIVE.into(),
-    }.into()
+    }
+    .into()
 }
 
 /// Shorthand for a `ScoreOp` assignment between two score holders on the default objective
@@ -209,7 +221,8 @@ pub fn assign_lit(target: ScoreHolder, score: i32) -> Command {
         target: target.into(),
         target_obj: OBJECTIVE.into(),
         score,
-    }.into()
+    }
+    .into()
 }
 
 pub fn get_index(x: i32, y: i32, z: i32) -> Result<i32, InterpError> {
@@ -443,8 +456,7 @@ fn apply_fixups(funcs: &mut [McFunction]) {
 }
 
 pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
-    let (mut init_cmds, globals) =
-        compile_global_var_init(&module.global_vars, &module.functions);
+    let (mut init_cmds, globals) = compile_global_var_init(&module.global_vars, &module.functions);
 
     let main_return = get_alloc(4);
 
@@ -479,7 +491,10 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             .collect();
 
         for McFunction { id, .. } in mc_funcs.iter() {
-            clobber_list.insert(id.name.clone(), clobbers.clone().into_iter().map(|c| c.0).collect());
+            clobber_list.insert(
+                id.name.clone(),
+                clobbers.clone().into_iter().map(|c| c.0).collect(),
+            );
         }
 
         let mut f = mc_funcs.into_iter();
@@ -654,7 +669,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
     #[allow(clippy::reversed_empty_ranges)]
     funcs[0].cmds.splice(
         0..0,
-        all_clobbers.iter().map(|c| assign_lit((*c).clone(), 1))
+        all_clobbers.iter().map(|c| assign_lit((*c).clone(), 1)),
     );
 
     funcs
@@ -692,11 +707,15 @@ fn getelementptr_const(
             match ty {
                 Type::NamedStructType {
                     name: _name,
-                    ty: inner_ty
+                    ty: inner_ty,
                 } => {
                     let inner_ty = inner_ty.as_ref().unwrap();
                     let inner_ty = inner_ty.upgrade().unwrap().read().unwrap().clone();
-                    if let Type::StructType { element_types, is_packed } = &inner_ty {
+                    if let Type::StructType {
+                        element_types,
+                        is_packed,
+                    } = &inner_ty
+                    {
                         ty = element_types[index as usize].clone();
                         offset += offset_of(element_types, *is_packed, index as u32) as u32;
                     } else {
@@ -731,7 +750,7 @@ fn getelementptr_const(
     };
 
     println!("Result: {:?}", result);
-    
+
     result
 }
 
@@ -778,7 +797,10 @@ fn compile_global_var_init<'a>(
     ];
 
     for (name, value) in CONSTANTS {
-        cmds.push(assign_lit(ScoreHolder::new(name.to_string()).unwrap(), *value));
+        cmds.push(assign_lit(
+            ScoreHolder::new(name.to_string()).unwrap(),
+            *value,
+        ));
     }
 
     (cmds, globals)
@@ -801,30 +823,51 @@ fn global_var_layout(v: &[GlobalVariable]) -> HashMap<&Name, (u32, Option<Consta
 
 pub fn make_zeroed(ty: &Type) -> Constant {
     match ty {
-        Type::NamedStructType { name: _, ty: struct_ty } => {
+        Type::NamedStructType {
+            name: _,
+            ty: struct_ty,
+        } => {
             let struct_ty = struct_ty.as_ref().unwrap().upgrade().unwrap();
             let struct_ty = struct_ty.read().unwrap();
             make_zeroed(&struct_ty)
         }
-        Type::StructType { element_types, is_packed } => {
+        Type::StructType {
+            element_types,
+            is_packed,
+        } => {
             let values = element_types.iter().map(|et| make_zeroed(et)).collect();
-            Constant::Struct { name: None, values, is_packed: *is_packed }
+            Constant::Struct {
+                name: None,
+                values,
+                is_packed: *is_packed,
+            }
         }
-        Type::ArrayType { element_type, num_elements } => {
-            let elements = std::iter::repeat(make_zeroed(element_type)).take(*num_elements).collect();
+        Type::ArrayType {
+            element_type,
+            num_elements,
+        } => {
+            let elements = std::iter::repeat(make_zeroed(element_type))
+                .take(*num_elements)
+                .collect();
             Constant::Array {
                 element_type: (**element_type).clone(),
                 elements,
             }
         }
-        Type::IntegerType { bits } => {
-            Constant::Int { bits: *bits, value: 0 }
-        }
-        _ => todo!("{:?}", ty)
+        Type::IntegerType { bits } => Constant::Int {
+            bits: *bits,
+            value: 0,
+        },
+        _ => todo!("{:?}", ty),
     }
 }
 
-fn init_data(start_addr: i32, ty: &Type, mut value: Constant, globals: &GlobalVarList) -> BTreeMap<i32, u8> {
+fn init_data(
+    start_addr: i32,
+    ty: &Type,
+    mut value: Constant,
+    globals: &GlobalVarList,
+) -> BTreeMap<i32, u8> {
     if let Constant::AggregateZero(t) = value {
         value = make_zeroed(&t);
     }
@@ -847,7 +890,8 @@ fn init_data(start_addr: i32, ty: &Type, mut value: Constant, globals: &GlobalVa
                 todo!("{:?}", value)
             };
 
-            (val as u16).to_le_bytes()
+            (val as u16)
+                .to_le_bytes()
                 .iter()
                 .enumerate()
                 .map(|(idx, byte)| (start_addr + idx as i32, *byte))
@@ -879,7 +923,10 @@ fn init_data(start_addr: i32, ty: &Type, mut value: Constant, globals: &GlobalVa
                 .map(|(idx, byte)| (start_addr + idx as i32, *byte))
                 .collect()
         }
-        Type::PointerType { pointee_type: _, addr_space: _ } => {
+        Type::PointerType {
+            pointee_type: _,
+            addr_space: _,
+        } => {
             let val = if let MaybeConst::Const(c) = eval_constant(&value, globals) {
                 c
             } else {
@@ -892,41 +939,63 @@ fn init_data(start_addr: i32, ty: &Type, mut value: Constant, globals: &GlobalVa
                 .map(|(idx, byte)| (start_addr + idx as i32, *byte))
                 .collect()
         }
-        Type::ArrayType { element_type, num_elements } => {
+        Type::ArrayType {
+            element_type,
+            num_elements,
+        } => {
             let vals = match &value {
-                Constant::Array { element_type: et, elements } => {
+                Constant::Array {
+                    element_type: et,
+                    elements,
+                } => {
                     assert_eq!(&**element_type, et);
                     elements
                 }
-                _ => todo!("{:?}", value)
+                _ => todo!("{:?}", value),
             };
 
             assert_eq!(*num_elements, vals.len());
 
-            vals.iter().enumerate().flat_map(|(idx, val)| {
-                let offset = offset_of_array(element_type, idx as u32);
-                let field_addr = start_addr + offset as i32;
-                init_data(field_addr, element_type, val.clone(), globals)
-            }).collect()
+            vals.iter()
+                .enumerate()
+                .flat_map(|(idx, val)| {
+                    let offset = offset_of_array(element_type, idx as u32);
+                    let field_addr = start_addr + offset as i32;
+                    init_data(field_addr, element_type, val.clone(), globals)
+                })
+                .collect()
         }
-        Type::NamedStructType { name: _, ty: struct_ty } => {
+        Type::NamedStructType {
+            name: _,
+            ty: struct_ty,
+        } => {
             let struct_ty = struct_ty.as_ref().unwrap().upgrade().unwrap();
             let struct_ty = struct_ty.read().unwrap();
 
             init_data(start_addr, &struct_ty, value, globals)
         }
-        Type::StructType { element_types, is_packed } => {
+        Type::StructType {
+            element_types,
+            is_packed,
+        } => {
             let vals = match value {
-                Constant::Struct { name: _, values, is_packed: ip } => {
+                Constant::Struct {
+                    name: _,
+                    values,
+                    is_packed: ip,
+                } => {
                     assert_eq!(*is_packed, ip);
                     values
                 }
-                _ => todo!("data value {:?}", value)
+                _ => todo!("data value {:?}", value),
             };
 
             assert_eq!(element_types.len(), vals.len());
 
-            element_types.iter().zip(vals.iter()).enumerate()
+            element_types
+                .iter()
+                .zip(vals.iter())
+                .enumerate()
                 .flat_map(|(idx, (field_ty, value))| {
                     let offset = offset_of(element_types, *is_packed, idx as u32);
                     let field_addr = start_addr + offset as i32;
@@ -938,10 +1007,7 @@ fn init_data(start_addr: i32, ty: &Type, mut value: Constant, globals: &GlobalVa
     }
 }
 
-fn one_global_var_init(
-    v: &GlobalVariable,
-    globals: &GlobalVarList,
-) -> (Vec<Command>, Constant) {
+fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> (Vec<Command>, Constant) {
     if matches!(v.name, Name::Number(_)) {
         todo!()
     }
@@ -956,7 +1022,12 @@ fn one_global_var_init(
     match &v.ty {
         // I'm pretty sure it's *always* a pointer...
         Type::PointerType { pointee_type, .. } => {
-            let bytes = init_data(start as i32, pointee_type, v.initializer.clone().unwrap(), globals);
+            let bytes = init_data(
+                start as i32,
+                pointee_type,
+                v.initializer.clone().unwrap(),
+                globals,
+            );
 
             let mut cmds = Vec::new();
             cmds.push(assign_lit(target, start as i32));
@@ -977,8 +1048,10 @@ fn one_global_var_init(
                 }
 
                 assert_eq!(all_bytes.len() % 4, 0);
-                
-                let all_words = all_bytes.chunks_exact(4).map(|word| i32::from_le_bytes(word.try_into().unwrap()));
+
+                let all_words = all_bytes
+                    .chunks_exact(4)
+                    .map(|word| i32::from_le_bytes(word.try_into().unwrap()));
 
                 for (word_idx, word) in all_words.enumerate() {
                     cmds.push(set_memory(word, start as i32 + word_idx as i32 * 4));
@@ -1168,7 +1241,15 @@ fn setup_arguments(
     before_cmds
 }
 
-fn compile_xor(Xor { operand0, operand1, dest, debugloc: _ }: &Xor, globals: &GlobalVarList) -> Vec<Command> {
+fn compile_xor(
+    Xor {
+        operand0,
+        operand1,
+        dest,
+        debugloc: _,
+    }: &Xor,
+    globals: &GlobalVarList,
+) -> Vec<Command> {
     assert_eq!(operand0.get_type(), operand1.get_type());
 
     let (mut cmds, op0) = eval_operand(operand0, globals);
@@ -1180,8 +1261,7 @@ fn compile_xor(Xor { operand0, operand1, dest, debugloc: _ }: &Xor, globals: &Gl
     cmds.extend(tmp);
 
     match operand0.get_type() {
-        Type::IntegerType { bits: 16 } |
-        Type::IntegerType { bits: 32 } => {
+        Type::IntegerType { bits: 16 } | Type::IntegerType { bits: 32 } => {
             cmds.push(assign(param(0, 0), op0));
             cmds.push(assign(param(1, 0), op1));
 
@@ -1244,8 +1324,21 @@ fn compile_xor(Xor { operand0, operand1, dest, debugloc: _ }: &Xor, globals: &Gl
     }
 }
 
-fn compile_shl(Shl { operand0, operand1, dest, debugloc: _ }: &Shl, globals: &GlobalVarList) -> Vec<Command> {
-    if !matches!(operand0.get_type(), Type::IntegerType { bits: 32 } | Type::IntegerType { bits: 24 } | Type::IntegerType { bits: 16 }) {
+fn compile_shl(
+    Shl {
+        operand0,
+        operand1,
+        dest,
+        debugloc: _,
+    }: &Shl,
+    globals: &GlobalVarList,
+) -> Vec<Command> {
+    if !matches!(
+        operand0.get_type(),
+        Type::IntegerType { bits: 32 }
+            | Type::IntegerType { bits: 24 }
+            | Type::IntegerType { bits: 16 }
+    ) {
         todo!("{:?}", operand0);
     }
 
@@ -1265,17 +1358,23 @@ fn compile_shl(Shl { operand0, operand1, dest, debugloc: _ }: &Shl, globals: &Gl
         cmds.push(make_op!(dest.clone(), *=, tmp));
 
         if matches!(operand0.get_type(), Type::IntegerType { bits: 16 }) {
-            cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                target: dest.into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((..=65535).into()),
-            }));
+            cmds.push(mark_assertion(
+                false,
+                &ExecuteCondition::Score {
+                    target: dest.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((..=65535).into()),
+                },
+            ));
         } else if matches!(operand0.get_type(), Type::IntegerType { bits: 24 }) {
-            cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                target: dest.into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((..=16777216).into()),
-            }));
+            cmds.push(mark_assertion(
+                false,
+                &ExecuteCondition::Score {
+                    target: dest.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((..=16777216).into()),
+                },
+            ));
         }
     } else {
         todo!("{:?}", operand1)
@@ -1284,7 +1383,15 @@ fn compile_shl(Shl { operand0, operand1, dest, debugloc: _ }: &Shl, globals: &Gl
     cmds
 }
 
-fn compile_lshr(LShr { operand0, operand1, dest, debugloc: _ }: &LShr, globals: &GlobalVarList) -> Vec<Command> {
+fn compile_lshr(
+    LShr {
+        operand0,
+        operand1,
+        dest,
+        debugloc: _,
+    }: &LShr,
+    globals: &GlobalVarList,
+) -> Vec<Command> {
     let (mut cmds, op0) = eval_operand(operand0, globals);
 
     if let Operand::ConstantOperand(Constant::Int {
@@ -1304,8 +1411,7 @@ fn compile_lshr(LShr { operand0, operand1, dest, debugloc: _ }: &LShr, globals: 
         } else {
             todo!()
         }
-    } else if let Operand::ConstantOperand(Constant::Int { bits: 32, value: 1 }) = operand1
-    {
+    } else if let Operand::ConstantOperand(Constant::Int { bits: 32, value: 1 }) = operand1 {
         // FIXME: This implements an *arithmetic* right shift
         if matches!(operand0.get_type(), Type::IntegerType { bits: 32 }) {
             let dest = ScoreHolder::from_local_name(dest.clone(), 4)
@@ -1330,7 +1436,10 @@ fn compile_lshr(LShr { operand0, operand1, dest, debugloc: _ }: &LShr, globals: 
             todo!("{:?}", operand0);
         }
 
-        let dest = ScoreHolder::from_local_name(dest.clone(), 4).into_iter().next().unwrap();
+        let dest = ScoreHolder::from_local_name(dest.clone(), 4)
+            .into_iter()
+            .next()
+            .unwrap();
 
         let (tmp, op1) = eval_operand(operand1, globals);
         let op1 = op1.into_iter().next().unwrap();
@@ -1338,15 +1447,17 @@ fn compile_lshr(LShr { operand0, operand1, dest, debugloc: _ }: &LShr, globals: 
         cmds.extend(tmp);
         cmds.push(assign(param(0, 0), op0[0].clone()));
         cmds.push(assign(param(1, 0), op1));
-        cmds.push(McFuncCall {
-            id: McFuncId::new("intrinsic:lshr")
-        }.into());
+        cmds.push(
+            McFuncCall {
+                id: McFuncId::new("intrinsic:lshr"),
+            }
+            .into(),
+        );
         cmds.push(assign(dest, param(0, 0)));
 
         cmds
     }
 }
-
 
 fn compile_call(
     Call {
@@ -1385,13 +1496,14 @@ fn compile_call(
 
                 let (mut cmds, op) = eval_operand(&arguments[0].0, globals);
 
-                cmds.push(
-                    mark_assertion(false, &ExecuteCondition::Score {
+                cmds.push(mark_assertion(
+                    false,
+                    &ExecuteCondition::Score {
                         target: op[0].clone().into(),
                         target_obj: OBJECTIVE.into(),
                         kind: ExecuteCondKind::Matches((1..=1).into()),
-                    })
-                );
+                    },
+                ));
 
                 (cmds, None)
             }
@@ -1744,12 +1856,15 @@ fn compile_call(
                 let dest = dest[0].clone();
 
                 let mut cmds = Vec::new();
-                
+
                 cmds.extend(setup_arguments(arguments, globals));
 
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("intrinsic:bcmp"),
-                }.into());
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:bcmp"),
+                    }
+                    .into(),
+                );
 
                 cmds.push(assign(dest, return_holder(0)));
 
@@ -1877,7 +1992,6 @@ fn compile_call(
     }
 }
 
-
 pub fn compile_function(
     func: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
@@ -1946,7 +2060,10 @@ pub fn compile_function(
                 }
             }
 
-            this.cmds.push(assign_lit(ScoreHolder::new("%phi".to_string()).unwrap(), idx as i32));
+            this.cmds.push(assign_lit(
+                ScoreHolder::new("%phi".to_string()).unwrap(),
+                idx as i32,
+            ));
 
             match &block.term {
                 Terminator::Ret(Ret {
@@ -2179,7 +2296,10 @@ pub fn compile_function(
         }
     }
 
-    let clobbers = clobbers.into_iter().map(|(c, u)| ((*c).clone(), u)).collect();
+    let clobbers = clobbers
+        .into_iter()
+        .map(|(c, u)| ((*c).clone(), u))
+        .collect();
 
     (funcs, clobbers)
 }
@@ -2622,7 +2742,16 @@ pub fn truncate_to(holder: ScoreHolder, bytes: u32) -> Vec<Command> {
     cmds
 }
 
-fn compile_getelementptr(GetElementPtr { address, indices, dest, in_bounds: _, debugloc: _ }: &GetElementPtr, globals: &GlobalVarList) -> Vec<Command> {
+fn compile_getelementptr(
+    GetElementPtr {
+        address,
+        indices,
+        dest,
+        in_bounds: _,
+        debugloc: _,
+    }: &GetElementPtr,
+    globals: &GlobalVarList,
+) -> Vec<Command> {
     let dest = ScoreHolder::from_local_name(dest.clone(), 4);
     let dest = dest[0].clone();
 
@@ -2803,7 +2932,12 @@ pub fn compile_instr(
 
             cmds
         }
-        Instruction::Store(Store { address, value, alignment, .. }) => {
+        Instruction::Store(Store {
+            address,
+            value,
+            alignment,
+            ..
+        }) => {
             let (mut cmds, addr) = eval_operand(address, globals);
 
             assert_eq!(addr.len(), 1, "multiword addr {:?}", address);
@@ -2826,11 +2960,14 @@ pub fn compile_instr(
                 let tmp = get_unique_holder();
                 cmds.push(assign(tmp.clone(), addr.clone()));
                 cmds.push(make_op!(tmp.clone(), %=, 4));
-                cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                    target: tmp.into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((0..=0).into()),
-                }));
+                cmds.push(mark_assertion(
+                    false,
+                    &ExecuteCondition::Score {
+                        target: tmp.into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((0..=0).into()),
+                    },
+                ));
 
                 for (idx, write_cmd) in write_cmds.into_iter().enumerate() {
                     cmds.push(assign(ptr(), addr.clone()));
@@ -2884,42 +3021,48 @@ pub fn compile_instr(
                         McFuncCall {
                             id: McFuncId::new("intrinsic:store_halfword_unaligned"),
                         }
-                        .into()
+                        .into(),
                     )
                 }
             } else if value_size % 4 == 0 {
                 /*if let Operand::ConstantOperand(Constant::Int { bits: 64, value }) = value {
-                    for (idx, byte) in value.to_le_bytes().iter().copied().enumerate() {
-                        cmds.push(assign(ptr(), addr.clone()));
-                        cmds.push(ScoreAdd {
-                            target: ptr().into(),
-                            target_obj: OBJECTIVE.into(),
-                            score: idx as i32,
-                        }.into());
-                        cmds.push(ScoreSet {
-                            target: param(2, 0).into(),
-                            target_obj: OBJECTIVE.into(),
-                            score: byte as i32,
-                        }.into());
-                        cmds.push(McFuncCall {
-                            id: McFuncId::new("intrinsic:store_byte"),
-                        }.into());
-                    }
-                    */
+                for (idx, byte) in value.to_le_bytes().iter().copied().enumerate() {
+                    cmds.push(assign(ptr(), addr.clone()));
+                    cmds.push(ScoreAdd {
+                        target: ptr().into(),
+                        target_obj: OBJECTIVE.into(),
+                        score: idx as i32,
+                    }.into());
+                    cmds.push(ScoreSet {
+                        target: param(2, 0).into(),
+                        target_obj: OBJECTIVE.into(),
+                        score: byte as i32,
+                    }.into());
+                    cmds.push(McFuncCall {
+                        id: McFuncId::new("intrinsic:store_byte"),
+                    }.into());
+                }
+                */
                 let (tmp, val) = eval_operand(value, globals);
                 cmds.extend(tmp);
 
                 for (word_idx, val) in val.into_iter().enumerate() {
                     cmds.push(assign(ptr(), addr.clone()));
-                    cmds.push(ScoreAdd {
-                        target: ptr().into(),
-                        target_obj: OBJECTIVE.into(),
-                        score: 4 * word_idx as i32,
-                    }.into());
+                    cmds.push(
+                        ScoreAdd {
+                            target: ptr().into(),
+                            target_obj: OBJECTIVE.into(),
+                            score: 4 * word_idx as i32,
+                        }
+                        .into(),
+                    );
                     cmds.push(assign(param(0, 0), val));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:store_word_unaligned"),
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:store_word_unaligned"),
+                        }
+                        .into(),
+                    );
                 }
             } else if value_size < 4 {
                 let (tmp, val) = eval_operand(value, globals);
@@ -2941,14 +3084,20 @@ pub fn compile_instr(
                 for byte_idx in 0..value_size {
                     cmds.push(assign(param(0, 0), val.clone()));
                     cmds.push(assign_lit(param(1, 0), 8 * byte_idx as i32));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:lshr"),
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:lshr"),
+                        }
+                        .into(),
+                    );
                     cmds.push(assign(param(2, 0), param(0, 0)));
                     cmds.push(make_op!(param(2, 0), *=, 256));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:store_byte"),
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:store_byte"),
+                        }
+                        .into(),
+                    );
                     cmds.push(make_op!(ptr(), +=, 1));
                 }
             } else {
@@ -2957,7 +3106,12 @@ pub fn compile_instr(
 
             cmds
         }
-        Instruction::Load(Load { dest, address, alignment, .. }) => {
+        Instruction::Load(Load {
+            dest,
+            address,
+            alignment,
+            ..
+        }) => {
             let pointee_type = if let Type::PointerType { pointee_type, .. } = address.get_type() {
                 pointee_type
             } else {
@@ -2995,14 +3149,20 @@ pub fn compile_instr(
             } else if pointee_layout.size() % 4 == 0 && *alignment == 1 {
                 for (word_idx, dest_word) in dest.into_iter().enumerate() {
                     cmds.push(assign(ptr(), addr.clone()));
-                    cmds.push(ScoreAdd {
-                        target: ptr().into(),
-                        target_obj: OBJECTIVE.into(),
-                        score: word_idx as i32 * 4,
-                    }.into());
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:load_word_unaligned")
-                    }.into());
+                    cmds.push(
+                        ScoreAdd {
+                            target: ptr().into(),
+                            target_obj: OBJECTIVE.into(),
+                            score: word_idx as i32 * 4,
+                        }
+                        .into(),
+                    );
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:load_word_unaligned"),
+                        }
+                        .into(),
+                    );
                     cmds.push(assign(dest_word, return_holder(0)));
                 }
             } else if pointee_layout.size() == 1 {
@@ -3014,9 +3174,12 @@ pub fn compile_instr(
                 if alignment % 2 == 0 {
                     cmds.extend(read_ptr_small(dest[0].clone(), true));
                 } else {
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:load_halfword_unaligned"),
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:load_halfword_unaligned"),
+                        }
+                        .into(),
+                    );
                     cmds.push(assign(dest[0].clone(), return_holder(0)));
                 }
             } else if pointee_layout.size() < 4 && alignment % 4 == 0 {
@@ -3028,7 +3191,12 @@ pub fn compile_instr(
                     todo!("{:?}", pointee_layout)
                 }
             } else {
-                todo!("{:?} with layout {:?} and pointer alignment {}", pointee_type, pointee_layout, alignment)
+                todo!(
+                    "{:?} with layout {:?} and pointer alignment {}",
+                    pointee_type,
+                    pointee_layout,
+                    alignment
+                )
             }
 
             cmds
@@ -3455,21 +3623,19 @@ pub fn compile_instr(
             if matches!(to_type, Type::IntegerType { bits: 32 }) {
                 let op = op.into_iter().next().unwrap();
 
-                let (range, to_add) = if matches!(operand.get_type(), Type::IntegerType { bits: 8 }) {
-                    (
-                        128..=255,
-                        -256
-                    )
+                let (range, to_add) = if matches!(operand.get_type(), Type::IntegerType { bits: 8 })
+                {
+                    (128..=255, -256)
                 } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
-                    (
-                        32768..=65535,
-                        -65536
-                    )
+                    (32768..=65535, -65536)
                 } else {
                     todo!("{:?}", operand.get_type());
                 };
 
-                let dest = ScoreHolder::from_local_name(dest.clone(), 4).into_iter().next().unwrap();
+                let dest = ScoreHolder::from_local_name(dest.clone(), 4)
+                    .into_iter()
+                    .next()
+                    .unwrap();
 
                 cmds.push(assign(dest.clone(), op));
                 let mut exec = Execute::new();
@@ -3551,9 +3717,9 @@ pub fn compile_instr(
             cmds.extend(tmp);
 
             match operand0.get_type() {
-                Type::IntegerType { bits: 16 } |
-                Type::IntegerType { bits: 24 } |
-                Type::IntegerType { bits: 32 } => {
+                Type::IntegerType { bits: 16 }
+                | Type::IntegerType { bits: 24 }
+                | Type::IntegerType { bits: 32 } => {
                     cmds.push(assign(param(0, 0), op0));
                     cmds.push(assign(param(1, 0), op1));
 
@@ -3663,7 +3829,9 @@ pub fn compile_instr(
 
                     cmds
                 }
-                Type::IntegerType { bits: 8 } | Type::IntegerType { bits: 16 } | Type::IntegerType { bits: 32 } => {
+                Type::IntegerType { bits: 8 }
+                | Type::IntegerType { bits: 16 }
+                | Type::IntegerType { bits: 32 } => {
                     cmds.push(assign(param(0, 0), op0[0].clone()));
                     cmds.push(assign(param(1, 0), op1[0].clone()));
 
@@ -3873,10 +4041,7 @@ impl MaybeConst {
         match self {
             MaybeConst::Const(score) => {
                 let target = ScoreHolder::new(format!("%temp{}", get_unique_num())).unwrap();
-                (
-                    vec![assign_lit(target.clone(), score)],
-                    vec![target],
-                )
+                (vec![assign_lit(target.clone(), score)], vec![target])
             }
             MaybeConst::NonConst(cmds, id) => (cmds, id),
         }
@@ -3941,10 +4106,7 @@ pub fn eval_constant(
             let (cmds, holders) = (0..((len + 3) / 4))
                 .map(|idx| {
                     let holder = ScoreHolder::new(format!("%temp{}%{}", num, idx)).unwrap();
-                    (
-                        assign_lit(holder.clone(), 0),
-                        holder,
-                    )
+                    (assign_lit(holder.clone(), 0), holder)
                 })
                 .unzip();
 
@@ -3963,10 +4125,7 @@ pub fn eval_constant(
                 let (cmds, holders) = (0..(size / 4))
                     .map(|idx| {
                         let holder = ScoreHolder::new(format!("%temp{}%{}", num, idx)).unwrap();
-                        (
-                            assign_lit(holder.clone(), 0),
-                            holder,
-                        )
+                        (assign_lit(holder.clone(), 0), holder)
                     })
                     .unzip();
 
@@ -3998,7 +4157,11 @@ pub fn eval_constant(
             }
         }
         Constant::ICmp(icmp) => {
-            let ICmpConst { predicate, operand0, operand1 } = &**icmp;
+            let ICmpConst {
+                predicate,
+                operand0,
+                operand1,
+            } = &**icmp;
             if let MaybeConst::Const(op0) = eval_constant(operand0, globals) {
                 if let MaybeConst::Const(op1) = eval_constant(operand1, globals) {
                     let result = match predicate {
@@ -4014,12 +4177,24 @@ pub fn eval_constant(
             }
         }
         Constant::Select(s) => {
-            let SelectConst { condition, true_value, false_value } = &**s;
+            let SelectConst {
+                condition,
+                true_value,
+                false_value,
+            } = &**s;
             let condition = match condition {
                 Constant::ICmp(i) => {
-                    let ICmpConst { predicate, operand0, operand1 } = &**i;
+                    let ICmpConst {
+                        predicate,
+                        operand0,
+                        operand1,
+                    } = &**i;
                     if let Constant::BitCast(bc) = operand0 {
-                        if let BitCastConst { operand: Constant::GlobalReference { name, .. }, .. } = &**bc {
+                        if let BitCastConst {
+                            operand: Constant::GlobalReference { name, .. },
+                            ..
+                        } = &**bc
+                        {
                             let value = globals.get(name).unwrap().0;
                             if let Constant::Null(_) = operand1 {
                                 #[allow(clippy::absurd_extreme_comparisons)]
