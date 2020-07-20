@@ -1,92 +1,9 @@
 #![no_std]
-#![feature(rustc_attrs)]
 #![no_main]
 
+use rust_interp::*;
+
 use arrayvec::ArrayVec;
-
-#[repr(i32)]
-#[derive(/*Debug,*/ PartialEq, PartialOrd, Clone, Copy)]
-pub enum McBlock {
-    Air,
-    Cobblestone,
-    Granite,
-    Andesite,
-    Diorite,
-    LapisBlock,
-    IronBlock,
-    GoldBlock,
-    DiamondBlock,
-    RedstoneBlock,
-}
-
-static MC_BLOCKS: [McBlock; 10] = [
-    McBlock::Air,
-    McBlock::Cobblestone,
-    McBlock::Granite,
-    McBlock::Andesite,
-    McBlock::Diorite,
-    McBlock::LapisBlock,
-    McBlock::IronBlock,
-    McBlock::GoldBlock,
-    McBlock::DiamondBlock,
-    McBlock::RedstoneBlock,
-];
-
-/*impl core::fmt::Display for McBlock {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "minecraft:")?;
-
-        match self {
-            McBlock::Air => write!(f, "air"),
-            McBlock::Cobblestone => write!(f, "cobblestone"),
-            McBlock::Granite => write!(f, "granite"),
-            McBlock::Andesite => write!(f, "andesite"),
-            McBlock::Diorite => write!(f, "diorite"),
-            McBlock::LapisBlock => write!(f, "lapis_block"),
-            McBlock::IronBlock => write!(f, "iron_block"),
-            McBlock::GoldBlock => write!(f, "gold_block"),
-            McBlock::DiamondBlock => write!(f, "diamond_block"),
-            McBlock::RedstoneBlock => write!(f, "redstone_block"),
-        }
-    }
-}*/
-
-use core::panic::PanicInfo;
-
-extern "C" {
-    #[rustc_args_required_const(0, 1)]
-    pub fn print_raw(data: *const u8, len: usize);
-    pub fn print(value: i32);
-    pub fn init();
-
-    pub fn turtle_x(value: i32);
-    pub fn turtle_y(value: i32);
-    pub fn turtle_z(value: i32);
-
-    /// Sets the block at the turtle's position
-    pub fn turtle_set(block: McBlock);
-
-    /// Returns 1 if the block at the turtle's position matches the argument
-    pub fn turtle_check(block: McBlock) -> bool;
-
-    /// Returns the block at the turtle's position
-    pub fn turtle_get() -> McBlock;
-
-    /// Returns the char at the turtle's position
-    pub fn turtle_get_char() -> u8;
-}
-
-macro_rules! print_str {
-    ($data:expr) => {
-        print_raw($data.as_ptr(), $data.len())
-    }
-}
-
-#[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
-    unsafe { print_str!(b"Panic") };
-    loop {}
-}
 
 #[derive(Clone, PartialEq, Eq)]
 struct Ident(ArrayVec::<[u8; 8]>);
@@ -107,6 +24,10 @@ impl Ident {
         unsafe { print(i32::from_ne_bytes(word)) };
     }
 
+    pub fn is_key_print(&self) -> bool {
+        &self.0[..] == &b"PRINT"[..]
+    }
+
     pub fn is_key_fn(&self) -> bool {
         &self.0[..] == &b"FN"[..]
     }
@@ -118,6 +39,10 @@ impl Ident {
     pub fn is_key_while(&self) -> bool {
         &self.0[..] == &b"WHILE"[..]
     }
+
+    pub fn is_key_loop(&self) -> bool {
+        &self.0[..] == &b"LOOP"[..]
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -128,7 +53,9 @@ enum Token {
     CloseCurly,
     OpenParen,
     CloseParen,
+    Equals,
     Ident(Ident),
+    Literal(i32),
 }
 
 impl Token {
@@ -149,25 +76,30 @@ impl Token {
                 Token::CloseCurly => print_str!("}"),
                 Token::OpenParen => print_str!("("),
                 Token::CloseParen => print_str!(")"),
+                Token::Equals => print_str!("="),
                 Token::Ident(i) => {
                     print_str!("ident:");
                     i.print_self();
+                }
+                Token::Literal(l) => {
+                    print_str!("literal:");
+                    print(*l);
                 }
             }
         }
     }
 }
 
-unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
+unsafe fn tokenize() -> ArrayVec<[Token; 50]> {
     turtle_x(-16);
     turtle_y(16);
 
-    let mut char_iter = (0..16)
+    let mut char_iter = (0..50)
         .map(|z| { turtle_z(-z); turtle_get_char() })
         .peekable();
 
     let mut current_token = None;
-    let mut tokens = ArrayVec::<[Token; 16]>::new();
+    let mut tokens = ArrayVec::<[Token; 50]>::new();
 
     loop {
         if let Some(c) = char_iter.next() {
@@ -175,6 +107,27 @@ unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
             print(tokens.len() as i32);
 
             match c {
+                b'0'..=b'9' => {
+                    let val = (c - b'0') as i32;
+
+                    if let Some(Token::Literal(l)) = current_token.as_mut() {
+                        *l *= 10;
+                        *l += val;
+                    } else {
+                        if let Some(c) = current_token.take() {
+                            tokens.push(c);
+                        }
+
+                        current_token = Some(Token::Literal(val));
+                    }
+                }
+                b'=' => {
+                    if let Some(c) = current_token.take() {
+                        tokens.push(c);
+                    }
+
+                    tokens.push(Token::Equals);
+                }
                 b'(' => {
                     print_str!(b"Open parenthesis token");
                     
@@ -267,64 +220,127 @@ unsafe fn tokenize() -> ArrayVec<[Token; 16]> {
     tokens
 }
 
+fn interpret(ast: &Ast) {
+    let mut vars = ArrayVec::<[(Ident, i32); 2]>::new();
+    for stmt in ast.root.body.iter().copied() {
+        let stmt = &ast.stmts[stmt];
+        match stmt {
+            Stmt::Let { ident, value } => {
+                /*let idx = if let Some((i, _)) = vars.iter().enumerate().find(|(i, v)| &v.0 == ident) {
+                    i
+                } else {
+                    let idx = vars.len();
+                    vars.push((ident.clone(), *value));
+                    idx
+                };*/
+            }
+            Stmt::Print { ident } => {
+                /*if let Some((i, v)) = vars.iter().enumerate().find(|(i, v)| &v.0 == ident) {
+                    print_str!("printing value:");
+                    print(v.1);
+                } else {
+                    print_str!("attempt to print undefined variable");
+                    return;
+                }*/
+            }
+            Stmt::Loop { .. } => {
+                print_str!("TODO: LOOP");
+            }
+            Stmt::While { .. } => {
+                print_str!("TODO: WHILE");
+            }
+        }
+    }
+}
+
 struct Ast {
-    blocks: ArrayVec<[Block; 8]>,
+    stmts: ArrayVec<[Stmt; 8]>,
     root: FuncDecl,
 }
 
 impl Ast {
     pub fn print_self(&self) {
         unsafe {
-            print_str!("number of blocks:");
-            print(self.blocks.len() as i32);
+            print_str!("number of stmts:");
+            print(self.stmts.len() as i32);
             print_str!("root:");
         }
-        self.root.print_self(&self.blocks);
+        self.root.print_self(&self.stmts);
     }
 }
 
 #[derive(Clone, PartialEq)]
 struct FuncDecl {
     name: Ident,
-    body: usize,
+    body: Block,
 }
 
 impl FuncDecl {
-    pub fn print_self(&self, blocks: &[Block]) {
+    pub fn print_self(&self, stmts: &[Stmt]) {
         unsafe {
             print_str!("function declaration with name:");
             self.name.print_self();
-            print_str!("and body:");
-            for stmt in blocks[self.body].iter() {
-                stmt.print_self(blocks);
+            print_str!("and body (with X statements):");
+            print(self.body.len() as i32);
+            for stmt in self.body.iter().copied() {
+                stmts[stmt].print_self(stmts);
             }
             print_str!("end function");
         }
     } 
 }
 
-type Block = ArrayVec<[Stmt; 4]>;
+type Block = ArrayVec<[usize; 4]>;
 
 #[derive(Clone, PartialEq)]
 enum Stmt {
     While {
         cond: (),
-        body: usize,
+        body: Block,
+    },
+    Loop {
+        body: Block,
+    },
+    Print {
+        ident: Ident,
+    },
+    Let {
+        ident: Ident,
+        value: i32,
     }
 }
 
 impl Stmt {
-    pub fn print_self(&self, blocks: &[Block]) {
+    pub fn print_self(&self, stmts: &[Stmt]) {
         unsafe {
             match self {
                 Stmt::While { cond, body } => {
                     print_str!("while");
                     // TODO: Print cond
                     print_str!("do");
-                    for stmt in blocks[*body].iter() {
-                        stmt.print_self(blocks);
+                    for stmt in body.iter().copied() {
+                        stmts[stmt].print_self(stmts);
                     }
                     print_str!("end while");
+                }
+                Stmt::Loop { body } => {
+                    print_str!("loop");
+                    for stmt in body.iter().copied() {
+                        stmts[stmt].print_self(stmts);
+                    }
+                    print_str!("end loop");
+                }
+                Stmt::Print { ident } => {
+                    print_str!("print");
+                    ident.print_self();
+                    print_str!("end print");
+                }
+                Stmt::Let { ident, value } => {
+                    print_str!("let");
+                    ident.print_self();
+                    print_str!("=");
+                    print(*value);
+                    print_str!("end let");
                 }
             }
         }
@@ -334,7 +350,7 @@ impl Stmt {
 struct Parser<'a> {
     tokens: &'a [Token],
     current_idx: usize,
-    blocks: ArrayVec<[Block; 8]>,
+    stmts: ArrayVec<[Stmt; 8]>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -358,14 +374,15 @@ impl ParseError {
 }
 
 fn parse_ast(tokens: &[Token]) -> Result<Ast, ParseError> {
-    let mut parser = Parser { tokens, current_idx: 0, blocks: ArrayVec::new() };
+    let mut parser = Parser { tokens, current_idx: 0, stmts: ArrayVec::new() };
     let root = parser.parse_func_decl()?;
-    unsafe { print_str!("parser block count:");
-    print(parser.blocks.len() as i32); };
-    Ok(Ast {
-        blocks: parser.blocks,
-        root,
-    })
+    unsafe { print_str!("parser stmt count:");
+    print(parser.stmts.len() as i32); };
+    unsafe { root.print_self(&parser.stmts) };
+
+    let result = Ast { stmts: parser.stmts, root };
+    unsafe { result.print_self() };
+    Ok(result)
 }
 
 impl Parser<'_> {
@@ -394,36 +411,81 @@ impl Parser<'_> {
         }
     }
 
-    pub fn parse_stmt(&mut self) -> Result<Stmt, ParseError> {
+    pub fn parse_stmt(&mut self) -> Result<usize, ParseError> {
+        let idx = self.stmts.len();
         let token = self.next_token()?;
-        match token {
+        let stmt = match token {
             Token::Ident(i) if i.is_key_while() => {
                 // TODO: Parse condition
                 let cond = ();
 
                 let body = self.parse_block()?;
-                Ok(Stmt::While {
+                Stmt::While {
                     cond,
                     body,
-                })
+                }
             }
-            _ => Err(ParseError::UnexpectedToken(self.current_idx - 1))
-        }
+            Token::Ident(i) if i.is_key_loop() => {
+                let body = self.parse_block()?;
+                Stmt::Loop {
+                    body,
+                }
+            }
+            Token::Ident(i) if i.is_key_print() => {
+                self.expect_token(&Token::OpenParen)?;
+                let ident = match self.next_token()? {
+                    Token::Ident(i) => i.clone(),
+                    _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+                };
+                self.expect_token(&Token::CloseParen)?;
+                Stmt::Print { 
+                    ident
+                }
+            }
+            Token::Ident(i) if i.is_key_let() => {
+                let ident = match self.next_token()? {
+                    Token::Ident(i) => i.clone(),
+                    _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+                };
+
+                self.expect_token(&Token::Equals)?;
+
+                let value = match self.next_token()? {
+                    Token::Literal(l) => *l,
+                    _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+                };
+
+                Stmt::Let {
+                    ident,
+                    value,
+                }
+            }
+            _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+        };
+
+        self.stmts.push(stmt);
+        Ok(idx)
     }
 
-    pub fn parse_block(&mut self) -> Result<usize, ParseError> {
+    pub fn parse_block(&mut self) -> Result<Block, ParseError> {
         self.expect_token(&Token::OpenCurly)?;
 
         let mut block = Block::new();
         while self.peek_token() != Some(&Token::CloseCurly) {
+            unsafe { print_str!("adding stmt") };
             block.push(self.parse_stmt()?);
         }
 
         self.expect_token(&Token::CloseCurly)?;
 
-        let result = self.blocks.len();
-        self.blocks.push(block);
-        Ok(result)
+        unsafe {
+            print_str!("block has this many statements");
+            let i = block.len() as i32;
+            assert_ne!(i, 255);
+            print(i as i32);
+        }
+
+        Ok(block)
     }
 
     pub fn parse_func_decl(&mut self) -> Result<FuncDecl, ParseError> {
@@ -452,7 +514,7 @@ impl Parser<'_> {
 
 #[no_mangle]
 pub fn main() {
-    unsafe {
+    /*unsafe {
         print_str!(b"Size and align of an ident:");
         print(core::mem::size_of::<Ident>() as i32);
         print(core::mem::align_of::<Ident>() as i32);
@@ -477,7 +539,7 @@ pub fn main() {
         for r in result.iter() {
             r.print_self();
         }
-    }
+    }*/
 
     let tokens = unsafe { tokenize() };
 
@@ -488,10 +550,13 @@ pub fn main() {
 
     match parse_ast(&tokens) {
         Ok(func) => {
-            unsafe { print_str!(b"block count before printing:") };
-            unsafe { print(func.blocks.len() as i32) };
+            unsafe { print_str!("Successfully parsed AST") };
 
             func.print_self();
+
+            unsafe { print_str!("Interpreting") };
+
+            interpret(&func);
         }
         Err(err) => {
             unsafe { print_str!(b"encountered error:") };
