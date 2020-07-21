@@ -1333,7 +1333,15 @@ fn compile_shl(
     }: &Shl,
     globals: &GlobalVarList,
 ) -> Vec<Command> {
-    if matches!(operand0.get_type(), Type::IntegerType { bits: 48 }) {
+    if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) && matches!(operand1, Operand::ConstantOperand(Constant::Int { bits: 64, value: 32 })) {
+        let (mut cmds, op0) = eval_operand(operand0, globals);
+        let dest = ScoreHolder::from_local_name(dest.clone(), 8);
+
+        cmds.push(assign_lit(dest[0].clone(), 0));
+        cmds.push(assign(dest[1].clone(), op0[0].clone()));
+        
+        cmds
+    } else if matches!(operand0.get_type(), Type::IntegerType { bits: 48 }) {
         let (dest_lo, dest_hi) = if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
             (dest_lo.clone(), dest_hi.clone())
         } else {

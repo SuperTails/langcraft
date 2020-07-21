@@ -1,6 +1,66 @@
 #![feature(rustc_attrs)]
 #![no_std]
 
+#[macro_export]
+macro_rules! print_str {
+    ($data:expr) => {
+        $crate::print_raw($data.as_ptr(), $data.len())
+    }
+}
+
+use arrayvec::ArrayVec;
+
+pub mod lexer;
+pub mod parser;
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct Ident(ArrayVec::<[u8; 8]>);
+
+impl Ident {
+    pub fn new() -> Self {
+        Ident(ArrayVec::new())
+    }
+
+    pub fn print_self(&self) {
+        let mut word = [0, 0, 0, 0];
+        for (idx, byte) in word.iter_mut().enumerate() {
+            if let Some(b) = self.0.get(idx).copied() {
+                *byte = b;
+            }
+        }
+        unsafe { print(self.0.len() as i32) };
+        unsafe { print(i32::from_ne_bytes(word)) };
+    }
+
+    pub fn is_key_print(&self) -> bool {
+        &self.0[..] == &b"PRINT"[..]
+    }
+
+    pub fn is_key_fn(&self) -> bool {
+        &self.0[..] == &b"FN"[..]
+    }
+
+    pub fn is_key_let(&self) -> bool {
+        &self.0[..] == &b"LET"[..]
+    }
+
+    pub fn is_key_while(&self) -> bool {
+        &self.0[..] == &b"WHILE"[..]
+    }
+
+    pub fn is_key_loop(&self) -> bool {
+        &self.0[..] == &b"LOOP"[..]
+    }
+
+    pub fn is_key_if(&self) -> bool {
+        &self.0[..] == &b"IF"[..]
+    }
+    
+    pub fn is_key_else(&self) -> bool {
+        &self.0[..] == &b"ELSE"[..]
+    }
+}
+
 #[repr(i32)]
 #[derive(/*Debug,*/ PartialEq, PartialOrd, Clone, Copy)]
 pub enum McBlock {
@@ -16,7 +76,7 @@ pub enum McBlock {
     RedstoneBlock,
 }
 
-static MC_BLOCKS: [McBlock; 10] = [
+/*static MC_BLOCKS: [McBlock; 10] = [
     McBlock::Air,
     McBlock::Cobblestone,
     McBlock::Granite,
@@ -27,7 +87,7 @@ static MC_BLOCKS: [McBlock; 10] = [
     McBlock::GoldBlock,
     McBlock::DiamondBlock,
     McBlock::RedstoneBlock,
-];
+];*/
 
 /*impl core::fmt::Display for McBlock {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -51,7 +111,7 @@ static MC_BLOCKS: [McBlock; 10] = [
 use core::panic::PanicInfo;
 
 extern "C" {
-    #[rustc_args_required_const(0, 1)]
+    //#[rustc_args_required_const(0, 1)]
     pub fn print_raw(data: *const u8, len: usize);
     pub fn print(value: i32);
     pub fn init();
@@ -71,13 +131,6 @@ extern "C" {
 
     /// Returns the char at the turtle's position
     pub fn turtle_get_char() -> u8;
-}
-
-#[macro_export]
-macro_rules! print_str {
-    ($data:expr) => {
-        print_raw($data.as_ptr(), $data.len())
-    }
 }
 
 #[panic_handler]
