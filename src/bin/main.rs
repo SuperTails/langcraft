@@ -1,4 +1,5 @@
 use langcraft::Interpreter;
+use langcraft::interpreter::{InterpError};
 use std::path::Path;
 
 fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +61,18 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 eprintln!("Invalid input {:?}", input);
             }
         } else {
-            interp.step()?;
+            match interp.step() {
+                Ok(()) => {},
+                Err(InterpError::BreakpointHit) => {
+                    hit_breakpoint = true;
+                }
+                Err(e) => return Err(e.into()),
+            }
+
+            /*if interp.next_command().map(|c| c.to_string().contains("block has this many")).unwrap_or(false) {
+                hit_breakpoint = true;
+            }*/
+
 
             /*if interp.next_command().map(|c| c.to_string().contains("tokens:")).unwrap_or(false) {
                 hit_breakpoint = true;
@@ -76,17 +88,20 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 .unwrap_or(false)
             {
                 hit_breakpoint = true;
-            }
+            }*/
 
             if interp
                 .next_command()
                 .map(|c| c.to_string().contains("Panic"))
                 .unwrap_or(false)
             {
+                for o in interp.output.iter() {
+                    println!("{:?}", o);
+                }
                 hit_breakpoint = true;
             }
 
-            if interp
+            /*if interp
                 .next_command()
                 .map(|c| {
                     c.to_string()
@@ -189,7 +204,9 @@ fn main() {
         funcs.iter().map(|f| f.cmds.len()).sum::<usize>()
     );
 
-    let mut interp = Interpreter::new(funcs, "FN ABC(){}");
+    let mut interp = Interpreter::new(funcs, "FN MAIN(){ LET FOO = 42 PRINT(FOO) }");
+
+    //interp.set_mem_breakpoint(300, BreakKind::Access);
 
     match run_interpreter(&mut interp) {
         Ok(()) => {
@@ -199,12 +216,12 @@ fn main() {
                 eprintln!("{}", i);
             }
 
-            assert_eq!(
+            /*assert_eq!(
                 interp
                     .get_rust_score(&langcraft::cir::ScoreHolder::new("%return%0".into()).unwrap())
                     .unwrap(),
                 0
-            );
+            );*/
 
             //compare_output(&interp);
         }

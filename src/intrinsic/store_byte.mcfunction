@@ -2,7 +2,7 @@
 # %ptr - The location to write to
 # %param2%0 - The byte to write
 
-# !INTERPRETER: ASSERT if score %param2%0 rust matches 0..
+# !INTERPRETER: ASSERT if score %param2%0 rust matches 0..255
 
 function intrinsic:setptr
 

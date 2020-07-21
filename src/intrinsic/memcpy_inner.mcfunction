@@ -16,4 +16,4 @@ scoreboard players add %%temp1_memcpy rust 1
 scoreboard players remove %%temp2_memcpy rust 1
 
 # FIXME: This will also break on a longer memcpy
-execute if score %param2%0 rust matches 1.. run function intrinsic:memcpy_inner
+execute if score %%temp2_memcpy rust matches 1.. run function intrinsic:memcpy_inner

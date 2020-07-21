@@ -172,10 +172,10 @@ mod test {
         interp.rust_scores.insert(param(2, 0), len as i32);
 
         for (idx, byte) in mem_a.iter().copied().enumerate() {
-            interp.set_byte(byte, idx);
+            interp.set_byte(byte, idx).unwrap();
         }
         for (idx, byte) in mem_b.iter().copied().enumerate() {
-            interp.set_byte(byte, idx + 0x100);
+            interp.set_byte(byte, idx + 0x100).unwrap();
         }
 
         let expected = (mem_a[start..][..len] != mem_b[start..][..len]) as i32;
@@ -236,13 +236,22 @@ mod test {
         let mut interp = create_interp("intrinsic:memcpy");
 
         for idx in 0..30 {
-            interp.set_byte(0xAA, idx);
+            interp.set_byte(0xAA, idx).unwrap();
         }
 
         // Setup source
         let data = [1, 2, 3, 4, 5, 6, 7];
         for (idx, byte) in data.iter().copied().enumerate() {
-            interp.set_byte(byte, 5 + idx);
+            interp.set_byte(byte, 5 + idx).unwrap();
+        }
+
+        println!("Memory before:");
+        for b in 0..32 {
+            print!("{:02X} ", b);
+        }
+        println!();
+        for b in 0..32 {
+            print!("{:02X} ", interp.get_byte(b).unwrap());
         }
 
         interp.rust_scores.insert(param(0, 0), 15);
@@ -252,16 +261,16 @@ mod test {
 
         for (idx, expected) in data.iter().copied().enumerate() {
             // Make sure nothing changed
-            let actual = interp.get_byte(5 + idx);
+            let actual = interp.get_byte(5 + idx).unwrap();
             assert_eq!(expected, actual);
         }
         for (idx, expected) in data.iter().copied().enumerate() {
-            let actual = interp.get_byte(15 + idx);
+            let actual = interp.get_byte(15 + idx).unwrap();
             assert_eq!(expected, actual);
         }
         // Make sure nothing changed
-        assert_eq!(0xAA, interp.get_byte(14));
-        assert_eq!(0xAA, interp.get_byte(15 + 7));
+        assert_eq!(0xAA, interp.get_byte(14).unwrap());
+        assert_eq!(0xAA, interp.get_byte(15 + 7).unwrap());
     }
 
     #[test]

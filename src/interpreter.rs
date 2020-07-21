@@ -12,6 +12,7 @@ pub enum InterpError {
     EnteredUnreachable,
     EnteredTodo,
     AssertionFailed,
+    BreakpointHit,
 }
 
 impl std::fmt::Display for InterpError {
@@ -24,11 +25,19 @@ impl std::fmt::Display for InterpError {
             InterpError::EnteredUnreachable => write!(f, "entered unreachable code"),
             InterpError::EnteredTodo => write!(f, "entered code not yet implemented"),
             InterpError::AssertionFailed => write!(f, "assertion failed"),
+            InterpError::BreakpointHit => write!(f, "breakpoint hit"),
         }
     }
 }
 
 impl std::error::Error for InterpError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BreakKind {
+    Read,
+    Write,
+    Access,
+}
 
 pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
@@ -41,6 +50,7 @@ pub struct Interpreter {
     next_pos: Option<(usize, usize)>,
     pub output: Vec<String>,
     commands_run: usize,
+    memory_points: HashMap<usize, BreakKind>,
 }
 
 impl Interpreter {
@@ -65,6 +75,7 @@ impl Interpreter {
             next_pos: None,
             commands_run: 0,
             output: Vec::new(),
+            memory_points: HashMap::new(),
             letters,
         }
     }
@@ -86,25 +97,69 @@ impl Interpreter {
         Interpreter {
             program,
             call_stack: vec![(func_idx, 0)],
-            memory: [0; 8192],
+            memory: [0x55_55_55_55; 8192],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
             next_pos: None,
             commands_run: 0,
             output: Vec::new(),
+            memory_points: HashMap::new(),
             letters,
         }
     }
 
-    pub fn get_byte(&mut self, addr: usize) -> u8 {
-        self.memory[addr / 4].to_le_bytes()[addr % 4]
+    /// `word_start` is in bytes, must be aligned to a multiple of 4
+    pub fn set_mem_breakpoint(&mut self, word_start: usize, kind: BreakKind) {
+        assert_eq!(word_start % 4, 0);
+
+        self.memory_points.insert(word_start / 4, kind);
     }
 
-    pub fn set_byte(&mut self, value: u8, addr: usize) {
+    pub fn get_word(&self, addr: usize) -> Result<i32, InterpError> {
+        assert_eq!(addr % 4, 0);
+
+        match self.memory_points.get(&(addr / 4)) {
+            Some(BreakKind::Access) |
+            Some(BreakKind::Read) => return Err(InterpError::BreakpointHit),
+            _ => {},
+        };
+
+        Ok(self.memory[addr / 4])
+    }
+
+    pub fn get_byte(&self, addr: usize) -> Result<u8, InterpError> {
+        let word_addr = (addr / 4) * 4;
+
+        Ok(self.get_word(word_addr)?.to_le_bytes()[addr % 4])
+    }
+
+    pub fn set_word(&mut self, value: i32, addr: usize) -> Result<(), InterpError> {
+        assert_eq!(addr % 4, 0);
+        
+        match self.memory_points.get(&(addr / 4)) {
+            Some(BreakKind::Access) |
+            Some(BreakKind::Write) => return Err(InterpError::BreakpointHit),
+            _ => {},
+        };
+
+        self.memory[addr / 4] = value;
+
+        Ok(())
+    }
+
+    pub fn set_byte(&mut self, value: u8, addr: usize) -> Result<(), InterpError> {
+        match self.memory_points.get(&(addr / 4)) {
+            Some(BreakKind::Access) |
+            Some(BreakKind::Write) => return Err(InterpError::BreakpointHit),
+            _ => {},
+        };
+
         let mut bytes = self.memory[addr / 4].to_le_bytes();
         bytes[addr % 4] = value;
         self.memory[addr / 4] = i32::from_le_bytes(bytes);
+
+        Ok(())
     }
 
     /// Runs until the program halts
@@ -228,7 +283,7 @@ impl Interpreter {
 
     fn read_mem(&self) -> Result<i32, InterpError> {
         let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
-        Ok(self.memory[index as usize / 4])
+        self.get_word(index as usize)
     }
 
     fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
@@ -321,7 +376,7 @@ impl Interpreter {
                             let DataModifySource::Value(score) = source;
 
                             if let [x, y, z] = block.split_whitespace().map(|c| c.parse::<i32>().unwrap()).collect::<Vec<_>>()[..] {
-                                self.memory[get_index(x, y, z)? as usize / 4] = *score;
+                                self.set_word(*score, get_index(x, y, z)? as usize)?;
                             }
                         } else {
                             todo!("{}", path)
@@ -432,7 +487,7 @@ impl Interpreter {
 
                     let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
 
-                    self.memory[index as usize / 4] = *v;
+                    self.set_word(*v, index as usize)?;
                 } else if let Command::SetBlock(SetBlock { pos, block, kind: SetBlockKind::Replace }) = run {
                     if pos == "-2 1 ~" && block == "minecraft:redstone_block" {
                         assert_eq!(self.next_pos, None);
@@ -462,7 +517,8 @@ impl Interpreter {
 
                     if run.to_string() == "data get block ~ ~ ~ RecordItem.tag.Memory 1" {
                         let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
-                        self.rust_scores.insert(target.clone(), self.memory[index as usize / 4]);
+                        let word = self.get_word(index as usize)?;
+                        self.rust_scores.insert(target.clone(), word);
                     } else {
                         todo!()
                     }
@@ -474,7 +530,7 @@ impl Interpreter {
 
                         let val = *self.rust_scores.get(target).unwrap_or_else(|| panic!("read from uninitialized variable {}", target));
                         let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
-                        self.memory[index as usize / 4] = val;
+                        self.set_word(val, index as usize)?;
                     }
                 } else {
                     todo!("{:?} {}", subcmds[1].to_string(), cmd)
@@ -530,7 +586,7 @@ impl Interpreter {
 
                     let val = *self.rust_scores.get(target).unwrap_or_else(|| panic!("read from uninitialized variable {}", target));
                     let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
-                    self.memory[index as usize / 4] = val;
+                    self.set_word(val, index as usize)?;
                 } else {
                     todo!("{:?}", sg)
                 }
@@ -602,7 +658,7 @@ impl Interpreter {
 
     pub fn step(&mut self) -> Result<(), InterpError> {
         // TODO: This may be off by one
-        if self.commands_run >= 30_000 {
+        if self.commands_run >= 1_000_000 {
             return Err(InterpError::MaxCommandsRun);
         }
 

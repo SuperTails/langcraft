@@ -2,6 +2,7 @@ use langcraft::Interpreter;
 use std::path::Path;
 
 #[test]
+#[ignore]
 fn token_push() {
     let funcs = langcraft::compile_bc(Path::new("./tests/token_push.bc")).unwrap();
 
