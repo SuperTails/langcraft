@@ -69,6 +69,12 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 Err(e) => return Err(e.into()),
             }
 
+            /*if let Some(langcraft::cir::Command::Comment(c)) = interp.next_command() {
+                if c == "main-block_zn98__lt_core__iter__adapters__peekable_lt_i_gt__u20_as_u20_core__iter__traits__iterator__iterator_gt_4next17h78f8243e39bae4d8e_exit_i" {
+                    hit_breakpoint = true;
+                }
+            }*/
+
             /*if interp.next_command().map(|c| c.to_string().contains("block has this many")).unwrap_or(false) {
                 hit_breakpoint = true;
             }*/
@@ -89,6 +95,14 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
             {
                 hit_breakpoint = true;
             }*/
+
+            if interp
+                .next_command()
+                .map(|c| c.to_string() == "scoreboard players set %temp5 rust -2147483648")
+                .unwrap_or(false)
+            {
+                hit_breakpoint = true;
+            }
 
             if interp
                 .next_command()
@@ -205,21 +219,21 @@ fn main() {
     );
 
     let input =
-"FN MAIN(){
-LET FOO = 0
-WHILE FOO < 20 {
-FOO = FOO + 1
-IF FOO%15 == 0 {
- PRINT(300)
-} ELSE {
-IF FOO%5 == 0 {
- PRINT(200)
-} ELSE {
-IF FOO%3 == 0 {
- PRINT(100)
-} ELSE {
- PRINT(FOO)
-} } } } } }";
+"FN MAIN() {    
+ LET FOO = 0    
+ WHILE FOO < 20{
+  FOO = FOO + 1 
+  IF FOO%15==0{ 
+   PRINT(300)   
+} ELSE {        
+  IF FOO%5 == 0{
+   PRINT(200)   
+} ELSE {        
+  IF FOO%3 == 0{
+   PRINT(100)   
+} ELSE {        
+   PRINT(FOO)   
+} } } } } }     ";
 
     assert!(input.len() < 256);
     let mut interp = Interpreter::new(funcs, &input);
@@ -241,7 +255,7 @@ IF FOO%3 == 0 {
                 0
             );*/
 
-            //compare_output(&interp);
+            compare_output(&interp);
         }
         Err(err) => {
             eprintln!("==========================================");

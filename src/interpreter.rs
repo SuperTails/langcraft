@@ -1,9 +1,10 @@
 use crate::cir::*;
-use crate::compile_ir::{get_index, OBJECTIVE};
+use crate::compile_ir::{get_index, OBJECTIVE, pos_to_func_idx};
 use crate::intrinsics::INTRINSICS;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::str::FromStr;
+
+// FIXME: Multiple conditions and a `store success` does not work like I think it does!!!
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InterpError {
@@ -448,34 +449,9 @@ impl Interpreter {
                 self.output.push(msg);
             }
             Command::SetBlock(SetBlock { pos, block, kind: _kind }) => {
-                if pos.starts_with("-2 1 ") && block == "minecraft:redstone_block" {
-                    let z = pos["-2 1 ".len()..].parse::<i32>().unwrap();
-
-                    println!("Branching to {}", self.program[z as usize].id);
-
-                    assert_eq!(self.next_pos, None);
-                    self.next_pos = Some((z.try_into().unwrap(), 0));
-                } else if block.starts_with("minecraft:command_block") {
+                if block.starts_with("minecraft:command_block") {
                     // Command block placement
                     println!("Command block placement at {} block {}", pos, block);
-                } else if pos.starts_with("~ 1 ") && block == "minecraft:redstone_block" {
-                    let z = pos["~ 1 ".len()..].parse::<i32>().unwrap();
-
-                    todo!();
-
-                    println!("Branching to {}", self.program[z as usize].id);
-
-                    assert_eq!(self.next_pos, None);
-                    self.next_pos = Some((z.try_into().unwrap(), 0));
-                } else if pos.starts_with("~ ~1 ") && block == "minecraft:redstone_block" {
-                    let z = pos["~ ~1 ".len()..].parse::<i32>().unwrap();
-
-                    todo!();
-
-                    println!("Branching to {}", self.program[z as usize].id);
-
-                    assert_eq!(self.next_pos, None);
-                    self.next_pos = Some((z.try_into().unwrap(), 0));
                 } else if pos == "~ ~1 ~" && block == "minecraft:air" {
                     // Clearing command block activation
                 } else if block == "minecraft:redstone_block" {
@@ -505,7 +481,7 @@ impl Interpreter {
                     if y != 1 {
                         todo!("{} {}", pos, block);
                     } else {
-                        let idx = (-(x + 2)) * 16 + z;
+                        let idx = pos_to_func_idx(x, z);
 
                         println!("Branching to {}", self.program[idx as usize].id);
 
@@ -545,7 +521,7 @@ impl Interpreter {
             }
             cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~ ~ ~ minecraft:redstone_block replace" => {
                 if self.ptr_pos.1 == 1 {
-                    let idx = 16 * -(self.ptr_pos.0 + 2) + self.ptr_pos.2;
+                    let idx = pos_to_func_idx(self.ptr_pos.0, self.ptr_pos.2);
                     println!("Return to {}", idx);
                     assert_eq!(self.next_pos, None);
                     self.next_pos = Some((idx as usize, 0));
@@ -572,13 +548,6 @@ impl Interpreter {
                     let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
 
                     self.set_word(*v, index as usize)?;
-                } else if let Command::SetBlock(SetBlock { pos, block, kind: SetBlockKind::Replace }) = run {
-                    if pos == "-2 1 ~" && block == "minecraft:redstone_block" {
-                        assert_eq!(self.next_pos, None);
-                        self.next_pos = Some((self.ptr_pos.2.try_into().unwrap(), 0));
-                    } else {
-                        todo!("{:?}", run)
-                    }
                 } else {
                     todo!("{:?}", run)
                 }
@@ -741,10 +710,12 @@ impl Interpreter {
     }
 
     pub fn step(&mut self) -> Result<(), InterpError> {
-        // TODO: This may be off by one
-        if self.commands_run >= 30_000 {
+        if self.commands_run >= 60_000 {
             return Err(InterpError::MaxCommandsRun);
         }
+
+        let (top_func_idx, _) = self.call_stack.first().unwrap();
+        let top_func = self.program[*top_func_idx].id.to_string();
 
         let (func_idx, cmd_idx) = self.call_stack.last_mut().unwrap();
 
@@ -762,8 +733,9 @@ impl Interpreter {
                     self.call_stack.push(n);
                 }
                 println!(
-                    "Executed {} commands from function 'TODO:'",
-                    self.commands_run
+                    "Executed {} commands from function '{}'",
+                    self.commands_run,
+                    top_func,
                 );
                 self.commands_run = 0;
                 break;

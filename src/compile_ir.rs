@@ -34,7 +34,15 @@ use std::sync::Mutex;
 
 pub const OBJECTIVE: &str = "rust";
 
-pub const ROW_SIZE: usize = 1000;
+pub const ROW_SIZE: usize = 32;
+
+pub fn pos_to_func_idx(x: i32, z: i32) -> usize {
+    usize::try_from(ROW_SIZE as i32 * (-2 - x) + z).unwrap()
+}
+
+pub fn func_idx_to_pos(f: usize) -> (i32, i32) {
+    (-2 - (f / ROW_SIZE) as i32, (f % ROW_SIZE) as i32)
+}
 
 pub fn stackptr() -> ScoreHolder {
     ScoreHolder::new("%stackptr".to_string()).unwrap()
@@ -155,47 +163,36 @@ pub fn read_ptr(target: ScoreHolder) -> Command {
     exec.into()
 }
 
-macro_rules! make_op {
-    ($lhs:expr, +=, $rhs:literal) => {
-        ScoreAdd {
-            target: $lhs.into(),
+pub fn make_op_lit(lhs: ScoreHolder, kind: &str, score: i32) -> Command {
+    match kind {
+        "+=" => ScoreAdd {
+            target: lhs.into(),
             target_obj: OBJECTIVE.into(),
-            score: $rhs,
-        }
-        .into()
-    };
-    ($lhs:expr, -=, $rhs:literal) => {
-        ScoreAdd {
-            target: $lhs.into(),
+            score,
+        }.into(),
+        "-=" => ScoreAdd {
+            target: lhs.into(),
             target_obj: OBJECTIVE.into(),
-            score: -$rhs,
+            score: -score,
+        }.into(),
+        _ => {
+            let rhs = ScoreHolder::new(format!("%%{}", score)).unwrap();
+            make_op(lhs, kind, rhs)
         }
-    };
-    ($lhs:expr, $kind:tt, $rhs:literal) => {
-        make_op!(
-            $lhs,
-            $kind,
-            ScoreHolder::new(concat!("%%", stringify!($rhs)).to_string()).unwrap()
-        )
-    };
-    ($lhs:expr, +=, $rhs:expr) => {
-        make_op($lhs, $crate::cir::ScoreOpKind::AddAssign, $rhs)
-    };
-    ($lhs:expr, -=, $rhs:expr) => {
-        make_op($lhs, $crate::cir::ScoreOpKind::SubAssign, $rhs)
-    };
-    ($lhs:expr, *=, $rhs:expr) => {
-        make_op($lhs, $crate::cir::ScoreOpKind::MulAssign, $rhs)
-    };
-    ($lhs:expr, /=, $rhs:expr) => {
-        make_op($lhs, $crate::cir::ScoreOpKind::DivAssign, $rhs)
-    };
-    ($lhs:expr, %=, $rhs:expr) => {
-        make_op($lhs, $crate::cir::ScoreOpKind::ModAssign, $rhs)
-    };
+    }
 }
 
-pub fn make_op(lhs: ScoreHolder, kind: ScoreOpKind, rhs: ScoreHolder) -> Command {
+pub fn make_op(lhs: ScoreHolder, op: &str, rhs: ScoreHolder) -> Command {
+    let kind = match op {
+        "+=" => ScoreOpKind::AddAssign,
+        "-=" => ScoreOpKind::SubAssign,
+        "*=" => ScoreOpKind::MulAssign,
+        "/=" => ScoreOpKind::DivAssign,
+        "%=" => ScoreOpKind::ModAssign,
+        // TODO: Max, min, swap operators
+        _ => panic!("{}", op)       
+    };
+
     ScoreOp {
         target: lhs.into(),
         target_obj: OBJECTIVE.into(),
@@ -317,18 +314,9 @@ pub fn write_ptr(target: ScoreHolder) -> Command {
     exec.into()
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Options {
-    // FIXME: It is actually *not correct* to directly terminate with a call sometimes!
-    // And, on the other hand, a Call instruction MUST be a call!
-    // edit: oh god functions are awful why do we have abstraction
-    direct_term: bool,
-}
-
-impl Default for Options {
-    fn default() -> Self {
-        Options { direct_term: false }
-    }
+    pub log_trace: bool,
 }
 
 // This doesn't change what the function clobbers
@@ -358,10 +346,9 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                                 .unwrap_or_else(|| panic!("could not find {:?}", id))
                         });
 
-                    let x = idx / ROW_SIZE;
-                    let z = idx % ROW_SIZE;
+                    let (x, z) = func_idx_to_pos(idx);
 
-                    let pos = format!("{} 1 {}", -2 - (x as i32), z);
+                    let pos = format!("{} 1 {}", x, z);
                     let block = "minecraft:redstone_block".to_string();
 
                     funcs[func_idx].cmds[cmd_idx] = SetBlock {
@@ -398,10 +385,9 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                                     .unwrap_or_else(|| panic!("could not find {:?}", id))
                             });
 
-                        let x = idx / ROW_SIZE;
-                        let z = idx % ROW_SIZE;
+                        let (x, z) = func_idx_to_pos(idx);
 
-                        let pos = format!("{} ~1 {}", -2 - (x as i32), z);
+                        let pos = format!("{} 1 {}", x, z);
                         let block = "minecraft:redstone_block".to_string();
 
                         if let Command::Execute(Execute { run: Some(run), .. }) =
@@ -602,40 +588,37 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         }
     }
 
-    if !options.direct_term {
-        let mut build_cmds = funcs
-            .iter()
-            .enumerate()
-            .map(|(idx, func)| {
-                let x = -2 - (idx / ROW_SIZE) as i32;
-                let z = idx % ROW_SIZE;
-                let pos = format!("{} 0 {}", x, z);
-                let block = format!(
-                    "minecraft:command_block{{Command:\"function rust:{}\"}}",
-                    func.id
-                );
+    let mut build_cmds = funcs
+        .iter()
+        .enumerate()
+        .map(|(idx, func)| {
+            let (x, z) = func_idx_to_pos(idx);
+            let pos = format!("{} 0 {}", x, z);
+            let block = format!(
+                "minecraft:command_block{{Command:\"function rust:{}\"}}",
+                func.id
+            );
 
-                SetBlock {
-                    pos,
-                    block,
-                    kind: SetBlockKind::Destroy,
-                }
-                .into()
-            })
-            .collect::<Vec<Command>>();
-
-        build_cmds.insert(
-            0,
-            cir::Fill {
-                start: "-2 0 0".to_string(),
-                end: "-15 0 64".to_string(),
-                block: "minecraft:air".to_string(),
+            SetBlock {
+                pos,
+                block,
+                kind: SetBlockKind::Destroy,
             }
-            .into(),
-        );
+            .into()
+        })
+        .collect::<Vec<Command>>();
 
-        funcs[0].cmds.extend(build_cmds);
-    }
+    build_cmds.insert(
+        0,
+        cir::Fill {
+            start: "-2 0 0".to_string(),
+            end: "-15 0 64".to_string(),
+            block: "minecraft:air".to_string(),
+        }
+        .into(),
+    );
+
+    funcs[0].cmds.extend(build_cmds);
 
     let main_idx = funcs
         .iter()
@@ -651,12 +634,13 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 .unwrap_or_else(|| panic!("could not find main"))
         });
 
-    /*for func in &mut funcs[1..] {
-        func.cmds.insert(0, print_entry(&func.id));
-    }*/
+    if options.log_trace {
+        for func in &mut funcs[1..] {
+            func.cmds.insert(0, print_entry(&func.id));
+        }
+    }
 
-    let main_x = -2 - (main_idx / ROW_SIZE) as i32;
-    let main_z = main_idx % ROW_SIZE;
+    let (main_x, main_z) = func_idx_to_pos(main_idx);
     funcs.push(McFunction {
         id: McFuncId::new("run"),
         cmds: vec![
@@ -798,6 +782,7 @@ fn compile_global_var_init<'a>(
     // TODO: This needs a better system
     static CONSTANTS: &[(&str, i32)] = &[
         ("%%31BITSHIFT", 1 << 31),
+        ("%%ROW_SIZE", ROW_SIZE as i32),
         ("%%4", 4),
         ("%%16777216", 16777216),
         ("%%SIXTEEN", 16),
@@ -1240,14 +1225,14 @@ fn compile_memcpy(
                     id: McFuncId::new("intrinsic:setptr")
                 }.into());
                 cmds.push(read_ptr(temp.clone()));
-                cmds.push(make_op!(tempsrc.clone(), +=, 4));
+                cmds.push(make_op_lit(tempsrc.clone(), "+=", 4));
 
                 cmds.push(assign(ptr(), tempdst.clone()));
                 cmds.push(McFuncCall {
                     id: McFuncId::new("intrinsic:setptr")
                 }.into());
                 cmds.push(write_ptr(temp.clone()));
-                cmds.push(make_op!(tempdst.clone(), +=, 4));
+                cmds.push(make_op_lit(tempdst.clone(), "+=", 4));
             }
 
             cmds.push(Command::Comment("End memcpy".into()));
@@ -1494,11 +1479,8 @@ fn compile_shl(
             .unwrap();
 
         if let MaybeConst::Const(c) = eval_maybe_const(operand1, globals) {
-            let tmp = get_unique_holder();
-            cmds.push(assign_lit(tmp.clone(), 1 << c));
-
             cmds.push(assign(dest.clone(), op0));
-            cmds.push(make_op!(dest.clone(), *=, tmp));
+            cmds.push(make_op_lit(dest.clone(), "*=", 1 << c));
 
             if matches!(operand0.get_type(), Type::IntegerType { bits: 16 }) {
                 cmds.push(mark_assertion(
@@ -2059,20 +2041,22 @@ fn compile_call(
 
             before_cmds.extend(setup_arguments(arguments, globals));
 
+            // We don't actually want to use this, so we basically just `assert!(false)`
             before_cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                target: func_ptr.clone().into(),
+                target: ScoreHolder::new("%%2".into()).unwrap().into(),
                 target_obj: OBJECTIVE.into(),
                 kind: ExecuteCondKind::Matches((0..=0).into()),
             }));
 
             let temp_z = get_unique_holder();
             before_cmds.push(assign(temp_z.clone(), func_ptr.clone()));
-            before_cmds.push(make_op!(temp_z.clone(), %=, 32));
+            // FIXME: These should use ROW_SIZE
+            before_cmds.push(make_op_lit(temp_z.clone(), "%=", 32));
 
             let temp_x = get_unique_holder();
             before_cmds.push(assign(temp_x.clone(), func_ptr));
-            before_cmds.push(make_op!(temp_x.clone(), /=, 32));
-            before_cmds.push(make_op!(temp_x.clone(), *=, -1));
+            before_cmds.push(make_op_lit(temp_x.clone(), "/=", 32));
+            before_cmds.push(make_op_lit(temp_x.clone(), "*=", -1));
 
             // execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get func_ptr 1
             // Set the ptr's Z coordinate to `func_ptr`
@@ -2296,9 +2280,7 @@ pub fn compile_function(
                 Terminator::Br(Br { dest, .. }) => {
                     let mut id = McFuncId::new_block(&func.name, dest.clone());
 
-                    if !options.direct_term {
-                        id.name.push_str("%%fixup");
-                    }
+                    id.name.push_str("%%fixup");
 
                     this.cmds.push(McFuncCall { id }.into());
                 }
@@ -2317,10 +2299,8 @@ pub fn compile_function(
                     let mut true_dest = McFuncId::new_block(&func.name, true_dest.clone());
                     let mut false_dest = McFuncId::new_block(&func.name, false_dest.clone());
 
-                    if !options.direct_term {
-                        true_dest.name.push_str("%%fixup");
-                        false_dest.name.push_str("%%fixup");
-                    }
+                    true_dest.name.push_str("%%fixup");
+                    false_dest.name.push_str("%%fixup");
 
                     let mut true_cmd = Execute::new();
                     true_cmd
@@ -2371,9 +2351,7 @@ pub fn compile_function(
 
                         let mut dest_id = McFuncId::new_block(&func.name, dest_name.clone());
 
-                        if !options.direct_term {
-                            dest_id.name.push_str("%%fixup");
-                        }
+                        dest_id.name.push_str("%%fixup");
 
                         let mut branch_cmd = Execute::new();
                         branch_cmd.with_if(ExecuteCondition::Score {
@@ -2395,9 +2373,7 @@ pub fn compile_function(
 
                     let mut default_dest = McFuncId::new_block(&func.name, default_dest.clone());
 
-                    if !options.direct_term {
-                        default_dest.name.push_str("%%fixup");
-                    }
+                    default_dest.name.push_str("%%fixup");
 
                     let mut default_cmd = Execute::new();
                     default_cmd.with_if(ExecuteCondition::Score {
@@ -2449,18 +2425,16 @@ pub fn compile_function(
 
             result.push(this);
 
-            if !options.direct_term {
-                for sub_block in result.iter_mut() {
-                    sub_block.cmds.insert(
-                        0,
-                        SetBlock {
-                            pos: "~ ~1 ~".to_string(),
-                            block: "minecraft:air".to_string(),
-                            kind: SetBlockKind::Replace,
-                        }
-                        .into(),
-                    );
-                }
+            for sub_block in result.iter_mut() {
+                sub_block.cmds.insert(
+                    0,
+                    SetBlock {
+                        pos: "~ ~1 ~".to_string(),
+                        block: "minecraft:air".to_string(),
+                        kind: SetBlockKind::Replace,
+                    }
+                    .into(),
+                );
             }
 
             result
@@ -2854,7 +2828,7 @@ pub fn shift_left_bytes(holder: ScoreHolder, byte: u32) -> Vec<Command> {
     )));
 
     for _ in 0..byte {
-        cmds.push(make_op!(holder.clone(), *=, 256));
+        cmds.push(make_op_lit(holder.clone(), "*=", 256));
     }
 
     cmds
@@ -2871,7 +2845,7 @@ pub fn shift_right_bytes(holder: ScoreHolder, byte: u32) -> Vec<Command> {
     )));
 
     for _ in 0..byte {
-        cmds.push(make_op!(holder.clone(), /=, 256));
+        cmds.push(make_op_lit(holder.clone(), "/=", 256));
     }
 
     cmds
@@ -2896,7 +2870,7 @@ fn zero_low_bytes(holder: ScoreHolder, bytes: u32) -> Vec<Command> {
     cmds.push(assign(holder.clone(), param(0, 0)));
 
     for _ in 0..bytes {
-        cmds.push(make_op!(holder.clone(), *=, 256));
+        cmds.push(make_op_lit(holder.clone(), "*=", 256));
     }
 
     cmds
@@ -2919,7 +2893,7 @@ pub fn truncate_to(holder: ScoreHolder, bytes: u32) -> Vec<Command> {
 
     cmds.extend(zero_low_bytes(top_bits.clone(), bytes));
 
-    cmds.push(make_op!(holder, -=, top_bits));
+    cmds.push(make_op(holder, "-=", top_bits));
 
     cmds
 }
@@ -2959,7 +2933,7 @@ fn compile_getelementptr(
 
                         cmds.extend(a);
                         for _ in 0..pointee_size {
-                            cmds.push(make_op!(dest.clone(), +=, b.clone()));
+                            cmds.push(make_op(dest.clone(), "+=", b.clone()));
                         }
                     }
                 }
@@ -3013,7 +2987,7 @@ fn compile_getelementptr(
 
                         cmds.extend(a);
                         for _ in 0..elem_size {
-                            cmds.push(make_op!(dest.clone(), +=, b.clone()));
+                            cmds.push(make_op(dest.clone(), "+=", b.clone()));
                         }
                     }
                 }
@@ -3141,7 +3115,7 @@ pub fn compile_instr(
 
                 let tmp = get_unique_holder();
                 cmds.push(assign(tmp.clone(), addr.clone()));
-                cmds.push(make_op!(tmp.clone(), %=, 4));
+                cmds.push(make_op_lit(tmp.clone(), "%=", 4));
                 cmds.push(mark_assertion(
                     false,
                     &ExecuteCondition::Score {
@@ -3273,14 +3247,14 @@ pub fn compile_instr(
                         .into(),
                     );
                     cmds.push(assign(param(2, 0), param(0, 0)));
-                    cmds.push(make_op!(param(2, 0), %=, 256));
+                    cmds.push(make_op_lit(param(2, 0), "%=", 256));
                     cmds.push(
                         McFuncCall {
                             id: McFuncId::new("intrinsic:store_byte"),
                         }
                         .into(),
                     );
-                    cmds.push(make_op!(ptr(), +=, 1));
+                    cmds.push(make_op_lit(ptr(), "+=", 1));
                 }
             } else {
                 todo!("{:?} {}", value, alignment)
@@ -3368,7 +3342,7 @@ pub fn compile_instr(
                 cmds.push(assign(ptr(), addr));
                 cmds.push(read_ptr(dest[0].clone()));
                 if pointee_layout.size() == 3 {
-                    cmds.push(make_op!(dest[0].clone(), %=, 16777216));
+                    cmds.push(make_op_lit(dest[0].clone(), "%=", 16777216));
                 } else {
                     todo!("{:?}", pointee_layout)
                 }
@@ -3710,7 +3684,7 @@ pub fn compile_instr(
                     // FIXME: THIS DOES NOT WORK
                     // Shift over to the relevant byte
                     for _ in 0..offset {
-                        cmds.push(make_op!(dest.clone(), /=, 256));
+                        cmds.push(make_op_lit(dest.clone(), "/=", 256));
                     }
 
                     cmds.extend(truncate_to(dest, 1));
@@ -3783,12 +3757,12 @@ pub fn compile_instr(
 
                 if index == 0 {
                     cmds.extend(zero_low_bytes(dest[insert_idx].clone(), 1));
-                    cmds.push(make_op!(dest[insert_idx].clone(), +=, elem));
+                    cmds.push(make_op(dest[insert_idx].clone(), "+=", elem));
                 } else if index + 1 == element_types.len() as u32 {
                     let trunc_len = offset % 4;
                     cmds.extend(truncate_to(dest[insert_idx].clone(), trunc_len as u32));
                     cmds.extend(shift_left_bytes(elem.clone(), trunc_len as u32));
-                    cmds.push(make_op!(dest[insert_idx].clone(), +=, elem));
+                    cmds.push(make_op(dest[insert_idx].clone(), "+=", elem));
                 } else {
                     todo!()
                 }
@@ -4073,14 +4047,9 @@ pub fn compile_instr(
                         .next()
                         .unwrap();
 
+                    cmds.push(assign_lit(dest.clone(), 0));
+
                     let mut exec = Execute::new();
-                    exec.with_subcmd(ExecuteSubCmd::Store {
-                        is_success: true,
-                        kind: ExecuteStoreKind::Score {
-                            target: dest.into(),
-                            objective: OBJECTIVE.into(),
-                        },
-                    });
                     exec.with_if(ExecuteCondition::Score {
                         target: op0[0].clone().into(),
                         target_obj: OBJECTIVE.into(),
@@ -4091,6 +4060,7 @@ pub fn compile_instr(
                         target_obj: OBJECTIVE.into(),
                         kind: ExecuteCondKind::Matches((1..=1).into()),
                     });
+                    exec.with_run(assign_lit(dest, 1));
 
                     cmds.push(exec.into());
 
