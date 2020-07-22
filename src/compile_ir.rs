@@ -34,6 +34,8 @@ use std::sync::Mutex;
 
 pub const OBJECTIVE: &str = "rust";
 
+pub const ROW_SIZE: usize = 1000;
+
 pub fn stackptr() -> ScoreHolder {
     ScoreHolder::new("%stackptr".to_string()).unwrap()
 }
@@ -226,7 +228,7 @@ pub fn assign_lit(target: ScoreHolder, score: i32) -> Command {
 }
 
 pub fn get_index(x: i32, y: i32, z: i32) -> Result<i32, InterpError> {
-    if 0 <= x && x < 16 && 0 <= y && y < 16 && 0 <= z && z < 16 {
+    if 0 <= x && x < 64 && 0 <= y && y < 16 && 0 <= z && z < 16 {
         Ok((x * 16 * 16 + y * 16 + z) * 4)
     } else {
         Err(InterpError::OutOfBoundsAccess(x, y, z))
@@ -241,12 +243,12 @@ pub fn get_address(mut address: i32) -> (i32, i32, i32) {
     address /= 4;
 
     assert!(0 < address);
-    assert!(address < 16 * 16 * 16);
+    assert!(address < 64 * 16 * 16);
     let z = address % 16;
     address /= 16;
     let y = address % 16;
     address /= 16;
-    let x = address % 16;
+    let x = address % 32;
     (x, y, z)
 }
 
@@ -356,7 +358,10 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                                 .unwrap_or_else(|| panic!("could not find {:?}", id))
                         });
 
-                    let pos = format!("~ 1 {}", idx);
+                    let x = idx / ROW_SIZE;
+                    let z = idx % ROW_SIZE;
+
+                    let pos = format!("{} 1 {}", -2 - (x as i32), z);
                     let block = "minecraft:redstone_block".to_string();
 
                     funcs[func_idx].cmds[cmd_idx] = SetBlock {
@@ -393,7 +398,10 @@ fn apply_fixups(funcs: &mut [McFunction]) {
                                     .unwrap_or_else(|| panic!("could not find {:?}", id))
                             });
 
-                        let pos = format!("~ ~1 {}", idx);
+                        let x = idx / ROW_SIZE;
+                        let z = idx % ROW_SIZE;
+
+                        let pos = format!("{} ~1 {}", -2 - (x as i32), z);
                         let block = "minecraft:redstone_block".to_string();
 
                         if let Command::Execute(Execute { run: Some(run), .. }) =
@@ -528,12 +536,12 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
 
             let base_set = assign(stackbaseptr(), stackptr());
 
-            let message = cir::TextBuilder::new()
+            /*let message = cir::TextBuilder::new()
                 .append_text(format!("%stackptr at start of {} is ", func.id))
                 .append_score(stackptr(), OBJECTIVE.into(), None)
-                .build();
+                .build();*/
 
-            let save_code = std::iter::once(
+            let save_code = /*std::iter::once(
                 Tellraw {
                     target: cir::Selector {
                         var: cir::SelectorVariable::AllPlayers,
@@ -544,7 +552,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                 }
                 .into(),
             )
-            .chain(
+            .chain(*/
                 clobber_list
                     .get(&func.id.name)
                     .unwrap()
@@ -553,8 +561,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
                     .chain(std::iter::once(stackbaseptr()))
                     .map(push)
                     .flatten()
-                    .chain(std::iter::once(base_set)),
-            );
+                    .chain(std::iter::once(base_set));
+            //);
 
             func.cmds.splice(save_idx..save_idx, save_code);
         }
@@ -599,7 +607,9 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             .iter()
             .enumerate()
             .map(|(idx, func)| {
-                let pos = format!("-2 0 {}", idx);
+                let x = -2 - (idx / ROW_SIZE) as i32;
+                let z = idx % ROW_SIZE;
+                let pos = format!("{} 0 {}", x, z);
                 let block = format!(
                     "minecraft:command_block{{Command:\"function rust:{}\"}}",
                     func.id
@@ -618,7 +628,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             0,
             cir::Fill {
                 start: "-2 0 0".to_string(),
-                end: "-2 0 150".to_string(),
+                end: "-15 0 64".to_string(),
                 block: "minecraft:air".to_string(),
             }
             .into(),
@@ -645,6 +655,8 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
         func.cmds.insert(0, print_entry(&func.id));
     }*/
 
+    let main_x = -2 - (main_idx / ROW_SIZE) as i32;
+    let main_z = main_idx % ROW_SIZE;
     funcs.push(McFunction {
         id: McFuncId::new("run"),
         cmds: vec![
@@ -653,7 +665,7 @@ pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
             }
             .into(),
             SetBlock {
-                pos: format!("-2 1 {}", main_idx),
+                pos: format!("{} 1 {}", main_x, main_z),
                 block: "minecraft:redstone_block".to_string(),
                 kind: SetBlockKind::Replace,
             }
@@ -791,6 +803,7 @@ fn compile_global_var_init<'a>(
         ("%%SIXTEEN", 16),
         ("%%65536", 65536),
         ("%%256", 256),
+        ("%%32", 32),
         ("%%2", 2),
         ("%%1", 1),
         ("%%-1", -1),
@@ -1181,34 +1194,89 @@ fn compile_memcpy(
     arguments: &[(Operand, Vec<llvm_ir::function::ParameterAttribute>)],
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
 ) -> Vec<Command> {
-    if let [(dest, _), (src, _), (len, _), (volatile, _)] = &arguments[..] {
+    use llvm_ir::function::Attribute;
+    let get_align = |attrs: &[Attribute]| -> Option<u64> {
+        attrs
+            .iter()
+            .filter_map(|attr| {
+                if let Attribute::EnumAttribute { kind: 1, value: Some(value) } = attr {
+                    Some(value.get())
+                } else {
+                    None
+                }
+            })
+            .next()
+    };
+
+    if let [(dest, dest_attr), (src, src_attr), (len, _), (volatile, _)] = &arguments[..] {
         let (mut cmds, src1) = eval_operand(src, globals);
         let (tmp, dest1) = eval_operand(dest, globals);
-        cmds.extend(tmp);
-        let (tmp, len1) = eval_operand(len, globals);
         cmds.extend(tmp);
 
         assert_eq!(src1.len(), 1, "multiword pointer {:?}", src);
         assert_eq!(dest1.len(), 1, "multiword pointer {:?}", dest);
-        assert_eq!(len1.len(), 1, "multiword length {:?}", len);
 
-        cmds.push(assign(param(0, 0), dest1[0].clone()));
-        cmds.push(assign(param(1, 0), src1[0].clone()));
-        cmds.push(assign(param(2, 0), len1[0].clone()));
+        let src1 = src1.into_iter().next().unwrap();
+        let dest1 = dest1.into_iter().next().unwrap();
+ 
+        let word_len = match (get_align(dest_attr), get_align(src_attr), len) {
+            (Some(d), Some(s), Operand::ConstantOperand(Constant::Int { bits: 32, value })) if d % 4 == 0 && s % 4 == 0 && value % 4 == 0 => Some(value / 4),
+            _ => None
+        };
 
-        if !matches!(
-            volatile,
-            Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })
-        ) {
-            todo!("{:?}", volatile)
-        }
+        if let Some(word_len) = word_len {
+            let tempsrc = get_unique_holder();
+            let tempdst = get_unique_holder();
 
-        cmds.push(
-            McFuncCall {
-                id: McFuncId::new("intrinsic:memcpy"),
+            cmds.push(Command::Comment(format!("Begin memcpy with src {} and dest {}", src1, dest1)));
+            cmds.push(assign(tempsrc.clone(), src1));
+            cmds.push(assign(tempdst.clone(), dest1));
+            
+            let temp = get_unique_holder();
+
+            for _ in 0..word_len {
+                cmds.push(assign(ptr(), tempsrc.clone()));
+                cmds.push(McFuncCall {
+                    id: McFuncId::new("intrinsic:setptr")
+                }.into());
+                cmds.push(read_ptr(temp.clone()));
+                cmds.push(make_op!(tempsrc.clone(), +=, 4));
+
+                cmds.push(assign(ptr(), tempdst.clone()));
+                cmds.push(McFuncCall {
+                    id: McFuncId::new("intrinsic:setptr")
+                }.into());
+                cmds.push(write_ptr(temp.clone()));
+                cmds.push(make_op!(tempdst.clone(), +=, 4));
             }
-            .into(),
-        );
+
+            cmds.push(Command::Comment("End memcpy".into()));
+        } else {
+            let (tmp, len1) = eval_operand(len, globals);
+            cmds.extend(tmp);
+
+            assert_eq!(len1.len(), 1, "multiword length {:?}", len);
+            let len1 = len1.into_iter().next().unwrap();
+
+            cmds.push(assign(param(0, 0), dest1));
+            cmds.push(assign(param(1, 0), src1));
+            cmds.push(assign(param(2, 0), len1));
+
+            if !matches!(
+                volatile,
+                Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })
+            ) {
+                todo!("{:?}", volatile)
+            }
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:memcpy"),
+                }
+                .into(),
+            );
+
+        }
 
         cmds
     } else {
@@ -1822,6 +1890,9 @@ fn compile_call(
                 valid_chars.push(b'{');
                 valid_chars.push(b'}');
                 valid_chars.push(b'=');
+                valid_chars.push(b'%');
+                valid_chars.push(b'+');
+                valid_chars.push(b'<');
 
                 for c in valid_chars {
                     let is_white = c == b'H' || c == b'Q' || c == b'S' || c == b')' || c == b'(' || c == b'=';
@@ -1988,6 +2059,21 @@ fn compile_call(
 
             before_cmds.extend(setup_arguments(arguments, globals));
 
+            before_cmds.push(mark_assertion(false, &ExecuteCondition::Score {
+                target: func_ptr.clone().into(),
+                target_obj: OBJECTIVE.into(),
+                kind: ExecuteCondKind::Matches((0..=0).into()),
+            }));
+
+            let temp_z = get_unique_holder();
+            before_cmds.push(assign(temp_z.clone(), func_ptr.clone()));
+            before_cmds.push(make_op!(temp_z.clone(), %=, 32));
+
+            let temp_x = get_unique_holder();
+            before_cmds.push(assign(temp_x.clone(), func_ptr));
+            before_cmds.push(make_op!(temp_x.clone(), /=, 32));
+            before_cmds.push(make_op!(temp_x.clone(), *=, -1));
+
             // execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get func_ptr 1
             // Set the ptr's Z coordinate to `func_ptr`
             let mut set_z = Execute::new();
@@ -2014,11 +2100,41 @@ fn compile_call(
                 },
             });
             set_z.with_run(ScoreGet {
-                target: func_ptr.into(),
+                target: temp_z.into(),
                 target_obj: OBJECTIVE.into(),
             });
 
             before_cmds.push(set_z.into());
+
+            let mut set_x = Execute::new();
+            set_x.with_as(
+                cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=ptr".into())],
+                }
+                .into(),
+            );
+            set_x.with_subcmd(ExecuteSubCmd::Store {
+                is_success: false,
+                kind: ExecuteStoreKind::Data {
+                    target: DataTarget::Entity(
+                        cir::Selector {
+                            var: cir::SelectorVariable::ThisEntity,
+                            args: Vec::new(),
+                        }
+                        .into(),
+                    ),
+                    path: "Pos[0]".into(),
+                    ty: "double".into(),
+                    scale: 1.0,
+                },
+            });
+            set_x.with_run(ScoreGet {
+                target: temp_x.into(),
+                target_obj: OBJECTIVE.into(),
+            });
+
+            before_cmds.push(set_x.into());
 
             let mut set_block = Execute::new();
             set_block.with_at(
@@ -2029,7 +2145,7 @@ fn compile_call(
                 .into(),
             );
             set_block.with_run(SetBlock {
-                pos: "-2 1 ~".into(),
+                pos: "~-2 1 ~".into(),
                 block: "minecraft:redstone_block".into(),
                 kind: SetBlockKind::Replace,
             });

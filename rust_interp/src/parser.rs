@@ -3,7 +3,8 @@ use crate::{print, Ident};
 use arrayvec::ArrayVec;
 
 pub struct Ast {
-    pub stmts: ArrayVec<[Stmt; 8]>,
+    pub exprs: ArrayVec<[Expr; 8]>,
+    pub stmts: ArrayVec<[Stmt; 16]>,
     pub root: FuncDecl,
 }
 
@@ -14,7 +15,7 @@ impl Ast {
             print(self.stmts.len() as i32);
             print_str!("root:");
         }
-        self.root.print_self(&self.stmts);
+        self.root.print_self(&self.stmts, &self.exprs);
     }
 }
 
@@ -25,14 +26,14 @@ pub struct FuncDecl {
 }
 
 impl FuncDecl {
-    pub fn print_self(&self, stmts: &[Stmt]) {
+    pub fn print_self(&self, stmts: &[Stmt], exprs: &[Expr]) {
         unsafe {
             print_str!("function declaration with name:");
             self.name.print_self();
             print_str!("and body (with X statements):");
             print(self.body.len() as i32);
             for stmt in self.body.iter().copied() {
-                stmts[stmt].print_self(stmts);
+                stmts[stmt].print_self(stmts, exprs);
             }
             print_str!("end function");
         }
@@ -41,59 +42,142 @@ impl FuncDecl {
 
 pub type Block = ArrayVec<[usize; 4]>;
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum BinOp {
+    Add,
+    Modulo
+}
+
 #[derive(Clone, PartialEq)]
 pub enum Expr {
     Literal(i32),
     Ident(Ident),
-    Modulo(usize, usize),
+    BinOp(usize, BinOp, usize),
+}
+
+impl Expr {
+    pub fn print_self(&self, exprs: &[Expr]) {
+        unsafe {
+            match self {
+                Expr::Literal(l) => print(*l),
+                Expr::Ident(i) => i.print_self(),
+                Expr::BinOp(lhs, op, rhs) => {
+                    print_str!("expr:");
+                    exprs[*lhs].print_self(exprs);
+                    match op {
+                        BinOp::Add => print_str!("plus"),
+                        BinOp::Modulo => print_str!("mod"),
+                    }
+                    exprs[*rhs].print_self(exprs);
+                    print_str!("end expr");
+                }
+            }
+        }
+    }
+
+    pub fn eval<F: Fn(&Ident) -> i32>(&self, exprs: &[Expr], f: &F) -> i32 {
+        match self {
+            Expr::Literal(l) => *l,
+            Expr::Ident(i) => f(i),
+            Expr::BinOp(l, op, r) => {
+                let l = exprs[*l].eval(exprs, f);
+                let r = exprs[*r].eval(exprs, f);
+                match op {
+                    BinOp::Add => l + r,
+                    BinOp::Modulo => l % r,
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, PartialEq)]
+pub enum Relation {
+    Equal,
+    LessThan,
+}
+
+#[derive(Clone, PartialEq)]
+pub struct Cond {
+    lhs: Expr,
+    rel: Relation,
+    rhs: Expr,
+}
+
+impl Cond {
+    pub fn print_self(&self, exprs: &[Expr]) {
+        unsafe {
+            print_str!("condition:");
+            self.lhs.print_self(exprs);
+            match &self.rel {
+                Relation::Equal => print_str!("=="),
+                Relation::LessThan => print_str!("<"),
+            }
+            self.rhs.print_self(exprs);
+            print_str!("end condition");
+        }
+    }
+
+    pub fn eval<F: Fn(&Ident) -> i32>(&self, exprs: &[Expr], f: &F) -> bool {
+        let l = self.lhs.eval(exprs, f);
+        let r = self.rhs.eval(exprs, f);
+        match self.rel {
+            Relation::Equal => l == r,
+            Relation::LessThan => l < r,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
 pub enum Stmt {
     While {
-        cond: (),
+        cond: Cond,
         body: Block,
     },
     Loop {
         body: Block,
     },
     Print {
-        ident: Ident,
+        arg: Expr,
     },
     Let {
         ident: Ident,
         value: i32,
     },
     If {
-        cond: (),
+        cond: Cond,
         true_body: Block,
         false_body: Block,
     },
+    Assign {
+        lhs: Ident,
+        rhs: Expr,
+    }
 }
 
 impl Stmt {
-    pub fn print_self(&self, stmts: &[Stmt]) {
+    pub fn print_self(&self, stmts: &[Stmt], exprs: &[Expr]) {
         unsafe {
             match self {
-                Stmt::While { cond: _, body } => {
+                Stmt::While { cond, body } => {
                     print_str!("while");
-                    print_str!("TODO: print cond");
+                    cond.print_self(exprs);
                     print_str!("do");
                     for stmt in body.iter().copied() {
-                        stmts[stmt].print_self(stmts);
+                        stmts[stmt].print_self(stmts, exprs);
                     }
                     print_str!("end while");
                 }
                 Stmt::Loop { body } => {
                     print_str!("loop");
                     for stmt in body.iter().copied() {
-                        stmts[stmt].print_self(stmts);
+                        stmts[stmt].print_self(stmts, exprs);
                     }
                     print_str!("end loop");
                 }
-                Stmt::Print { ident } => {
+                Stmt::Print { arg } => {
                     print_str!("print");
-                    ident.print_self();
+                    arg.print_self(exprs);
                     print_str!("end print");
                 }
                 Stmt::Let { ident, value } => {
@@ -103,18 +187,25 @@ impl Stmt {
                     print(*value);
                     print_str!("end let");
                 }
-                Stmt::If { cond: _, true_body, false_body } => {
+                Stmt::If { cond, true_body, false_body } => {
                     print_str!("if");
-                    print_str!("TODO: cond");
+                    cond.print_self(exprs);
                     print_str!("then");
                     for stmt in true_body.iter().copied() {
-                        stmts[stmt].print_self(stmts);
+                        stmts[stmt].print_self(stmts, exprs);
                     }
                     print_str!("else");
                     for stmt in false_body.iter().copied() {
-                        stmts[stmt].print_self(stmts);
+                        stmts[stmt].print_self(stmts, exprs);
                     }
                     print_str!("end if");
+                }
+                Stmt::Assign { lhs, rhs } => {
+                    print_str!("assign");
+                    lhs.print_self();
+                    print_str!("=");
+                    rhs.print_self(exprs);
+                    print_str!("end assign");
                 }
             }
         }
@@ -124,7 +215,8 @@ impl Stmt {
 struct Parser<'a> {
     tokens: &'a [Token],
     current_idx: usize,
-    stmts: ArrayVec<[Stmt; 8]>,
+    stmts: ArrayVec<[Stmt; 16]>,
+    exprs: ArrayVec<[Expr; 8]>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -148,15 +240,15 @@ impl ParseError {
 }
 
 pub fn parse_ast(tokens: &[Token]) -> Result<Ast, ParseError> {
-    let mut parser = Parser { tokens, current_idx: 0, stmts: ArrayVec::new() };
+    let mut parser = Parser { tokens, current_idx: 0, stmts: ArrayVec::new(), exprs: ArrayVec::new() };
     let root = parser.parse_func_decl()?;
     unsafe {
         print_str!("parser stmt count:");
         print(parser.stmts.len() as i32);
-        root.print_self(&parser.stmts);
+        root.print_self(&parser.stmts, &parser.exprs);
     };
 
-    let result = Ast { stmts: parser.stmts, root };
+    let result = Ast { stmts: parser.stmts, exprs: parser.exprs, root };
     result.print_self();
     Ok(result)
 }
@@ -187,13 +279,59 @@ impl Parser<'_> {
         }
     }
 
+    pub fn add_expr(&mut self, ex: Expr) -> usize {
+        let result = self.exprs.len();
+        self.exprs.push(ex);
+        result
+    }
+
+    pub fn parse_expr(&mut self) -> Result<Expr, ParseError> {
+        let lhs = match self.next_token()? {
+            Token::Literal(l) => Expr::Literal(*l),
+            Token::Ident(i) => Expr::Ident(i.clone()),
+            _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+        };
+
+        let op = match self.peek_token() {
+            Some(&Token::Modulo) => Some(BinOp::Modulo),
+            Some(&Token::Plus) => Some(BinOp::Add),
+            _ => None,
+        };
+
+        if let Some(op) = op {
+            self.next_token()?;
+
+            let rhs = match self.next_token()? {
+                Token::Literal(l) => Expr::Literal(*l),
+                Token::Ident(i) => Expr::Ident(i.clone()),
+                _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+            };
+
+            let lhs = self.add_expr(lhs);
+            let rhs = self.add_expr(rhs);
+
+            Ok(Expr::BinOp(lhs, op, rhs))
+        } else {
+            Ok(lhs)
+        }
+    }
+
+    pub fn parse_cond(&mut self) -> Result<Cond, ParseError> {
+        let lhs = self.parse_expr()?;
+        let rel = match self.next_token()? {
+            Token::EqualsEquals => Relation::Equal,
+            Token::LessThan => Relation::LessThan,
+            _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
+        };
+        let rhs = self.parse_expr()?;
+        Ok(Cond { lhs, rel, rhs })
+    }
+
     pub fn parse_stmt(&mut self) -> Result<usize, ParseError> {
-        let idx = self.stmts.len();
         let token = self.next_token()?;
         let stmt = match token {
             Token::Ident(i) if i.is_key_while() => {
-                // TODO: Parse condition
-                let cond = ();
+                let cond = self.parse_cond()?;
 
                 let body = self.parse_block()?;
                 Stmt::While {
@@ -209,13 +347,10 @@ impl Parser<'_> {
             }
             Token::Ident(i) if i.is_key_print() => {
                 self.expect_token(&Token::OpenParen)?;
-                let ident = match self.next_token()? {
-                    Token::Ident(i) => i.clone(),
-                    _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
-                };
+                let arg = self.parse_expr()?;
                 self.expect_token(&Token::CloseParen)?;
                 Stmt::Print { 
-                    ident
+                    arg
                 }
             }
             Token::Ident(i) if i.is_key_let() => {
@@ -237,8 +372,11 @@ impl Parser<'_> {
                 }
             }
             Token::Ident(i) if i.is_key_if() => {
-                // TODO: Parse cond
-                let cond = ();
+                unsafe { print_str!("parsing if statement") };
+
+                let cond = self.parse_cond()?;
+
+                cond.print_self(&self.exprs);
 
                 let true_body = self.parse_block()?;
 
@@ -257,9 +395,22 @@ impl Parser<'_> {
                     false_body,
                 }
             }
+            Token::Ident(i) => {
+                let lhs = i.clone();
+
+                self.expect_token(&Token::Equals)?;
+
+                let rhs = self.parse_expr()?;
+
+                Stmt::Assign {
+                    lhs,
+                    rhs,
+                }
+            }
             _ => return Err(ParseError::UnexpectedToken(self.current_idx - 1)),
         };
 
+        let idx = self.stmts.len();
         self.stmts.push(stmt);
         Ok(idx)
     }
@@ -274,13 +425,6 @@ impl Parser<'_> {
         }
 
         self.expect_token(&Token::CloseCurly)?;
-
-        unsafe {
-            print_str!("block has this many statements");
-            let i = block.len() as i32;
-            assert_ne!(i, 255);
-            print(i as i32);
-        }
 
         Ok(block)
     }

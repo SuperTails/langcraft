@@ -37,13 +37,13 @@ pub enum BreakKind {
     Read,
     Write,
     Access,
-}
+} 
 
 pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
     pub(crate) call_stack: Vec<(usize, usize)>,
     program: Vec<Function>,
-    pub memory: [i32; 8192],
+    pub memory: [i32; 64 * 16 * 16],
     ptr_pos: (i32, i32, i32),
     turtle_pos: (i32, i32, i32),
     letters: HashMap<(i32, i32, i32), char>,
@@ -68,7 +68,7 @@ impl Interpreter {
         Interpreter {
             program,
             call_stack: vec![(func_idx, 0)],
-            memory: [0; 8192],
+            memory: [0; 64 * 16 * 16],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
@@ -88,16 +88,28 @@ impl Interpreter {
         }
 
         let mut letters = HashMap::new();
-        for (z, letter) in input.chars().enumerate() {
-            if letter != ' ' {
-                letters.insert((-16, 16, -(z as i32)), letter);
+        let mut z = 0;
+        let mut y = 32;
+        for letter in input.chars() {
+            match letter {
+                '\n' => {
+                    z = 0;
+                    y -= 2;
+                }
+                ' ' => {
+                    z -= 1;
+                }
+                _ => {
+                    letters.insert((-16, y, z), letter);
+                    z -= 1;
+                }
             }
         }
 
         Interpreter {
             program,
             call_stack: vec![(func_idx, 0)],
-            memory: [0x55_55_55_55; 8192],
+            memory: [0x55_55_55_55; 64 * 16 * 16],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
@@ -227,6 +239,38 @@ impl Interpreter {
         }
     }
 
+    fn ptr_pos_set(&mut self, coord: usize, cmd: &Command) {
+        let exec = if let Command::Execute(Execute {
+            run: Some(exec), ..
+        }) = cmd
+        {
+            &**exec
+        } else {
+            unreachable!()
+        };
+
+        if let Command::ScoreGet(ScoreGet {
+            target: Target::Uuid(target),
+            target_obj,
+        }) = exec
+        {
+            if target_obj != OBJECTIVE {
+                todo!("{:?}", target_obj)
+            }
+
+            let value = self.get_rust_score(target).unwrap();
+
+            match coord {
+                0 => self.ptr_pos.0 = value,
+                1 => self.ptr_pos.1 = value,
+                2 => self.ptr_pos.2 = value,
+                _ => panic!("{}", coord),
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
     pub fn get_rust_score(&self, holder: &ScoreHolder) -> Result<i32, String> {
         self.rust_scores
             .get(&holder)
@@ -287,13 +331,13 @@ impl Interpreter {
     }
 
     fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
-        if !self
+        /*if !self
             .call_stack
             .iter()
             .any(|(i, _)| self.program[*i].id.name.contains("intrinsic"))
-        {
-            println!("{}", cmd);
-        }
+        {*/
+            //println!("{}", cmd);
+        /*}*/
 
         match cmd {
             Command::ScoreAdd(ScoreAdd { target: Target::Uuid(target), target_obj, score }) => {
@@ -365,7 +409,7 @@ impl Interpreter {
                 self.call_stack.push((called_idx, 0));
             }
             Command::Fill(Fill { start, end, block }) => {
-                if !(start == "-2 0 0" && end == "-2 0 150" && block == "minecraft:air") {
+                if !(start == "-2 0 0" && end == "-15 0 64" && block == "minecraft:air") {
                     todo!("{:?} {:?} {:?}", start, end, block)
                 }
             }
@@ -411,11 +455,13 @@ impl Interpreter {
 
                     assert_eq!(self.next_pos, None);
                     self.next_pos = Some((z.try_into().unwrap(), 0));
-                } else if pos.starts_with("-2 0 ") && block.starts_with("minecraft:command_block") {
+                } else if block.starts_with("minecraft:command_block") {
                     // Command block placement
                     println!("Command block placement at {} block {}", pos, block);
                 } else if pos.starts_with("~ 1 ") && block == "minecraft:redstone_block" {
                     let z = pos["~ 1 ".len()..].parse::<i32>().unwrap();
+
+                    todo!();
 
                     println!("Branching to {}", self.program[z as usize].id);
 
@@ -424,14 +470,51 @@ impl Interpreter {
                 } else if pos.starts_with("~ ~1 ") && block == "minecraft:redstone_block" {
                     let z = pos["~ ~1 ".len()..].parse::<i32>().unwrap();
 
+                    todo!();
+
                     println!("Branching to {}", self.program[z as usize].id);
 
                     assert_eq!(self.next_pos, None);
                     self.next_pos = Some((z.try_into().unwrap(), 0));
                 } else if pos == "~ ~1 ~" && block == "minecraft:air" {
                     // Clearing command block activation
+                } else if block == "minecraft:redstone_block" {
+                    let mut coords = pos
+                        .split_whitespace()
+                        .map(|s| {
+                            let (st, relative) = if s.starts_with('~') {
+                                (&s[1..], true)
+                            } else {
+                                (s, false)
+                            };
+                            (st.parse::<i32>().unwrap_or_else(|_| panic!("invalid {}", s)), relative)
+                        });
+
+                    let (x, x_rel) = coords.next().unwrap();
+                    let (y, _y_rel) = coords.next().unwrap();
+                    let (z, z_rel) = coords.next().unwrap();
+
+                    if x_rel {
+                        todo!()
+                    }
+
+                    if z_rel {
+                        todo!()
+                    }
+
+                    if y != 1 {
+                        todo!("{} {}", pos, block);
+                    } else {
+                        let idx = (-(x + 2)) * 16 + z;
+
+                        println!("Branching to {}", self.program[idx as usize].id);
+
+                        assert_eq!(self.next_pos, None);
+                        self.next_pos = Some((idx as usize, 0));
+
+                    }
                 } else {
-                    todo!("{} {}", pos, block)
+                    todo!()
                 }
             }
             cmd if cmd.to_string().starts_with("execute as @e[tag=turtle] store result entity @s Pos[0] double 1 run") => {
@@ -461,10 +544,11 @@ impl Interpreter {
                 }
             }
             cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~ ~ ~ minecraft:redstone_block replace" => {
-                if self.ptr_pos.0 == -2 || self.ptr_pos.1 == 1 {
-                    println!("Return to {}", self.ptr_pos.2);
+                if self.ptr_pos.1 == 1 {
+                    let idx = 16 * -(self.ptr_pos.0 + 2) + self.ptr_pos.2;
+                    println!("Return to {}", idx);
                     assert_eq!(self.next_pos, None);
-                    self.next_pos = Some((self.ptr_pos.2 as usize, 0));
+                    self.next_pos = Some((idx as usize, 0));
                 } else {
                     panic!("attempt to return improperly")
                 }
@@ -536,26 +620,23 @@ impl Interpreter {
                     todo!("{:?} {}", subcmds[1].to_string(), cmd)
                 }
             }
-            cmd if cmd.to_string() == "execute as @e[tag=ptr] store result entity @s Pos[0] double 1 run scoreboard players get %x rust" => {
-                let val = *self.rust_scores.get(&ScoreHolder::new("%x".into()).unwrap()).unwrap_or_else(|| panic!("read from uninitialized variable %x"));
-                self.ptr_pos.0 = val;
+            cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[0] double 1 run") => {
+                self.ptr_pos_set(0, cmd);
             }
-            cmd if cmd.to_string() == "execute as @e[tag=ptr] store result entity @s Pos[1] double 1 run scoreboard players get %y rust" => {
-                let val = *self.rust_scores.get(&ScoreHolder::new("%y".into()).unwrap()).unwrap_or_else(|| panic!("read from uninitialized variable %y"));
-                self.ptr_pos.1 = val;
+            cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[1] double 1 run") => {
+                self.ptr_pos_set(1, cmd);
             }
-            cmd if cmd.to_string() == "execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get %z rust" => {
-                let val = *self.rust_scores.get(&ScoreHolder::new("%z".into()).unwrap()).unwrap_or_else(|| panic!("read from uninitialized variable %z"));
-                self.ptr_pos.2 = val;
+            cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run") => {
+                self.ptr_pos_set(2, cmd);
             }
             cmd if cmd.to_string() == "execute as @e[tag=ptr] at @s store result entity @s Pos[2] double 1 run data get block ~ ~ ~ RecordItem.tag.Memory 1" => {
                 self.ptr_pos.2 = self.read_mem()?;
             }
-            cmd if cmd.to_string() == "execute as @e[tag=ptr] at @s run tp @s -2 1 ~" => {
-                self.ptr_pos.0 = -2;
+            cmd if cmd.to_string() == "execute as @e[tag=ptr] at @s run tp @s ~-2 1 ~" => {
+                self.ptr_pos.0 += -2;
                 self.ptr_pos.1 = 1;
             }
-            cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get") => {
+            /*cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get") => {
                 let sg = if let Command::Execute(Execute { run: Some(sg), .. }) = cmd {
                     &**sg
                 } else {
@@ -571,7 +652,7 @@ impl Interpreter {
                 } else {
                     todo!("{:?}", sg)
                 }
-            }
+            }*/
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run") => {
                 let sg = if let Command::Execute(Execute { run: Some(sg), .. }) = cmd {
                     &**sg
@@ -601,7 +682,7 @@ impl Interpreter {
                         self.execute_cmd(run)?;
                     }
                 } else {
-                    todo!("{:?}", subcommands)
+                    todo!("{}", cmd)
                 }
             }
             Command::Execute(Execute { run: None, subcommands }) => {
@@ -615,17 +696,20 @@ impl Interpreter {
                     todo!("{:?}", subcommands[0])
                 };
 
-                if subcommands.len() != 2 {
+                if subcommands[1..].iter().all(|sc| matches!(sc, ExecuteSubCmd::Condition { .. })) {
+                    let mut result = true;
+                    for subcmd in subcommands[1..].iter() {
+                        if let ExecuteSubCmd::Condition { is_unless, cond } = subcmd {
+                            result = result && self.check_cond(*is_unless, cond);
+                        } else {
+                            unreachable!()
+                        }
+                    }
+
+                    self.rust_scores.insert(store_target.clone(), result as i32);
+                } else {
                     todo!()
                 }
-
-                if let ExecuteSubCmd::Condition { is_unless, cond } = &subcommands[1] {
-                    let value = self.check_cond(*is_unless, cond) as i32;
-
-                    self.rust_scores.insert(store_target.clone(), value);
-                } else {
-                    todo!("{:?}", subcommands[1])
-                };
             }
             Command::Comment(c) if c == "!INTERPRETER: TODO" => {
                 return Err(InterpError::EnteredTodo);
@@ -658,7 +742,7 @@ impl Interpreter {
 
     pub fn step(&mut self) -> Result<(), InterpError> {
         // TODO: This may be off by one
-        if self.commands_run >= 1_000_000 {
+        if self.commands_run >= 30_000 {
             return Err(InterpError::MaxCommandsRun);
         }
 

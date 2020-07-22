@@ -7,37 +7,72 @@ use rust_interp::parser::*;
 
 use arrayvec::ArrayVec;
 
-fn interpret(ast: &Ast) {
-    let mut vars = ArrayVec::<[(Ident, i32); 2]>::new();
-    for stmt in ast.root.body.iter().copied() {
-        let stmt = &ast.stmts[stmt];
+pub struct Interpreter {
+    vars: ArrayVec<[(Ident, i32); 2]>,
+}
+
+impl Interpreter {
+    pub fn new() -> Self {
+        Interpreter {
+            vars: ArrayVec::new(),
+        }
+    }
+
+    pub fn run(&mut self, ast: &Ast) {
+        for stmt in ast.root.body.iter().copied() {
+            self.run_stmt(&ast.stmts[stmt], &ast.stmts, &ast.exprs);
+        }
+    }
+
+    pub fn eval_expr(&self, expr: &Expr, exprs: &[Expr]) -> i32 {
+        let getter = |ident: &Ident| self.vars.iter().find(|v| &v.0 == ident).unwrap().1;
+        expr.eval(exprs, &getter)
+    }
+
+    pub fn eval_cond(&self, cond: &Cond, exprs: &[Expr]) -> bool {
+        let getter = |ident: &Ident| self.vars.iter().find(|v| &v.0 == ident).unwrap().1;
+        cond.eval(exprs, &getter)
+    }
+
+    pub fn run_stmt(&mut self, stmt: &Stmt, stmts: &[Stmt], exprs: &[Expr]) {
         match stmt {
             Stmt::Let { ident, value } => {
-                if let Some((_, v)) = vars.iter_mut().find(|v| &v.0 == ident) {
+                if let Some((_, v)) = self.vars.iter_mut().find(|v| &v.0 == ident) {
                     *v = *value;
                 } else {
-                    vars.push((ident.clone(), *value));
+                    self.vars.push((ident.clone(), *value));
                 };
             }
-            Stmt::Print { ident } => {
-                if let Some((_, v)) = vars.iter().find(|v| &v.0 == ident) {
-                    unsafe {
-                        print_str!("printing value:");
-                        print(*v);
-                    }
-                } else {
-                    unsafe { print_str!("attempt to print undefined variable") };
-                    return;
+            Stmt::Print { arg } => {
+                unsafe {
+                    print_str!("printing value:");
+                    print(self.eval_expr(arg, exprs));
                 }
             }
-            Stmt::If { .. } => {
-                unsafe { print_str!("TODO: IF") };
+            Stmt::If { cond, true_body, false_body } => {
+                if self.eval_cond(cond, exprs) {
+                    for s in true_body.iter().copied() {
+                        self.run_stmt(&stmts[s], stmts, exprs);
+                    }
+                } else {
+                    for s in false_body.iter().copied() {
+                        self.run_stmt(&stmts[s], stmts, exprs);
+                    }
+                }
             }
             Stmt::Loop { .. } => {
                 unsafe { print_str!("TODO: LOOP") };
             }
-            Stmt::While { .. } => {
-                unsafe { print_str!("TODO: WHILE") };
+            Stmt::While { cond, body } => {
+                while self.eval_cond(cond, exprs) {
+                    for s in body.iter().copied() {
+                        self.run_stmt(&stmts[s], stmts, exprs);
+                    }
+                }
+            }
+            Stmt::Assign { lhs, rhs } => {
+                let value = self.eval_expr(rhs, exprs);
+                self.vars.iter_mut().find(|v| &v.0 == lhs).unwrap().1 = value;
             }
         }
     }
@@ -87,11 +122,17 @@ pub fn main() {
 
             unsafe { print_str!("Interpreting") };
 
-            interpret(&func);
+            let mut interp = Interpreter::new();
+            interp.run(&func);
         }
         Err(err) => {
             unsafe { print_str!(b"encountered error:") };
             err.print_self();
+
+            if let rust_interp::parser::ParseError::UnexpectedToken(idx) = err {
+                unsafe { print_str!("token:") };
+                tokens[idx].print_self();
+            }
         }
     }
 }

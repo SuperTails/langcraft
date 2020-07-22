@@ -10,6 +10,10 @@ pub enum Token {
     OpenParen,
     CloseParen,
     Equals,
+    EqualsEquals,
+    LessThan,
+    Modulo,
+    Plus,
     Ident(Ident),
     Literal(i32),
 }
@@ -33,6 +37,10 @@ impl Token {
                 Token::OpenParen => print_str!("("),
                 Token::CloseParen => print_str!(")"),
                 Token::Equals => print_str!("="),
+                Token::EqualsEquals => print_str!("=="),
+                Token::Modulo => print_str!("%"),
+                Token::Plus => print_str!("+"),
+                Token::LessThan => print_str!("<"),
                 Token::Ident(i) => {
                     print_str!("ident:");
                     i.print_self();
@@ -46,16 +54,20 @@ impl Token {
     }
 }
 
-pub unsafe fn tokenize() -> ArrayVec<[Token; 50]> {
+pub unsafe fn tokenize() -> ArrayVec<[Token; 100]> {
     turtle_x(-16);
-    turtle_y(16);
 
-    let mut char_iter = (0..50)
-        .map(|z| { turtle_z(-z); turtle_get_char() })
+    let mut char_iter = (0..256)
+        .map(|idx| {
+            let z = -(idx % 16);
+            turtle_z(z);
+            turtle_y(32 - 2 * (idx / 16));
+            turtle_get_char()
+        })
         .peekable();
 
     let mut current_token = None;
-    let mut tokens = ArrayVec::<[Token; 50]>::new();
+    let mut tokens = ArrayVec::<[Token; 100]>::new();
 
     loop {
         if let Some(c) = char_iter.next() {
@@ -77,12 +89,42 @@ pub unsafe fn tokenize() -> ArrayVec<[Token; 50]> {
                         current_token = Some(Token::Literal(val));
                     }
                 }
+                b'=' if char_iter.peek() == Some(&b'=') => {
+                    char_iter.next();
+
+                    if let Some(c) = current_token.take() {
+                        tokens.push(c);
+                    }
+
+                    tokens.push(Token::EqualsEquals);
+                }
                 b'=' => {
                     if let Some(c) = current_token.take() {
                         tokens.push(c);
                     }
 
                     tokens.push(Token::Equals);
+                }
+                b'<' => {
+                    if let Some(c) = current_token.take() {
+                        tokens.push(c);
+                    }
+
+                    tokens.push(Token::LessThan);
+                }
+                b'%' => {
+                    if let Some(c) = current_token.take() {
+                        tokens.push(c);
+                    }
+
+                    tokens.push(Token::Modulo);
+                }
+                b'+' => {
+                    if let Some(c) = current_token.take() {
+                        tokens.push(c);
+                    }
+
+                    tokens.push(Token::Plus);
                 }
                 b'(' => {
                     print_str!(b"Open parenthesis token");

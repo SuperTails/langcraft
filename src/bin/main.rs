@@ -204,17 +204,35 @@ fn main() {
         funcs.iter().map(|f| f.cmds.len()).sum::<usize>()
     );
 
-    let mut interp = Interpreter::new(funcs, "FN MAIN(){ LET FOO = 42 PRINT(FOO) }");
+    let input =
+"FN MAIN(){
+LET FOO = 0
+WHILE FOO < 20 {
+FOO = FOO + 1
+IF FOO%15 == 0 {
+ PRINT(300)
+} ELSE {
+IF FOO%5 == 0 {
+ PRINT(200)
+} ELSE {
+IF FOO%3 == 0 {
+ PRINT(100)
+} ELSE {
+ PRINT(FOO)
+} } } } } }";
+
+    assert!(input.len() < 256);
+    let mut interp = Interpreter::new(funcs, &input);
 
     //interp.set_mem_breakpoint(300, BreakKind::Access);
 
     match run_interpreter(&mut interp) {
         Ok(()) => {
-            eprintln!("Program finished normally");
-            eprintln!("Output:");
             for i in interp.output.iter() {
                 eprintln!("{}", i);
             }
+            eprintln!("=== End output ===");
+            eprintln!("Program finished normally");
 
             /*assert_eq!(
                 interp
@@ -227,11 +245,12 @@ fn main() {
         }
         Err(err) => {
             eprintln!("==========================================");
-            eprintln!("Encountered interpreter error: {}", err);
             eprintln!("Output:");
             for i in interp.output.iter() {
                 eprintln!("{}", i);
             }
+            eprintln!("=== End output ===");
+            eprintln!("Encountered interpreter error: {}", err);
         }
     }
 }
