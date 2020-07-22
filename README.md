@@ -2,7 +2,7 @@
 ### The LLVM target for Minecraft you've never wanted
 
 Langcraft is a code generator targeting [Minecraft Data Packs](https://minecraft.gamepedia.com/Data_Pack). It can currently run a limited set of bitcode files (usually C works great, Rust is more limited sometimes).
-Currently Rust programs must be built in `--release` so that strings are inlined into print commands. The project also has a built-in command interpreter, which currently is the only way to run larger programs.
+Currently Rust programs must be built in `--release` so that strings are inlined into print commands. The project also has a built-in command interpreter.
 Support for automatically generating the necessary blocks and entities in a real Minecraft world is coming.
 
 ### Usage
@@ -18,4 +18,6 @@ sh compile_rust.sh
 And the file to use will be:
 
 `rust_interp/target/i686-unknown-linux-gnu/release/deps/parser-SOMEHEXSTRING.bc`
-``
+
+### Demo
+A video of a Langcraft-compiled interpreter can be seen [here](https://youtu.be/Cx0w5Wn9pPU).
