@@ -17,7 +17,7 @@ use llvm_ir::debugloc::HasDebugLoc;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
     InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem, Select, Shl,
-    ShuffleVector, Store, Sub, Trunc, Xor, ZExt,
+    ShuffleVector, Store, Sub, Trunc, Xor, ZExt, URem, UDiv,
 };
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
@@ -1306,39 +1306,41 @@ fn compile_xor(
     assert_eq!(operand0.get_type(), operand1.get_type());
 
     let (mut cmds, op0) = eval_operand(operand0, globals);
-    let op0 = op0.into_iter().next().unwrap();
 
     let (tmp, op1) = eval_operand(operand1, globals);
-    let op1 = op1.into_iter().next().unwrap();
 
     cmds.extend(tmp);
 
+    let layout = type_layout(&operand0.get_type());
+
+    let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
+
     match operand0.get_type() {
-        Type::IntegerType { bits: 16 } | Type::IntegerType { bits: 32 } => {
-            cmds.push(assign(param(0, 0), op0));
-            cmds.push(assign(param(1, 0), op1));
+        _ if layout.size() % 4 == 0 => {
+            for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
+                cmds.push(assign(param(0, 0), op0));
+                cmds.push(assign(param(1, 0), op1));
 
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("intrinsic:xor"),
-                }
-                .into(),
-            );
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:xor"),
+                    }
+                    .into(),
+                );
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), 4)
-                .into_iter()
-                .next()
-                .unwrap();
-
-            cmds.push(assign(dest, return_holder(0)));
+                cmds.push(assign(dest, return_holder(0)));
+            }
 
             cmds
         }
         Type::IntegerType { bits: 1 } => {
-            let dest = ScoreHolder::from_local_name(dest.clone(), 1)
+            let dest = dest
                 .into_iter()
                 .next()
                 .unwrap();
+
+            let op0 = op0.into_iter().next().unwrap();
+            let op1 = op1.into_iter().next().unwrap();
 
             cmds.push(assign_lit(dest.clone(), 0));
 
@@ -1732,6 +1734,22 @@ fn compile_call(
                     }
                     .into(),
                 );
+
+                (cmds, None)
+            }
+            "putc" => {
+                assert_eq!(arguments.len(), 1);
+
+                assert!(dest.is_none());
+
+                let (mut cmds, ch) = eval_operand(&arguments[0].0, globals);
+                let ch = ch.into_iter().next().unwrap();
+
+                cmds.push(assign(ScoreHolder::new("%%temp0_putc".into()).unwrap(), ch));
+
+                cmds.push(McFuncCall {
+                    id: McFuncId::new("stdout:putc"),
+                }.into());
 
                 (cmds, None)
             }
@@ -3387,6 +3405,137 @@ pub fn compile_instr(
             dest,
             ..
         }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::ModAssign, globals),
+        Instruction::UDiv(UDiv {
+            operand0,
+            operand1,
+            dest,
+            ..
+        }) => {
+            let (mut cmds, source0) = eval_operand(operand0, globals);
+            let (tmp, source1) = eval_operand(operand1, globals);
+            cmds.extend(tmp.into_iter());
+
+            // FIXME: THIS DOES AN SREM
+            for s in source0.iter().cloned() {
+                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
+                    target: s.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((..=-1).into())
+                }));
+            }
+
+            for s in source1.iter().cloned() {
+                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
+                    target: s.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((..=-1).into())
+                }));
+            }
+
+            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
+
+            if let Type::VectorType {
+                element_type,
+                num_elements,
+            } = operand0.get_type()
+            {
+                if !matches!(&*element_type, Type::IntegerType { bits: 32 }) {
+                    todo!("{:?}", element_type)
+                }
+
+                assert_eq!(source0.len(), num_elements);
+                assert_eq!(source1.len(), num_elements);
+                assert_eq!(dest.len(), num_elements);
+            } else {
+                assert_eq!(source0.len(), 1);
+                assert_eq!(source1.len(), 1);
+                assert_eq!(dest.len(), 1);
+            };
+
+            for (source0, (source1, dest)) in source0
+                .into_iter()
+                .zip(source1.into_iter().zip(dest.into_iter()))
+            {
+                cmds.push(assign(dest.clone(), source0));
+                cmds.push(
+                    ScoreOp {
+                        target: dest.into(),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ScoreOpKind::DivAssign,
+                        source: Target::Uuid(source1),
+                        source_obj: OBJECTIVE.to_string(),
+                    }
+                    .into(),
+                );
+            }
+            cmds
+        }
+        Instruction::URem(URem {
+            operand0,
+            operand1,
+            dest,
+            ..
+        }) => {
+            let (mut cmds, source0) = eval_operand(operand0, globals);
+            let (tmp, source1) = eval_operand(operand1, globals);
+            cmds.extend(tmp.into_iter());
+
+            // FIXME: THIS DOES AN SREM
+            for s in source0.iter().cloned() {
+                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
+                    target: s.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((..=-1).into())
+                }));
+            }
+
+            for s in source1.iter().cloned() {
+                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
+                    target: s.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((..=-1).into())
+                }));
+            }
+
+            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
+
+            if let Type::VectorType {
+                element_type,
+                num_elements,
+            } = operand0.get_type()
+            {
+                if !matches!(&*element_type, Type::IntegerType { bits: 32 }) {
+                    todo!("{:?}", element_type)
+                }
+
+                assert_eq!(source0.len(), num_elements);
+                assert_eq!(source1.len(), num_elements);
+                assert_eq!(dest.len(), num_elements);
+            } else {
+                assert_eq!(source0.len(), 1);
+                assert_eq!(source1.len(), 1);
+                assert_eq!(dest.len(), 1);
+            };
+
+            for (source0, (source1, dest)) in source0
+                .into_iter()
+                .zip(source1.into_iter().zip(dest.into_iter()))
+            {
+                cmds.push(assign(dest.clone(), source0));
+                cmds.push(
+                    ScoreOp {
+                        target: dest.into(),
+                        target_obj: OBJECTIVE.to_string(),
+                        kind: ScoreOpKind::ModAssign,
+                        source: Target::Uuid(source1),
+                        source_obj: OBJECTIVE.to_string(),
+                    }
+                    .into(),
+                );
+            }
+            cmds
+
+        }
         Instruction::ICmp(ICmp {
             predicate: IntPredicate::NE,
             operand0,
@@ -3881,7 +4030,8 @@ pub fn compile_instr(
             cmds.extend(tmp);
 
             match operand0.get_type() {
-                Type::IntegerType { bits: 16 }
+                Type::IntegerType { bits: 8 }
+                | Type::IntegerType { bits: 16 }
                 | Type::IntegerType { bits: 24 }
                 | Type::IntegerType { bits: 32 } => {
                     let op0 = op0.into_iter().next().unwrap();
@@ -3968,60 +4118,29 @@ pub fn compile_instr(
             let (tmp, op1) = eval_operand(operand1, globals);
             cmds.extend(tmp);
 
+            let layout = type_layout(&operand0.get_type());
+
+            let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
+
             match operand0.get_type() {
-                Type::IntegerType { bits: 64 } => {
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 8);
-
-                    cmds.push(assign(param(0, 0), op0[1].clone()));
-                    cmds.push(assign(param(1, 0), op1[1].clone()));
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:and"),
-                        }
-                        .into(),
-                    );
-                    cmds.push(assign(dest[1].clone(), return_holder(0)));
-
-                    cmds.push(assign(param(0, 0), op0[0].clone()));
-                    cmds.push(assign(param(1, 0), op1[0].clone()));
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:and"),
-                        }
-                        .into(),
-                    );
-
-                    cmds.push(assign(dest[0].clone(), return_holder(0)));
+                _ if layout.size() % 4 == 0 => {
+                    for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
+                        cmds.push(assign(param(0, 0), op0));
+                        cmds.push(assign(param(1, 0), op1));
+                        cmds.push(
+                            McFuncCall {
+                                id: McFuncId::new("intrinsic:and"),
+                            }
+                            .into(),
+                        );
+                        cmds.push(assign(dest, return_holder(0)));
+                    }
 
                     cmds
                 }
-                Type::VectorType {
-                    element_type,
-                    num_elements: 4,
-                } if matches!(&*element_type, Type::IntegerType { bits: 8 }) => {
-                    // TODO: This is exactly the same as all the others but matches are hard
-                    cmds.push(assign(param(0, 0), op0[0].clone()));
-                    cmds.push(assign(param(1, 0), op1[0].clone()));
-
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:and"),
-                        }
-                        .into(),
-                    );
-
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 4)
-                        .into_iter()
-                        .next()
-                        .unwrap();
-
-                    cmds.push(assign(dest, return_holder(0)));
-
-                    cmds
-                }
+                // TODO: This is exactly the same as the above
                 Type::IntegerType { bits: 8 }
-                | Type::IntegerType { bits: 16 }
-                | Type::IntegerType { bits: 32 } => {
+                | Type::IntegerType { bits: 16 } => {
                     cmds.push(assign(param(0, 0), op0[0].clone()));
                     cmds.push(assign(param(1, 0), op1[0].clone()));
 
@@ -4032,20 +4151,14 @@ pub fn compile_instr(
                         .into(),
                     );
 
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 4)
-                        .into_iter()
-                        .next()
-                        .unwrap();
+                    let dest = dest.into_iter().next().unwrap();
 
                     cmds.push(assign(dest, return_holder(0)));
 
                     cmds
                 }
                 Type::IntegerType { bits: 1 } => {
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 4)
-                        .into_iter()
-                        .next()
-                        .unwrap();
+                    let dest = dest.into_iter().next().unwrap();
 
                     cmds.push(assign_lit(dest.clone(), 0));
 
@@ -4270,6 +4383,7 @@ pub fn eval_constant(
         Constant::Int { bits: 48, value } |
         Constant::Int { bits: 64, value } => {
             // TODO: I mean it's *const* but not convenient...
+            // See also: <i32 x 2>
             let num = get_unique_num();
 
             let lo_word = ScoreHolder::new(format!("%temp{}%0", num)).unwrap();
@@ -4322,25 +4436,51 @@ pub fn eval_constant(
             }
         }
         Constant::Vector(elems) => {
-            if let [Constant::Int {
-                bits: 8,
-                value: val0,
-            }, Constant::Int {
-                bits: 8,
-                value: val1,
-            }, Constant::Int {
-                bits: 8,
-                value: val2,
-            }, Constant::Int {
-                bits: 8,
-                value: val3,
-            }] = elems[..]
-            {
-                MaybeConst::Const(i32::from_le_bytes([
-                    val0 as u8, val1 as u8, val2 as u8, val3 as u8,
-                ]))
+            let as_8 = elems
+                .iter()
+                .map(|e|
+                    if let Constant::Int { bits: 8, value } = e {
+                        Some(*value as u8)
+                    } else {
+                        None
+                    }
+                )
+                .collect::<Option<Vec<u8>>>();
+
+            let as_32 = elems
+                .iter()
+                .map(|e|
+                    if let Constant::Int { bits: 32, value } = e {
+                        Some(*value as i32)
+                    } else {
+                        None
+                    }
+                )
+                .collect::<Option<Vec<i32>>>();
+ 
+            if let Some(as_8) = as_8 {
+                if let [val0, val1, val2, val3] = as_8[..] {
+                    MaybeConst::Const(i32::from_le_bytes([
+                        val0 as u8, val1 as u8, val2 as u8, val3 as u8,
+                    ]))
+                } else {
+                    todo!()
+                }
+            } else if let Some(as_32) = as_32 {
+                let num = get_unique_num();
+
+                let (cmds, holders) = as_32.into_iter()
+                    .enumerate()
+                    .map(|(word_idx, word)| {
+                        let holder = ScoreHolder::new(format!("%temp{}%{}", num, word_idx)).unwrap();
+                        let cmd = assign_lit(holder.clone(), word);
+                        (cmd, holder)
+                    })
+                    .unzip();
+
+                MaybeConst::NonConst(cmds, holders)
             } else {
-                todo!("{:?}", elems);
+                todo!()
             }
         }
         Constant::ICmp(icmp) => {

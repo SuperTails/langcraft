@@ -1,7 +1,7 @@
 use crate::{print, turtle_x, turtle_y, turtle_z, turtle_get_char, Ident};
 use arrayvec::ArrayVec;
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
     OpenSquare,
     CloseSquare,

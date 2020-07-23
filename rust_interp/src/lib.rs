@@ -2,6 +2,20 @@
 #![no_std]
 
 #[macro_export]
+macro_rules! print {
+    ($($arg:tt)*) => {
+        write!($crate::Stdout, $($arg)*).unwrap()
+    };
+}
+
+#[macro_export]
+macro_rules! println {
+    ($($arg:tt)*) => {
+        writeln!($crate::Stdout, $($arg)*).unwrap()
+    }
+}
+
+#[macro_export]
 macro_rules! print_str {
     ($data:expr) => {
         $crate::print_raw($data.as_ptr(), $data.len())
@@ -15,6 +29,16 @@ pub mod parser;
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Ident(ArrayVec::<[u8; 8]>);
+
+impl core::fmt::Debug for Ident {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Ident(")?;
+        for c in self.0.iter().copied() {
+            write!(f, "{}", char::from(c))?;
+        }
+        write!(f, ")")
+    }
+}
 
 impl Ident {
     pub fn new() -> Self {
@@ -76,7 +100,7 @@ pub enum McBlock {
     RedstoneBlock,
 }
 
-/*static MC_BLOCKS: [McBlock; 10] = [
+static MC_BLOCKS: [McBlock; 10] = [
     McBlock::Air,
     McBlock::Cobblestone,
     McBlock::Granite,
@@ -87,9 +111,20 @@ pub enum McBlock {
     McBlock::GoldBlock,
     McBlock::DiamondBlock,
     McBlock::RedstoneBlock,
-];*/
+];
 
-/*impl core::fmt::Display for McBlock {
+pub struct Stdout;
+
+impl core::fmt::Write for Stdout {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        for b in s.bytes() {
+            unsafe { putc(b) };
+        }
+        Ok(())
+    }
+}
+
+impl core::fmt::Display for McBlock {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "minecraft:")?;
 
@@ -106,7 +141,7 @@ pub enum McBlock {
             McBlock::RedstoneBlock => write!(f, "redstone_block"),
         }
     }
-}*/
+}
 
 use core::panic::PanicInfo;
 
@@ -115,6 +150,8 @@ extern "C" {
     pub fn print_raw(data: *const u8, len: usize);
     pub fn print(value: i32);
     pub fn init();
+
+    pub fn putc(c: u8);
 
     pub fn turtle_x(value: i32);
     pub fn turtle_y(value: i32);

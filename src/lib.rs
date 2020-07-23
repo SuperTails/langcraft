@@ -10,6 +10,8 @@ pub mod interpreter;
 mod intrinsics;
 
 static SETUP_STR: &str = include_str!("setup.mcfunction");
+static PUTC_STR: &str = include_str!("stdout/putc.mcfunction");
+static FLUSH_STR: &str = include_str!("stdout/flush.mcfunction");
 
 pub struct Datapack {
     pub functions: Vec<Function>,
@@ -52,6 +54,16 @@ impl Datapack {
         std::fs::write(
             output_folder.join(Path::new("data/setup/functions/setup.mcfunction")),
             SETUP_STR,
+        )?;
+
+        std::fs::create_dir_all(output_folder.join(Path::new("data/stdout/functions/")))?;
+        std::fs::write(
+            output_folder.join(Path::new("data/stdout/functions/putc.mcfunction")),
+            PUTC_STR,
+        )?;
+        std::fs::write(
+            output_folder.join(Path::new("data/stdout/functions/flush.mcfunction")),
+            FLUSH_STR,
         )?;
 
         for func in self.functions.iter() {

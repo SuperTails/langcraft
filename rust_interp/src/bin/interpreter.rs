@@ -4,6 +4,8 @@
 use rust_interp::{print, Ident, print_str};
 use rust_interp::lexer::tokenize;
 use rust_interp::parser::*;
+use rust_interp::println;
+use core::fmt::Write;
 
 use arrayvec::ArrayVec;
 
@@ -107,11 +109,13 @@ pub fn main() {
         }
     }*/
 
+    println!("hello, world!");
+
     let tokens = unsafe { tokenize() };
 
-    unsafe { print_str!(b"tokens:") };
+    println!("tokens:");
     for token in tokens.iter() {
-        token.print_self();
+        println!("{:?}", token);
     }
 
     match parse_ast(&tokens) {
