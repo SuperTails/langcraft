@@ -39,5 +39,7 @@ scoreboard objectives add rust dummy
 kill @e[tag=ptr]
 kill @e[tag=turtle]
 
+data modify storage langcraft:stdout chars set value []
+
 summon minecraft:armor_stand 0 0 0 {Marker:1b,Tags:["ptr"]}
 summon minecraft:armor_stand 0 0 0 {Marker:1b,Tags:["turtle"]}
