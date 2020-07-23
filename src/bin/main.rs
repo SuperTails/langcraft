@@ -1,5 +1,6 @@
 use langcraft::Interpreter;
 use langcraft::interpreter::{InterpError};
+use langcraft::Datapack;
 use std::path::PathBuf;
 
 // TODO: Allow specifying breakpoints somehow
@@ -186,32 +187,6 @@ fn parse_arguments() -> Result<Options, String> {
     })
 }
 
-fn write_files(options: &Options, funcs: &[langcraft::cir::Function]) -> Result<(), std::io::Error> {
-    if options.output_folder.exists() {
-        for file in std::fs::read_dir(&options.output_folder)? {
-            std::fs::remove_file(file?.path())?;
-        }
-    } else {
-        std::fs::create_dir(&options.output_folder)?
-    }
-
-    for func in funcs.iter() {
-        let data = func
-            .cmds
-            .iter()
-            .map(|cmd| cmd.to_string())
-            .collect::<Vec<_>>();
-
-        let data = data.join("\n");
-
-        let file_path = options.output_folder.join(format!("{}.mcfunction", func.id));
-
-        std::fs::write(file_path, data.as_bytes())?
-    }
-
-    Ok(())
-}
-
 // TODO: Allow dynamically loading this, perhaps by reading a file?
 const INPUT: &str =
 "FN MAIN() {    
@@ -241,41 +216,47 @@ fn main() {
         std::process::exit(1);
     }
 
-    let funcs = langcraft::compile_bc(&options.bc_path).unwrap_or_else(|err| {
+    let datapack = Datapack::from_bc(&options.bc_path).unwrap_or_else(|err| {
         eprintln!("error when compiling: {}", err);
         std::process::exit(1);
     });
 
     println!(
         "Generated {} commands",
-        funcs.iter().map(|f| f.cmds.len()).sum::<usize>()
+        datapack.functions.iter().map(|f| f.cmds.len()).sum::<usize>()
     );
 
-    write_files(&options, &funcs).unwrap_or_else(|err| {
-        eprintln!("error when writing files: {}", err);
+    datapack.save(&options.output_folder).unwrap_or_else(|err| {
+        eprintln!("error when saving datapack: {}", err);
+        std::process::exit(1);
     });
 
-    assert!(INPUT.len() < 256);
-    let mut interp = Interpreter::new(funcs, &INPUT);
+    if options.interpret {
+        assert!(INPUT.len() < 256);
+        let run_index = datapack.run_index().unwrap();
+        let mut interp = Interpreter::new(datapack, run_index, &INPUT);
 
-    match run_interpreter(&mut interp) {
-        Ok(()) => {
-            for i in interp.output.iter() {
-                eprintln!("{}", i);
-            }
-            eprintln!("=== End output ===");
-            eprintln!("Program finished normally");
+        match run_interpreter(&mut interp) {
+            Ok(()) => {
+                for i in interp.output.iter() {
+                    eprintln!("{}", i);
+                }
+                eprintln!("=== End output ===");
+                eprintln!("Program finished normally");
 
-            compare_output(&interp);
-        }
-        Err(err) => {
-            eprintln!("==========================================");
-            eprintln!("Output:");
-            for i in interp.output.iter() {
-                eprintln!("{}", i);
+                if options.compare {
+                    compare_output(&interp);
+                }
             }
-            eprintln!("=== End output ===");
-            eprintln!("Encountered interpreter error: {}", err);
+            Err(err) => {
+                eprintln!("==========================================");
+                eprintln!("Output:");
+                for i in interp.output.iter() {
+                    eprintln!("{}", i);
+                }
+                eprintln!("=== End output ===");
+                eprintln!("Encountered interpreter error: {}", err);
+            }
         }
     }
 }

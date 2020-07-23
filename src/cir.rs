@@ -10,6 +10,9 @@ use std::str::FromStr;
 use std::string::ToString;
 use std::sync::Mutex;
 
+// FIXME: Minecraft doesn't support this and I shouldn't either
+static DEFAULT_NAMESPACE: &str = "rust";
+
 mod raw_text;
 
 const MAX_HOLDER_LEN: usize = 40;
@@ -431,6 +434,38 @@ impl FunctionId {
 
         FunctionId { name, block, sub }
     }
+
+    /// Gets the namespace of this function
+    /// ```
+    /// # use langcraft::cir::FunctionId;
+    /// let id = FunctionId::new("intrinsic:lshr/inner");
+    /// assert_eq!(id.namespace(), "intrinsic");
+    /// ```
+    pub fn namespace(&self) -> &str {
+        if let Some(idx) = self.name.find(':') {
+            &self.name[..idx]
+        } else {
+            DEFAULT_NAMESPACE
+        }
+    }
+
+    /// Gets the path within the namespace of this function ID
+    /// ```
+    /// # use langcraft::cir::FunctionId;
+    /// let id = FunctionId::new("intrinsic:lshr/inner");
+    /// assert_eq!(id.path(), vec!["lshr".to_string(), "inner".to_string()]);
+    /// ```
+    pub fn path(&self) -> Vec<String> {
+        let name = self.to_string();
+
+        let tail = if let Some(idx) = name.find(':') {
+            &name[idx + 1..]
+        } else {
+            &name
+        };
+
+        tail.split('/').map(|s| s.to_owned()).collect()
+    }
 }
 
 impl fmt::Display for FunctionId {
@@ -458,6 +493,18 @@ pub struct Function {
     pub cmds: Vec<Command>,
 }
 
+impl Function {
+    pub fn from_str(id: FunctionId, cmds: &str) -> Result<Self, ()> {
+        let cmds = cmds
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.parse())
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Function { id, cmds })
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct FuncCall {
     pub id: FunctionId,
@@ -469,7 +516,7 @@ impl fmt::Display for FuncCall {
         if id.contains(':') {
             write!(f, "function {}", id)
         } else {
-            write!(f, "function rust:{}", id)
+            write!(f, "function {}:{}", DEFAULT_NAMESPACE, id)
         }
     }
 }
@@ -800,8 +847,12 @@ impl fmt::Display for Relation {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Command {
+    Kill(Kill),
     Fill(Fill),
+    CloneCmd(CloneCmd),
     SetBlock(SetBlock),
+    ObjRemove(ObjRemove),
+    ObjAdd(ObjAdd),
     ScoreOp(ScoreOp),
     ScoreSet(ScoreSet),
     ScoreGet(ScoreGet),
@@ -824,10 +875,14 @@ impl Command {
             Self::Execute(c) => c.holder_uses(),
             Self::Tellraw(c) => (&**c).holder_uses(),
             Self::Data(_)
+            | Self::Kill(_)
             | Self::SetBlock(_)
             | Self::FuncCall(_)
             | Self::Teleport(_)
             | Self::Fill(_)
+            | Self::CloneCmd(_)
+            | Self::ObjRemove(_)
+            | Self::ObjAdd(_)
             | Self::Comment(_) => HashMap::new(),
         }
     }
@@ -881,9 +936,26 @@ impl CommandParser<'_> {
             Some("tellraw") => self.parse_tellraw(),
             Some("data") => self.parse_data(),
             Some("tp") => self.parse_teleport(),
+            Some("fill") => self.parse_fill(),
+            Some("clone") => self.parse_clone(),
             Some("setblock") => self.parse_setblock(),
+            Some("kill") => Kill(self.next_word().unwrap().parse().unwrap()).into(),
             nw => todo!("{:?}", nw),
         }
+    }
+
+    pub fn parse_clone(&mut self) -> Command {
+        let start = self.parse_pos();
+        let end = self.parse_pos();
+        let dest = self.parse_pos();
+        CloneCmd { start, end, dest }.into()
+    }
+
+    pub fn parse_fill(&mut self) -> Command {
+        let start = self.parse_pos();
+        let end = self.parse_pos();
+        let block = self.next_word().unwrap().to_owned();
+        Fill { start, end, block }.into()
     }
 
     pub fn parse_setblock(&mut self) -> Command {
@@ -1052,7 +1124,25 @@ impl CommandParser<'_> {
     pub fn parse_scoreboard(&mut self) -> Command {
         match self.next_word() {
             Some("players") => self.parse_players(),
+            Some("objectives") => self.parse_objectives(),
             nw => todo!("{:?}", nw),
+        }
+    }
+
+    pub fn parse_objectives(&mut self) -> Command {
+        match self.next_word() {
+            Some("add") => {
+                let obj = self.next_word().unwrap().to_owned();
+                let criteria = self.next_word().unwrap().to_owned();
+                ObjAdd { 
+                    obj,
+                    criteria,
+                }.into()
+            }
+            Some("remove") => {
+                ObjRemove(self.next_word().unwrap().to_owned()).into()
+            }
+            nw => todo!("{:?}", nw)
         }
     }
 
@@ -1126,8 +1216,12 @@ impl FromStr for Command {
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Command::Kill(s) => s.fmt(f),
             Command::Fill(s) => s.fmt(f),
+            Command::CloneCmd(s) => s.fmt(f),
             Command::SetBlock(s) => s.fmt(f),
+            Command::ObjAdd(s) => s.fmt(f),
+            Command::ObjRemove(s) => s.fmt(f),
             Command::ScoreOp(s) => s.fmt(f),
             Command::ScoreSet(s) => s.fmt(f),
             Command::ScoreGet(s) => s.fmt(f),
@@ -1147,15 +1241,65 @@ impl fmt::Display for Command {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct ObjRemove(Objective);
+
+impl fmt::Display for ObjRemove {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "scoreboard objectives remove {}", self.0)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ObjAdd {
+    obj: Objective,
+    criteria: String,
+    // TODO: display name
+}
+
+impl fmt::Display for ObjAdd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "scoreboard objectives add {} {}", self.obj, self.criteria)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Kill(Target);
+
+impl fmt::Display for Kill {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "kill {}", self.0)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Fill {
-    pub start: String,
-    pub end: String,
+    pub start: BlockPos,
+    pub end: BlockPos,
     pub block: String,
 }
 
 impl fmt::Display for Fill {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "fill {} {} {}", self.start, self.end, self.block)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct CloneCmd {
+    pub start: BlockPos,
+    pub end: BlockPos,
+    pub dest: BlockPos,
+}
+
+impl fmt::Display for CloneCmd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "clone {} {} {}", self.start, self.end, self.dest)
+    }
+}
+
+impl From<Kill> for Command {
+    fn from(k: Kill) -> Self {
+        Command::Kill(k)
     }
 }
 
@@ -1168,6 +1312,24 @@ impl From<Teleport> for Command {
 impl From<Fill> for Command {
     fn from(f: Fill) -> Self {
         Command::Fill(f)
+    }
+}
+
+impl From<CloneCmd> for Command {
+    fn from(c: CloneCmd) -> Self {
+        Command::CloneCmd(c)
+    }
+}
+
+impl From<ObjAdd> for Command {
+    fn from(c: ObjAdd) -> Self {
+        Command::ObjAdd(c)
+    }
+}
+
+impl From<ObjRemove> for Command {
+    fn from(c: ObjRemove) -> Self {
+        Command::ObjRemove(c)
     }
 }
 

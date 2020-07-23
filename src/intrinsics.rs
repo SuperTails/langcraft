@@ -4,11 +4,11 @@ use lazy_static::lazy_static;
 static INTRINSIC_STRS: &[(&str, &str)] = &[
     ("intrinsic:lshr", include_str!("intrinsic/lshr.mcfunction")),
     (
-        "intrinsic/lshr:getshift",
+        "intrinsic:lshr/getshift",
         include_str!("intrinsic/lshr/getshift.mcfunction"),
     ),
     (
-        "intrinsic/lshr:inner",
+        "intrinsic:lshr/inner",
         include_str!("intrinsic/lshr/inner.mcfunction"),
     ),
     (
@@ -102,14 +102,7 @@ lazy_static! {
         INTRINSIC_STRS
             .iter()
             .map(|(name, body)| {
-                let id = FunctionId::new(name.to_owned());
-                let cmds = body
-                    .lines()
-                    .filter(|l| !l.is_empty())
-                    .map(|l| l.parse().unwrap())
-                    .collect();
-
-                Function { id, cmds }
+                Function::from_str(FunctionId::new(name.to_owned()), body).unwrap()
             })
             .collect()
     };

@@ -30,4 +30,4 @@
 # %param1%0 : shift (clobbered)
 
 execute if score %param1%0 rust matches 32.. run scoreboard players set %param0%0 rust 0
-execute if score %param1%0 rust matches 1.. run function intrinsic/lshr:inner
+execute if score %param1%0 rust matches 1.. run function intrinsic:lshr/inner

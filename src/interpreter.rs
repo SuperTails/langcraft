@@ -1,6 +1,6 @@
 use crate::cir::*;
 use crate::compile_ir::{get_index, OBJECTIVE, pos_to_func_idx};
-use crate::intrinsics::INTRINSICS;
+use crate::Datapack;
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -81,13 +81,7 @@ impl Interpreter {
         }
     }
 
-    pub fn new(mut program: Vec<Function>, input: &str) -> Self {
-        let func_idx = program.len() - 1;
-
-        for func in INTRINSICS.iter() {
-            program.push(func.clone());
-        }
-
+    pub fn new(datapack: Datapack, start_idx: usize, input: &str) -> Self {
         let mut letters = HashMap::new();
         let mut z = 0;
         let mut y = 32;
@@ -108,8 +102,8 @@ impl Interpreter {
         }
 
         Interpreter {
-            program,
-            call_stack: vec![(func_idx, 0)],
+            program: datapack.functions,
+            call_stack: vec![(start_idx, 0)],
             memory: [0x55_55_55_55; 64 * 16 * 16],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
@@ -195,7 +189,7 @@ impl Interpreter {
     pub fn eval_message(&self, msg: &[TextComponent]) -> String {
         let mut result = String::new();
         let score_getter = |name: &ScoreHolder, obj: &Objective| -> Option<i32> {
-            if obj != "rust" {
+            if obj != OBJECTIVE {
                 None
             } else {
                 self.rust_scores.get(name).copied()

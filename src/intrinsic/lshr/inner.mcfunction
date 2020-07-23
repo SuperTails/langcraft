@@ -6,13 +6,13 @@ execute if score %%temp0_lshr_inner rust matches 1..1 run scoreboard players rem
 execute if score %%temp0_lshr_inner rust matches 1..1 run scoreboard players remove %param0%0 rust 1
 
 # %%temp1_lshr_inner = powtab[shift]
-function intrinsic/lshr:getshift
+function intrinsic:lshr/getshift
 
 scoreboard players operation %param0%0 rust /= %%temp1_lshr_inner rust
 
 # %%temp1_lshr_inner = powtab[31 - shift]
 scoreboard players operation %param1%0 rust *= %%-1 rust
 scoreboard players add %param1%0 rust 31
-function intrinsic/lshr:getshift
+function intrinsic:lshr/getshift
 
 execute if score %%temp0_lshr_inner rust matches 1..1 run scoreboard players operation %param0%0 rust += %%temp1_lshr_inner rust
