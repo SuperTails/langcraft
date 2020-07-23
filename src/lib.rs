@@ -1,5 +1,5 @@
 use cir::Function;
-use compile_ir::Options;
+use compile_ir::BuildOptions;
 pub use interpreter::Interpreter;
 use std::path::Path;
 
@@ -11,6 +11,6 @@ mod intrinsics;
 pub fn compile_bc(path: &Path) -> Result<Vec<Function>, String> {
     Ok(compile_ir::compile_module(
         &llvm_ir::Module::from_bc_path(path)?,
-        &Options { log_trace: false },
+        &BuildOptions { log_trace: false },
     ))
 }

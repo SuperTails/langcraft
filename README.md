@@ -6,10 +6,12 @@ Currently Rust programs must be built in `--release` so that strings are inlined
 Support for automatically generating the necessary blocks and entities in a real Minecraft world is coming.
 
 ### Usage
-To compile and then interpret a bitcode file, run:
 ```
-cargo run -- ./path/to/llvm/bitcode.bc
+cargo run -- --arg1 --arg2 ./path/to/llvm/bitcode.bc
 ```
+All arguments must come before the path. Valid arguments are:
+ - `--out=path/to/dir/`: Specify the directory the datapack files should be placed in
+ - `--run`: Run the command interpreter on the generated code
 
 `rust_interp` is a Rust project already configured to generate the proper bitcode. It can be built with:
 ```

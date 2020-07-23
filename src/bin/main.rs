@@ -1,7 +1,8 @@
 use langcraft::Interpreter;
 use langcraft::interpreter::{InterpError};
-use std::path::Path;
+use std::path::PathBuf;
 
+// TODO: Allow specifying breakpoints somehow
 fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::Error>> {
     let mut hit_breakpoint = false;
 
@@ -69,41 +70,6 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 Err(e) => return Err(e.into()),
             }
 
-            /*if let Some(langcraft::cir::Command::Comment(c)) = interp.next_command() {
-                if c == "main-block_zn98__lt_core__iter__adapters__peekable_lt_i_gt__u20_as_u20_core__iter__traits__iterator__iterator_gt_4next17h78f8243e39bae4d8e_exit_i" {
-                    hit_breakpoint = true;
-                }
-            }*/
-
-            /*if interp.next_command().map(|c| c.to_string().contains("block has this many")).unwrap_or(false) {
-                hit_breakpoint = true;
-            }*/
-
-
-            /*if interp.next_command().map(|c| c.to_string().contains("tokens:")).unwrap_or(false) {
-                hit_breakpoint = true;
-            }
-
-            if interp.next_command().map(|c| c.to_string().contains("intrinsic:bcmp")).unwrap_or(false) {
-                hit_breakpoint = true;
-            }*/
-
-            /*if interp
-                .next_command()
-                .map(|c| c.to_string().contains("block count before printing:"))
-                .unwrap_or(false)
-            {
-                hit_breakpoint = true;
-            }*/
-
-            if interp
-                .next_command()
-                .map(|c| c.to_string() == "scoreboard players set %temp5 rust -2147483648")
-                .unwrap_or(false)
-            {
-                hit_breakpoint = true;
-            }
-
             if interp
                 .next_command()
                 .map(|c| c.to_string().contains("Panic"))
@@ -114,25 +80,6 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 }
                 hit_breakpoint = true;
             }
-
-            /*if interp
-                .next_command()
-                .map(|c| {
-                    c.to_string()
-                        == "scoreboard players operation %ptr rust = iter.sroa.0.0105%0 rust"
-                })
-                .unwrap_or(false)
-            {
-                hit_breakpoint = true;
-            }
-
-            if interp
-                .next_command()
-                .map(|c| c.to_string().contains("UNREACHABLE"))
-                .unwrap_or(false)
-            {
-                hit_breakpoint = true;
-            }*/
         }
     }
 
@@ -187,15 +134,65 @@ pub fn compare_output(interp: &Interpreter) {
     }
 }
 
-fn main() {
-    let args = std::env::args().collect::<Vec<_>>();
-    assert_eq!(args.len(), 2);
+pub struct Options {
+    /// Run the generated code using the command interpreter
+    pub interpret: bool,
+    /// Compare output
+    pub compare: bool,
+    /// The path to the bitcode file to compile
+    pub bc_path: PathBuf,
+    pub output_folder: PathBuf,
+}
 
-    let funcs = langcraft::compile_bc(Path::new(&args[1])).unwrap();
+fn parse_arguments() -> Result<Options, String> {
+    let mut interpret = false;
+    let mut compare = false;
+    let mut bc_path = PathBuf::new();
+    let mut output_folder = None;
 
-    for file in std::fs::read_dir("out/").unwrap() {
-        let file = file.unwrap();
-        std::fs::remove_file(file.path()).unwrap();
+    let mut args = std::env::args().skip(1);
+
+    while let Some(arg) = args.next() {
+        if args.len() == 0 {
+            // The last argument is the path
+            bc_path = PathBuf::from(arg);
+        } else if arg == "--run" {
+            interpret = true
+        } else if arg == "--compare" {
+            compare = true;
+        } else if arg.starts_with("--out=") {
+            if output_folder.is_none() {
+                let tail = &arg["--out=".len()..];
+                output_folder = Some(PathBuf::from(tail));
+            } else {
+                return Err(String::from("more than one `--out` argument"));
+            }
+        } else {
+            return Err(format!("invalid argument `{}`", arg));
+        }
+    }
+
+    let output_folder = output_folder.unwrap_or_else(|| PathBuf::from("out/"));
+
+    if compare && !interpret {
+        return Err(String::from("the `--compare` option requires `--run`"));
+    }
+
+    Ok(Options {
+        interpret,
+        compare,
+        bc_path,
+        output_folder,
+    })
+}
+
+fn write_files(options: &Options, funcs: &[langcraft::cir::Function]) -> Result<(), std::io::Error> {
+    if options.output_folder.exists() {
+        for file in std::fs::read_dir(&options.output_folder)? {
+            std::fs::remove_file(file?.path())?;
+        }
+    } else {
+        std::fs::create_dir(&options.output_folder)?
     }
 
     for func in funcs.iter() {
@@ -204,41 +201,62 @@ fn main() {
             .iter()
             .map(|cmd| cmd.to_string())
             .collect::<Vec<_>>();
+
         let data = data.join("\n");
 
-        std::fs::write(
-            Path::new(&format!("out/{}.mcfunction", func.id)),
-            data.as_bytes(),
-        )
-        .unwrap();
+        let file_path = options.output_folder.join(format!("{}.mcfunction", func.id));
+
+        std::fs::write(file_path, data.as_bytes())?
     }
+
+    Ok(())
+}
+
+// TODO: Allow dynamically loading this, perhaps by reading a file?
+const INPUT: &str =
+"FN MAIN() {    
+LET FOO = 0    
+WHILE FOO < 20{
+FOO = FOO + 1 
+IF FOO%15==0{ 
+PRINT(300)   
+} ELSE {        
+IF FOO%5 == 0{
+PRINT(200)   
+} ELSE {        
+IF FOO%3 == 0{
+PRINT(100)   
+} ELSE {        
+PRINT(FOO)   
+} } } } } }     ";
+
+fn main() {
+    let options = parse_arguments().unwrap_or_else(|err| {
+        eprintln!("error when parsing arguments: {}", err);
+        std::process::exit(1);
+    });
+
+    if options.output_folder.is_file() {
+        eprintln!("output path `{}` was a file", options.output_folder.display());
+        std::process::exit(1);
+    }
+
+    let funcs = langcraft::compile_bc(&options.bc_path).unwrap_or_else(|err| {
+        eprintln!("error when compiling: {}", err);
+        std::process::exit(1);
+    });
 
     println!(
         "Generated {} commands",
         funcs.iter().map(|f| f.cmds.len()).sum::<usize>()
     );
 
-    let input =
-"FN MAIN() {    
- LET FOO = 0    
- WHILE FOO < 20{
-  FOO = FOO + 1 
-  IF FOO%15==0{ 
-   PRINT(300)   
-} ELSE {        
-  IF FOO%5 == 0{
-   PRINT(200)   
-} ELSE {        
-  IF FOO%3 == 0{
-   PRINT(100)   
-} ELSE {        
-   PRINT(FOO)   
-} } } } } }     ";
+    write_files(&options, &funcs).unwrap_or_else(|err| {
+        eprintln!("error when writing files: {}", err);
+    });
 
-    assert!(input.len() < 256);
-    let mut interp = Interpreter::new(funcs, &input);
-
-    //interp.set_mem_breakpoint(300, BreakKind::Access);
+    assert!(INPUT.len() < 256);
+    let mut interp = Interpreter::new(funcs, &INPUT);
 
     match run_interpreter(&mut interp) {
         Ok(()) => {
@@ -247,13 +265,6 @@ fn main() {
             }
             eprintln!("=== End output ===");
             eprintln!("Program finished normally");
-
-            /*assert_eq!(
-                interp
-                    .get_rust_score(&langcraft::cir::ScoreHolder::new("%return%0".into()).unwrap())
-                    .unwrap(),
-                0
-            );*/
 
             compare_output(&interp);
         }

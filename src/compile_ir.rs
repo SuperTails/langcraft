@@ -315,7 +315,7 @@ pub fn write_ptr(target: ScoreHolder) -> Command {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Options {
+pub struct BuildOptions {
     pub log_trace: bool,
 }
 
@@ -449,7 +449,7 @@ fn apply_fixups(funcs: &mut [McFunction]) {
     }
 }
 
-pub fn compile_module(module: &Module, options: &Options) -> Vec<McFunction> {
+pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
     let (mut init_cmds, globals) = compile_global_var_init(&module.global_vars, &module.functions);
 
     let main_return = get_alloc(4);
@@ -2157,7 +2157,7 @@ fn compile_call(
 pub fn compile_function(
     func: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
-    options: &Options,
+    options: &BuildOptions,
 ) -> (Vec<McFunction>, HashMap<ScoreHolder, cir::HolderUse>) {
     if func.is_var_arg {
         todo!("functions with variadic arguments");
@@ -3034,7 +3034,7 @@ pub fn compile_instr(
     instr: &Instruction,
     parent: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
-    _options: &Options,
+    _options: &BuildOptions,
 ) -> (Vec<Command>, Option<Vec<Command>>) {
     let result = match instr {
         // We use an empty stack
