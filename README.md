@@ -12,7 +12,7 @@ All arguments must come before the path. Valid arguments are:
  - `--run`: Run the command interpreter on the generated code
 
 To use the generated datapack in Minecraft:
- 1. Copy the entire output folder (e.g. `./out`) to the `datapacks/` directory of a Minecraft world (using a superflat void world is recommended)
+ 1. Copy the entire output folder (`./out` by default) to the `datapacks/` directory of a Minecraft world (using a superflat void world is recommended)
  2. Run `/function setup:setup`. This only has to be done the first time a Langcraft datapack is used in a world.
  3. Run `/function rust:run`
  4. If the datapack is modified while the world is open, run `/reload` and then go back to step 3.
@@ -25,7 +25,7 @@ Rust code must be built as follows:
  - Have a `main` function with `#[no_mangle]`
  - Use `i686-unknown-linux`
 
-`rust_interp` is a Rust project already configured to generate the proper bitcode. It can be built with:
+`rust_interp` is a Rust project already configured to generate the proper bitcode. The `interpreter` binary target as shown in the demo can be built with:
 ```
 sh compile_rust.sh
 ```
