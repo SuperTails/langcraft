@@ -1315,67 +1315,63 @@ fn compile_xor(
 
     let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
 
-    match operand0.get_type() {
-        _ if layout.size() % 4 == 0 => {
-            for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
-                cmds.push(assign(param(0, 0), op0));
-                cmds.push(assign(param(1, 0), op1));
+    if matches!(operand0.get_type(), Type::IntegerType { bits: 1 }) {
+        let dest = dest
+            .into_iter()
+            .next()
+            .unwrap();
 
-                cmds.push(
-                    McFuncCall {
-                        id: McFuncId::new("intrinsic:xor"),
-                    }
-                    .into(),
-                );
+        let op0 = op0.into_iter().next().unwrap();
+        let op1 = op1.into_iter().next().unwrap();
 
-                cmds.push(assign(dest, return_holder(0)));
-            }
+        cmds.push(assign_lit(dest.clone(), 0));
 
-            cmds
+        let mut lhs_1 = Execute::new();
+        lhs_1.with_if(ExecuteCondition::Score {
+            target: op0.clone().into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Matches((1..=1).into()),
+        });
+        lhs_1.with_if(ExecuteCondition::Score {
+            target: op1.clone().into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Matches((0..=0).into()),
+        });
+        lhs_1.with_run(assign_lit(dest.clone(), 1));
+
+        let mut rhs_1 = Execute::new();
+        rhs_1.with_if(ExecuteCondition::Score {
+            target: op0.into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Matches((0..=0).into()),
+        });
+        rhs_1.with_if(ExecuteCondition::Score {
+            target: op1.into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Matches((1..=1).into()),
+        });
+        rhs_1.with_run(assign_lit(dest, 1));
+
+        cmds.push(lhs_1.into());
+        cmds.push(rhs_1.into());
+
+        cmds
+    } else {
+        for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
+            cmds.push(assign(param(0, 0), op0));
+            cmds.push(assign(param(1, 0), op1));
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:xor"),
+                }
+                .into(),
+            );
+
+            cmds.push(assign(dest, return_holder(0)));
         }
-        Type::IntegerType { bits: 1 } => {
-            let dest = dest
-                .into_iter()
-                .next()
-                .unwrap();
 
-            let op0 = op0.into_iter().next().unwrap();
-            let op1 = op1.into_iter().next().unwrap();
-
-            cmds.push(assign_lit(dest.clone(), 0));
-
-            let mut lhs_1 = Execute::new();
-            lhs_1.with_if(ExecuteCondition::Score {
-                target: op0.clone().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((1..=1).into()),
-            });
-            lhs_1.with_if(ExecuteCondition::Score {
-                target: op1.clone().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=0).into()),
-            });
-            lhs_1.with_run(assign_lit(dest.clone(), 1));
-
-            let mut rhs_1 = Execute::new();
-            rhs_1.with_if(ExecuteCondition::Score {
-                target: op0.into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=0).into()),
-            });
-            rhs_1.with_if(ExecuteCondition::Score {
-                target: op1.into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((1..=1).into()),
-            });
-            rhs_1.with_run(assign_lit(dest, 1));
-
-            cmds.push(lhs_1.into());
-            cmds.push(rhs_1.into());
-
-            cmds
-        }
-        t => todo!("{:?}", t),
+        cmds
     }
 }
 
@@ -1468,6 +1464,7 @@ fn compile_shl(
             Type::IntegerType { bits: 32 }
                 | Type::IntegerType { bits: 24 }
                 | Type::IntegerType { bits: 16 }
+                | Type::IntegerType { bits: 8 }
         ) {
             todo!("{:?}, shift: {:?}", operand0, operand1);
         }
@@ -1484,24 +1481,23 @@ fn compile_shl(
             cmds.push(assign(dest.clone(), op0));
             cmds.push(make_op_lit(dest.clone(), "*=", 1 << c));
 
-            if matches!(operand0.get_type(), Type::IntegerType { bits: 16 }) {
+            if !matches!(operand0.get_type(), Type::IntegerType { bits: 32 }) {
+                let max_val = match operand0.get_type() {
+                    Type::IntegerType { bits: 8 } => 255,
+                    Type::IntegerType { bits: 16 } => 65535,
+                    Type::IntegerType { bits: 24 } => 16777216,
+                    Type::IntegerType { bits: 32 } => unreachable!(),
+                    ty => todo!("{:?}", ty)
+                };
+
                 cmds.push(mark_assertion(
                     false,
                     &ExecuteCondition::Score {
                         target: dest.into(),
                         target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((..=65535).into()),
-                    },
-                ));
-            } else if matches!(operand0.get_type(), Type::IntegerType { bits: 24 }) {
-                cmds.push(mark_assertion(
-                    false,
-                    &ExecuteCondition::Score {
-                        target: dest.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((..=16777216).into()),
-                    },
-                ));
+                        kind: ExecuteCondKind::Matches((..=max_val).into())
+                    }
+                ))
             }
         } else {
             todo!("{:?}", operand1)
@@ -3932,35 +3928,55 @@ pub fn compile_instr(
             if matches!(to_type, Type::IntegerType { bits: 32 }) {
                 let op = op.into_iter().next().unwrap();
 
-                let (range, to_add) = if matches!(operand.get_type(), Type::IntegerType { bits: 8 })
-                {
-                    (128..=255, -256)
-                } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
-                    (32768..=65535, -65536)
-                } else {
-                    todo!("{:?}", operand.get_type());
-                };
-
                 let dest = ScoreHolder::from_local_name(dest.clone(), 4)
                     .into_iter()
                     .next()
                     .unwrap();
 
-                cmds.push(assign(dest.clone(), op));
-                let mut exec = Execute::new();
-                exec.with_if(ExecuteCondition::Score {
-                    target: dest.clone().into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches(range.into()),
-                });
-                exec.with_run(ScoreAdd {
-                    target: dest.into(),
-                    target_obj: OBJECTIVE.into(),
-                    score: to_add,
-                });
-                cmds.push(exec.into());
+                if matches!(operand.get_type(), Type::IntegerType { bits: 1 }) {
+                    let cond = ExecuteCondition::Score {
+                        target: op.into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((1..=1).into())
+                    };
 
-                cmds
+                    let mut on_one = Execute::new();
+                    on_one.with_if(cond.clone());
+                    on_one.with_run(assign_lit(dest.clone(), 0xFFFF_FFFF_u32 as i32));
+                    cmds.push(on_one.into());
+
+                    let mut on_zero = Execute::new();
+                    on_zero.with_unless(cond);
+                    on_zero.with_run(assign_lit(dest, 0));
+                    cmds.push(on_zero.into());
+
+                    cmds
+                } else {
+                    let (range, to_add) = if matches!(operand.get_type(), Type::IntegerType { bits: 8 })
+                    {
+                        (128..=255, -256)
+                    } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
+                        (32768..=65535, -65536)
+                    } else {
+                        todo!("{:?}", operand.get_type());
+                    };
+
+                    cmds.push(assign(dest.clone(), op));
+                    let mut exec = Execute::new();
+                    exec.with_if(ExecuteCondition::Score {
+                        target: dest.clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches(range.into()),
+                    });
+                    exec.with_run(ScoreAdd {
+                        target: dest.into(),
+                        target_obj: OBJECTIVE.into(),
+                        score: to_add,
+                    });
+                    cmds.push(exec.into());
+
+                    cmds
+                }
             } else if matches!(to_type, Type::IntegerType { bits: 64 }) {
                 let dest = ScoreHolder::from_local_name(dest.clone(), 8);
 
