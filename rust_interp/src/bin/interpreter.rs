@@ -1,10 +1,10 @@
 #![no_std]
 #![no_main]
 
-use rust_interp::{print, Ident, print_str};
+use langcraft_api::{print_int, print_str, println};
+use rust_interp::Ident;
 use rust_interp::lexer::tokenize;
 use rust_interp::parser::*;
-use rust_interp::println;
 use core::fmt::Write;
 
 use arrayvec::ArrayVec;
@@ -48,7 +48,7 @@ impl Interpreter {
             Stmt::Print { arg } => {
                 unsafe {
                     print_str!("printing value:");
-                    print(self.eval_expr(arg, exprs));
+                    print_int(self.eval_expr(arg, exprs));
                 }
             }
             Stmt::If { cond, true_body, false_body } => {

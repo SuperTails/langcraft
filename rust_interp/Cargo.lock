@@ -7,8 +7,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 
 [[package]]
+name = "langcraft_api"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ae1eb374d406921f307b6ed3a819c763de31a4cf7c903d0b29339cb21821040"
+
+[[package]]
 name = "rust_interp"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "langcraft_api",
 ]

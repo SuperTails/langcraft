@@ -1,5 +1,6 @@
-use crate::{print, turtle_x, turtle_y, turtle_z, turtle_get_char, Ident};
+use crate::{print, Ident};
 use arrayvec::ArrayVec;
+use langcraft_api::{print_str, turtle_x, turtle_y, turtle_z, turtle_get_char};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {

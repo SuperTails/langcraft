@@ -1615,6 +1615,94 @@ fn compile_call(
 
                 (cmds, None)
             }
+            "insert_asm" => {
+                assert_eq!(arguments.len(), 3);
+
+                let ptr = arguments[0].clone();
+                let len = arguments[1].clone();
+
+                let len = if let Operand::ConstantOperand(Constant::Int { bits: 32, value }) = len.0
+                {
+                    value as u32
+                } else {
+                    todo!("{:?}", len)
+                };
+
+                // TODO: this is so so terribly awful
+                let addr = if let Operand::ConstantOperand(Constant::GetElementPtr(g)) = &ptr.0 {
+                    let GetElementPtrConst {
+                        address,
+                        indices,
+                        in_bounds: _in_bounds,
+                    } = &**g;
+
+                    let addr = if let Constant::GlobalReference { name, .. } = address {
+                        name
+                    } else {
+                        todo!("{:?}", address)
+                    };
+
+                    if !matches!(
+                        indices[..],
+                        [
+                            Constant::Int { bits: 32, value: 0 },
+                            Constant::Int { bits: 32, value: 0 },
+                            Constant::Int { bits: 32, value: 0 }
+                        ]
+                    ) {
+                        todo!("{:?}", indices)
+                    }
+
+                    addr
+                } else {
+                    todo!("{:?}", ptr)
+                };
+
+                let data = &globals.get(addr).unwrap().1;
+
+                let data = if let Constant::Struct {
+                    values,
+                    is_packed: true,
+                    ..
+                } = data.as_ref().unwrap()
+                {
+                    if let [Constant::Array {
+                        element_type: Type::IntegerType { bits: 8 },
+                        elements,
+                    }] = &values[..]
+                    {
+                        elements
+                    } else {
+                        todo!("{:?}", values)
+                    }
+                } else {
+                    todo!("{:?}", data)
+                };
+
+                let data = data[..len as usize]
+                    .iter()
+                    .map(|d| {
+                        if let Constant::Int { bits: 8, value } = d {
+                            *value as u8
+                        } else {
+                            unreachable!()
+                        }
+                    })
+                    .collect::<Vec<u8>>();
+
+                let text = std::str::from_utf8(&data).unwrap();
+
+                let (mut cmds, arg) = eval_operand(&arguments[2].0, globals);
+                let arg = arg.into_iter().next().unwrap();
+
+                let interpolated = text.replace("$0", &arg.to_string()).replace("$obj", OBJECTIVE);
+
+                let cmd = interpolated.parse().unwrap();
+
+                cmds.push(cmd);
+
+                (cmds, None)
+            }
             "print_raw" => {
                 assert_eq!(arguments.len(), 2);
 
@@ -1730,68 +1818,6 @@ fn compile_call(
                     }
                     .into(),
                 );
-
-                (cmds, None)
-            }
-            "putc" => {
-                assert_eq!(arguments.len(), 1);
-
-                assert!(dest.is_none());
-
-                let (mut cmds, ch) = eval_operand(&arguments[0].0, globals);
-                let ch = ch.into_iter().next().unwrap();
-
-                cmds.push(assign(ScoreHolder::new("%%temp0_putc".into()).unwrap(), ch));
-
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("stdout:putc"),
-                }.into());
-
-                (cmds, None)
-            }
-            n @ "turtle_x" | n @ "turtle_y" | n @ "turtle_z" => {
-                assert_eq!(arguments.len(), 1);
-
-                assert!(dest.is_none());
-
-                let coord = if name.ends_with('x') {
-                    0
-                } else if name.ends_with('y') {
-                    1
-                } else {
-                    2
-                };
-
-                // TODO: Optimize for const argument
-                let (mut cmds, pos) = eval_operand(&arguments[0].0, globals);
-
-                cmds.insert(0, Command::Comment(format!("call to {}", n)));
-
-                let pos = pos[0].clone();
-
-                let mut cmd = Execute::new();
-                cmd.with_as(Target::Selector(cir::Selector {
-                    var: cir::SelectorVariable::AllEntities,
-                    args: vec![cir::SelectorArg("tag=turtle".to_string())],
-                }));
-                cmd.with_subcmd(ExecuteSubCmd::Store {
-                    is_success: false,
-                    kind: ExecuteStoreKind::Data {
-                        path: format!("Pos[{}]", coord),
-                        ty: "double".to_string(),
-                        scale: 1.0,
-                        target: DataTarget::Entity(Target::Selector(cir::Selector {
-                            var: cir::SelectorVariable::ThisEntity,
-                            args: vec![],
-                        })),
-                    },
-                });
-                cmd.with_run(ScoreGet {
-                    target: Target::Uuid(pos),
-                    target_obj: OBJECTIVE.to_string(),
-                });
-
-                cmds.push(cmd.into());
 
                 (cmds, None)
             }

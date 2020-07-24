@@ -18,3 +18,4 @@ debug = true
 
 [dependencies]
 arrayvec = { version = "0.5", default-features = false }
+langcraft_api = "0.1.0"
