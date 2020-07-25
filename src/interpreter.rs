@@ -644,6 +644,18 @@ impl Interpreter {
                     }) {
                         self.execute_cmd(run)?;
                     }
+                } else if cmd.to_string().starts_with("execute at @e[tag=turtle] run setblock ~ ~ ~") {
+                    if let Command::SetBlock(SetBlock { pos: _, block, kind: _ }) = &**run {
+                        eprintln!(
+                            "Placed block at {} {} {}: {:?}",
+                            self.turtle_pos.0, 
+                            self.turtle_pos.1, 
+                            self.turtle_pos.2, 
+                            block
+                        );
+                    } else {
+                        unreachable!()
+                    }
                 } else {
                     todo!("{}", cmd)
                 }
@@ -693,6 +705,10 @@ impl Interpreter {
                 let cond = ExecuteCondition::from_str(c).unwrap();
 
                 if !self.check_cond(is_unless, &cond) {
+                    eprintln!("Currently at:");
+                    for (f, c) in self.call_stack.iter() {
+                        eprintln!("{}, {}", self.program[*f].id, c);
+                    }
                     return Err(InterpError::AssertionFailed);
                 }
             }

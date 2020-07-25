@@ -95,6 +95,26 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         "intrinsic:load_word_unaligned",
         include_str!("intrinsic/load_word_unaligned.mcfunction"),
     ),
+    (
+        "intrinsic:mul_32_to_64",
+        include_str!("intrinsic/mul_32_to_64.mcfunction"),
+    ),
+    (
+        "intrinsic:llvm_fshr_i32",
+        include_str!("intrinsic/llvm_fshr_i32.mcfunction"),
+    ),
+    (
+        "intrinsic:llvm_ctlz_i32",
+        include_str!("intrinsic/llvm_ctlz_i32.mcfunction"),
+    ),
+    (
+        "intrinsic:llvm_ctlz_i32_inner",
+        include_str!("intrinsic/llvm_ctlz_i32_inner.mcfunction"),
+    ),
+    (
+        "intrinsic:shl",
+        include_str!("intrinsic/shl.mcfunction"),
+    )
 ];
 
 lazy_static! {
@@ -155,6 +175,58 @@ mod test {
         );
 
         interp
+    }
+
+    fn test_mul_32_to_64(lhs: u32, rhs: u32) {
+        let expected = lhs as u64 * rhs as u64;
+
+        let mut interp = create_interp("intrinsic:mul_32_to_64");
+        interp.rust_scores.insert(param(0, 0), lhs as i32);
+        interp.rust_scores.insert(param(1, 0), rhs as i32);
+        println!("Running with lhs {}", lhs);
+        interp.run_to_end().unwrap();
+        
+        let actual_lo = *interp.rust_scores.get(&return_holder(0)).unwrap() as u32;
+        let actual_hi = *interp.rust_scores.get(&return_holder(1)).unwrap() as u32;
+
+        let actual = actual_lo as u64 | ((actual_hi as u64) << 32);
+
+        if expected != actual {
+            println!("Input 1:  {:>20} ({:#018X})", lhs, lhs);
+            println!("Input 2:  {:>20} ({:#018X})", rhs, rhs);
+            println!("Expected: {:>20} ({:#018X})", expected, expected);
+            println!("Actual:   {:>20} ({:#018X})", actual, actual);
+            panic!();
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn llvm_ctlz_i32() {
+        todo!()
+    }
+
+    #[test]
+    #[ignore]
+    fn llvm_fshr_i32() {
+        todo!()
+    }
+
+    #[test]
+    #[ignore]
+    fn shl() {
+        todo!()
+    }
+
+    #[test]
+    fn mul_32_to_64() {
+        test_mul_32_to_64(123, 0);
+        test_mul_32_to_64(0, 123);
+        test_mul_32_to_64(25, 42);
+        test_mul_32_to_64(42, 25);
+        test_mul_32_to_64(70000, 123567);
+        test_mul_32_to_64(555555555, 439358984);
+        test_mul_32_to_64(0xFF_00_12_56, 123455);
     }
 
     fn test_bcmp(mem_a: &[u8], mem_b: &[u8], start: usize, len: usize) {
