@@ -38,3 +38,8 @@ Any other language capable of generating LLVM bitcode can be used, as long as it
 
 ### Demo
 A video of a Langcraft-compiled interpreter can be seen [here](https://youtu.be/Cx0w5Wn9pPU).
+
+### License
+Licensed under either of
+ - MIT License
+ - Apache License, Version 2.0
