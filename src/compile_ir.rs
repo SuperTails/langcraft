@@ -15,8 +15,8 @@ use llvm_ir::constant::ICmp as ICmpConst;
 use llvm_ir::constant::Select as SelectConst;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
-    InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem, Select, Shl,
-    ShuffleVector, Store, Sub, Trunc, Xor, ZExt, URem, UDiv, InsertElement,
+    InsertElement, InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem,
+    Select, Shl, ShuffleVector, Store, Sub, Trunc, UDiv, URem, Xor, ZExt,
 };
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
@@ -168,12 +168,14 @@ pub fn make_op_lit(lhs: ScoreHolder, kind: &str, score: i32) -> Command {
             target: lhs.into(),
             target_obj: OBJECTIVE.into(),
             score,
-        }.into(),
+        }
+        .into(),
         "-=" => ScoreAdd {
             target: lhs.into(),
             target_obj: OBJECTIVE.into(),
             score: -score,
-        }.into(),
+        }
+        .into(),
         _ => {
             let rhs = ScoreHolder::new(format!("%%{}", score)).unwrap();
             make_op(lhs, kind, rhs)
@@ -189,7 +191,7 @@ pub fn make_op(lhs: ScoreHolder, op: &str, rhs: ScoreHolder) -> Command {
         "/=" => ScoreOpKind::DivAssign,
         "%=" => ScoreOpKind::ModAssign,
         // TODO: Max, min, swap operators
-        _ => panic!("{}", op)       
+        _ => panic!("{}", op),
     };
 
     ScoreOp {
@@ -524,9 +526,9 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
             let base_set = assign(stackbaseptr(), stackptr());
 
             /*let message = cir::TextBuilder::new()
-                .append_text(format!("%stackptr at start of {} is ", func.id))
-                .append_score(stackptr(), OBJECTIVE.into(), None)
-                .build();*/
+            .append_text(format!("%stackptr at start of {} is ", func.id))
+            .append_score(stackptr(), OBJECTIVE.into(), None)
+            .build();*/
 
             let save_code = /*std::iter::once(
                 Tellraw {
@@ -1196,7 +1198,11 @@ fn compile_memcpy(
         attrs
             .iter()
             .filter_map(|attr| {
-                if let Attribute::EnumAttribute { kind: 1, value: Some(value) } = attr {
+                if let Attribute::EnumAttribute {
+                    kind: 1,
+                    value: Some(value),
+                } = attr
+                {
                     Some(value.get())
                 } else {
                     None
@@ -1215,63 +1221,90 @@ fn compile_memcpy(
 
         let src1 = src1.into_iter().next().unwrap();
         let dest1 = dest1.into_iter().next().unwrap();
- 
+
         match (get_align(dest_attr), get_align(src_attr), len) {
-            (_, _, Operand::ConstantOperand(Constant::Int { bits: 32, value })) if *value > 1024 => {
+            (_, _, Operand::ConstantOperand(Constant::Int { bits: 32, value }))
+                if *value > 1024 =>
+            {
                 cmds.extend(push(ScoreHolder::new("%%fixup".to_string()).unwrap()));
                 cmds.push(assign(param(0, 0), dest1));
                 cmds.push(assign(param(1, 0), src1));
                 cmds.push(assign_lit(param(2, 0), *value as i32));
                 cmds.push(assign_lit(param(4, 0), 1));
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("intrinsic:memcpy%%fixup"),
-                }.into());
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:memcpy%%fixup"),
+                    }
+                    .into(),
+                );
 
                 return (cmds, Some(Vec::new()));
             }
-            (Some(d), Some(s), Operand::ConstantOperand(Constant::Int { bits: 32, value: len })) if d % 4 == 0 && s % 4 == 0 => {
+            (
+                Some(d),
+                Some(s),
+                Operand::ConstantOperand(Constant::Int {
+                    bits: 32,
+                    value: len,
+                }),
+            ) if d % 4 == 0 && s % 4 == 0 => {
                 let word_count = len / 4;
                 let byte_count = len % 4;
 
                 let tempsrc = get_unique_holder();
                 let tempdst = get_unique_holder();
 
-                cmds.push(Command::Comment(format!("Begin memcpy with src {} and dest {}", src1, dest1)));
+                cmds.push(Command::Comment(format!(
+                    "Begin memcpy with src {} and dest {}",
+                    src1, dest1
+                )));
                 cmds.push(assign(tempsrc.clone(), src1));
                 cmds.push(assign(tempdst.clone(), dest1));
                 cmds.push(assign_lit(param(4, 0), 0));
-                
+
                 let temp = get_unique_holder();
 
                 for _ in 0..word_count {
                     cmds.push(assign(ptr(), tempsrc.clone()));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:setptr")
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:setptr"),
+                        }
+                        .into(),
+                    );
                     cmds.push(read_ptr(temp.clone()));
                     cmds.push(make_op_lit(tempsrc.clone(), "+=", 4));
 
                     cmds.push(assign(ptr(), tempdst.clone()));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:setptr")
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:setptr"),
+                        }
+                        .into(),
+                    );
                     cmds.push(write_ptr(temp.clone()));
                     cmds.push(make_op_lit(tempdst.clone(), "+=", 4));
                 }
 
                 for _ in 0..byte_count {
                     cmds.push(assign(ptr(), tempsrc.clone()));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:load_byte")
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:load_byte"),
+                        }
+                        .into(),
+                    );
                     cmds.push(make_op_lit(tempsrc.clone(), "+=", 1));
 
                     cmds.push(assign(param(2, 0), return_holder(0)));
 
                     cmds.push(assign(ptr(), tempdst.clone()));
-                    cmds.push(McFuncCall {
-                        id: McFuncId::new("intrinsic:store_byte")
-                    }.into());
+                    cmds.push(
+                        McFuncCall {
+                            id: McFuncId::new("intrinsic:store_byte"),
+                        }
+                        .into(),
+                    );
                     cmds.push(make_op_lit(tempdst.clone(), "+=", 1));
                 }
 
@@ -1358,10 +1391,7 @@ fn compile_xor(
     let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
 
     if matches!(operand0.get_type(), Type::IntegerType { bits: 1 }) {
-        let dest = dest
-            .into_iter()
-            .next()
-            .unwrap();
+        let dest = dest.into_iter().next().unwrap();
 
         let op0 = op0.into_iter().next().unwrap();
         let op1 = op1.into_iter().next().unwrap();
@@ -1426,20 +1456,29 @@ fn compile_shl(
     }: &Shl,
     globals: &GlobalVarList,
 ) -> Vec<Command> {
-    if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) && matches!(operand1, Operand::ConstantOperand(Constant::Int { bits: 64, value: 32 })) {
+    if matches!(operand0.get_type(), Type::IntegerType { bits: 64 })
+        && matches!(
+            operand1,
+            Operand::ConstantOperand(Constant::Int {
+                bits: 64,
+                value: 32
+            })
+        )
+    {
         let (mut cmds, op0) = eval_operand(operand0, globals);
         let dest = ScoreHolder::from_local_name(dest.clone(), 8);
 
         cmds.push(assign_lit(dest[0].clone(), 0));
         cmds.push(assign(dest[1].clone(), op0[0].clone()));
-        
+
         cmds
     } else if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) {
-        let (dest_lo, dest_hi) = if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
-            (dest_lo.clone(), dest_hi.clone())
-        } else {
-            unreachable!()
-        };
+        let (dest_lo, dest_hi) =
+            if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
+                (dest_lo.clone(), dest_hi.clone())
+            } else {
+                unreachable!()
+            };
 
         let shift = if let Operand::ConstantOperand(Constant::Int { bits: 64, value }) = operand1 {
             *value
@@ -1449,56 +1488,58 @@ fn compile_shl(
 
         let (mut cmds, op0) = eval_operand(operand0, globals);
 
-        cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-            target: op0[1].clone().into(),
-            target_obj: OBJECTIVE.into(),
-            kind: ExecuteCondKind::Matches((0..=0).into())
-        }));
+        cmds.push(mark_assertion(
+            false,
+            &ExecuteCondition::Score {
+                target: op0[1].clone().into(),
+                target_obj: OBJECTIVE.into(),
+                kind: ExecuteCondKind::Matches((0..=0).into()),
+            },
+        ));
 
         let mut intra_byte = |max_bound: i32, dest_lo: ScoreHolder, dest_hi: ScoreHolder| {
             let mul = 1 << shift;
-            cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                target: op0[0].clone().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=max_bound).into())
-            }));
+            cmds.push(mark_assertion(
+                false,
+                &ExecuteCondition::Score {
+                    target: op0[0].clone().into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((0..=max_bound).into()),
+                },
+            ));
 
             cmds.push(assign(dest_lo.clone(), op0[0].clone()));
             cmds.push(assign_lit(dest_hi, 0));
             let tmp = get_unique_holder();
             cmds.push(assign_lit(tmp.clone(), mul));
-            cmds.push(ScoreOp {
-                target: dest_lo.into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ScoreOpKind::MulAssign,
-                source: tmp.into(),
-                source_obj: OBJECTIVE.into(),
-            }.into());
+            cmds.push(
+                ScoreOp {
+                    target: dest_lo.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ScoreOpKind::MulAssign,
+                    source: tmp.into(),
+                    source_obj: OBJECTIVE.into(),
+                }
+                .into(),
+            );
         };
 
         match shift {
-            8 => {
-                intra_byte(0x00_FF_FF_FF, dest_lo, dest_hi)
-            }
-            16 => {
-                intra_byte(0x00_00_FF_FF, dest_lo, dest_hi)
-            }
-            24 => {
-                intra_byte(0x00_00_00_FF, dest_lo, dest_hi)
-            }
-            32 => {
-                todo!()
-            }
-            _ => todo!("{:?}", operand1)
+            8 => intra_byte(0x00_FF_FF_FF, dest_lo, dest_hi),
+            16 => intra_byte(0x00_00_FF_FF, dest_lo, dest_hi),
+            24 => intra_byte(0x00_00_00_FF, dest_lo, dest_hi),
+            32 => todo!(),
+            _ => todo!("{:?}", operand1),
         };
 
         cmds
     } else if matches!(operand0.get_type(), Type::IntegerType { bits: 48 }) {
-        let (dest_lo, dest_hi) = if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
-            (dest_lo.clone(), dest_hi.clone())
-        } else {
-            unreachable!()
-        };
+        let (dest_lo, dest_hi) =
+            if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
+                (dest_lo.clone(), dest_hi.clone())
+            } else {
+                unreachable!()
+            };
 
         let shift = if let Operand::ConstantOperand(Constant::Int { bits: 48, value }) = operand1 {
             *value
@@ -1508,54 +1549,60 @@ fn compile_shl(
 
         let (mut cmds, op0) = eval_operand(operand0, globals);
 
-        cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-            target: op0[1].clone().into(),
-            target_obj: OBJECTIVE.into(),
-            kind: ExecuteCondKind::Matches((0..=0).into())
-        }));
+        cmds.push(mark_assertion(
+            false,
+            &ExecuteCondition::Score {
+                target: op0[1].clone().into(),
+                target_obj: OBJECTIVE.into(),
+                kind: ExecuteCondKind::Matches((0..=0).into()),
+            },
+        ));
 
         let mut intra_byte = |max_bound: i32, dest_lo: ScoreHolder, dest_hi: ScoreHolder| {
             let mul = 1 << shift;
-            cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                target: op0[0].clone().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=max_bound).into())
-            }));
+            cmds.push(mark_assertion(
+                false,
+                &ExecuteCondition::Score {
+                    target: op0[0].clone().into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((0..=max_bound).into()),
+                },
+            ));
 
             cmds.push(assign(dest_lo.clone(), op0[0].clone()));
             cmds.push(assign_lit(dest_hi, 0));
             let tmp = get_unique_holder();
             cmds.push(assign_lit(tmp.clone(), mul));
-            cmds.push(ScoreOp {
-                target: dest_lo.into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ScoreOpKind::MulAssign,
-                source: tmp.into(),
-                source_obj: OBJECTIVE.into(),
-            }.into());
+            cmds.push(
+                ScoreOp {
+                    target: dest_lo.into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ScoreOpKind::MulAssign,
+                    source: tmp.into(),
+                    source_obj: OBJECTIVE.into(),
+                }
+                .into(),
+            );
         };
 
         match shift {
-            8 => {
-                intra_byte(0x00_FF_FF_FF, dest_lo, dest_hi)
-            }
-            16 => {
-                intra_byte(0x00_00_FF_FF, dest_lo, dest_hi)
-            }
-            24 => {
-                intra_byte(0x00_00_00_FF, dest_lo, dest_hi)
-            }
+            8 => intra_byte(0x00_FF_FF_FF, dest_lo, dest_hi),
+            16 => intra_byte(0x00_00_FF_FF, dest_lo, dest_hi),
+            24 => intra_byte(0x00_00_00_FF, dest_lo, dest_hi),
             32 => {
-                cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                    target: op0[0].clone().into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((0..=0xFF).into())
-                }));
+                cmds.push(mark_assertion(
+                    false,
+                    &ExecuteCondition::Score {
+                        target: op0[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((0..=0xFF).into()),
+                    },
+                ));
 
                 cmds.push(assign_lit(dest_lo, 0));
                 cmds.push(assign(dest_hi, op0[0].clone()));
             }
-            _ => todo!("{:?}", operand1)
+            _ => todo!("{:?}", operand1),
         };
 
         cmds
@@ -1564,8 +1611,8 @@ fn compile_shl(
             Type::IntegerType { bits: 32 } => 32,
             Type::IntegerType { bits: 24 } => 24,
             Type::IntegerType { bits: 16 } => 16,
-            Type::IntegerType { bits:  8 } => 8,
-            _ => todo!("{:?}, shift: {:?}", operand0, operand1)
+            Type::IntegerType { bits: 8 } => 8,
+            _ => todo!("{:?}, shift: {:?}", operand0, operand1),
         };
 
         let (mut cmds, op0) = eval_operand(operand0, globals);
@@ -1587,7 +1634,7 @@ fn compile_shl(
                         Type::IntegerType { bits: 16 } => 65535,
                         Type::IntegerType { bits: 24 } => 16777216,
                         Type::IntegerType { bits: 32 } => unreachable!(),
-                        ty => todo!("{:?}", ty)
+                        ty => todo!("{:?}", ty),
                     };
 
                     cmds.push(mark_assertion(
@@ -1595,8 +1642,8 @@ fn compile_shl(
                         &ExecuteCondition::Score {
                             target: dest.into(),
                             target_obj: OBJECTIVE.into(),
-                            kind: ExecuteCondKind::Matches((..=max_val).into())
-                        }
+                            kind: ExecuteCondKind::Matches((..=max_val).into()),
+                        },
                     ))
                 }
             }
@@ -1606,9 +1653,12 @@ fn compile_shl(
                 cmds.extend(tmp);
                 cmds.push(assign(param(0, 0), op0));
                 cmds.push(assign(param(1, 0), op1));
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("intrinsic:shl"),
-                }.into());
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:shl"),
+                    }
+                    .into(),
+                );
                 cmds.push(assign(dest.clone(), param(0, 0)));
                 if bits < 32 {
                     cmds.push(make_op_lit(dest, "%=", 1 << bits));
@@ -1631,13 +1681,14 @@ fn compile_lshr(
 ) -> Vec<Command> {
     let (mut cmds, op0) = eval_operand(operand0, globals);
 
-    if let Operand::ConstantOperand(Constant::Int {
-        bits: 64,
-        value,
-    }) = operand1
-    {
+    if let Operand::ConstantOperand(Constant::Int { bits: 64, value }) = operand1 {
         if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) {
-            cmds.extend(lshr_64_bit_const(op0[0].clone(), op0[1].clone(), *value as i32, dest.clone()));
+            cmds.extend(lshr_64_bit_const(
+                op0[0].clone(),
+                op0[1].clone(),
+                *value as i32,
+                dest.clone(),
+            ));
 
             cmds
         } else {
@@ -1803,7 +1854,9 @@ fn compile_call(
                 let (mut cmds, arg) = eval_operand(&arguments[2].0, globals);
                 let arg = arg.into_iter().next().unwrap();
 
-                let interpolated = text.replace("$0", &arg.to_string()).replace("$obj", OBJECTIVE);
+                let interpolated = text
+                    .replace("$0", &arg.to_string())
+                    .replace("$obj", OBJECTIVE);
 
                 let cmd = interpolated.parse().unwrap();
 
@@ -2025,7 +2078,8 @@ fn compile_call(
                 valid_chars.push(b'<');
 
                 for c in valid_chars {
-                    let is_white = c == b'H' || c == b'Q' || c == b'S' || c == b')' || c == b'(' || c == b'=';
+                    let is_white =
+                        c == b'H' || c == b'Q' || c == b'S' || c == b')' || c == b'(' || c == b'=';
 
                     let mut block = if is_white {
                         "minecraft:white_wall_banner"
@@ -2106,9 +2160,12 @@ fn compile_call(
                         let op = op.into_iter().next().unwrap();
                         cmds.extend(tmp);
                         cmds.push(assign(param(0, 0), op));
-                        cmds.push(McFuncCall {
-                            id: McFuncId::new("intrinsic:llvm_ctlz_i32"),
-                        }.into());
+                        cmds.push(
+                            McFuncCall {
+                                id: McFuncId::new("intrinsic:llvm_ctlz_i32"),
+                            }
+                            .into(),
+                        );
                         cmds.push(assign(dest, return_holder(0)));
                     }
                 }
@@ -2127,21 +2184,28 @@ fn compile_call(
 
                 cmds.push(make_op_lit(param(1, 0), "*=", -1));
 
-                cmds.extend(add_32_with_carry(param(0, 0), param(1, 0), dest_value, assign_lit(dest_flag, 1)));
+                cmds.extend(add_32_with_carry(
+                    param(0, 0),
+                    param(1, 0),
+                    dest_value,
+                    assign_lit(dest_flag, 1),
+                ));
 
                 (cmds, None)
             }
             "llvm.fshr.i32" => {
                 let dest = dest.unwrap().into_iter().next().unwrap();
                 let mut cmds = setup_arguments(arguments, globals);
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("intrinsic:llvm_fshr_i32")
-                }.into());
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:llvm_fshr_i32"),
+                    }
+                    .into(),
+                );
                 cmds.push(assign(dest, return_holder(0)));
                 (cmds, None)
             }
-            "llvm.memset.p0i8.i32" |
-            "llvm.memset.p0i8.i64" => {
+            "llvm.memset.p0i8.i32" | "llvm.memset.p0i8.i64" => {
                 assert_eq!(dest, None);
                 (compile_memset(arguments, globals), None)
             }
@@ -2172,7 +2236,6 @@ fn compile_call(
                 } else {
                     unreachable!()
                 }
-
             }
             "llvm.uadd.with.overflow.i8" => {
                 let dest = dest.unwrap().into_iter().next().unwrap();
@@ -2280,11 +2343,14 @@ fn compile_call(
             before_cmds.extend(setup_arguments(arguments, globals));
 
             // We don't actually want to use this, so we basically just `assert!(false)`
-            before_cmds.push(mark_assertion(false, &ExecuteCondition::Score {
-                target: ScoreHolder::new("%%2".into()).unwrap().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=0).into()),
-            }));
+            before_cmds.push(mark_assertion(
+                false,
+                &ExecuteCondition::Score {
+                    target: ScoreHolder::new("%%2".into()).unwrap().into(),
+                    target_obj: OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((0..=0).into()),
+                },
+            ));
 
             let temp_z = get_unique_holder();
             before_cmds.push(assign(temp_z.clone(), func_ptr.clone()));
@@ -2392,7 +2458,11 @@ fn compile_call(
     }
 }
 
-pub fn compile_terminator(parent: &Function, term: &Terminator, globals: &GlobalVarList) -> Vec<Command> {
+pub fn compile_terminator(
+    parent: &Function,
+    term: &Terminator,
+    globals: &GlobalVarList,
+) -> Vec<Command> {
     let mut cmds = Vec::new();
 
     match &term {
@@ -2532,9 +2602,7 @@ pub fn compile_terminator(parent: &Function, term: &Terminator, globals: &Global
                 branch_cmd.with_if(ExecuteCondition::Score {
                     target: Target::Uuid(operand.clone()),
                     target_obj: OBJECTIVE.to_string(),
-                    kind: ExecuteCondKind::Matches(cir::McRange::Between(
-                        dest_value..=dest_value,
-                    )),
+                    kind: ExecuteCondKind::Matches(cir::McRange::Between(dest_value..=dest_value)),
                 });
 
                 let mut add_cmd = branch_cmd.clone();
@@ -2559,7 +2627,7 @@ pub fn compile_terminator(parent: &Function, term: &Terminator, globals: &Global
             default_cmd.with_run(McFuncCall { id: default_dest });
 
             cmds.push(default_cmd.into());
-            
+
             cmds
         }
         Terminator::Unreachable(Unreachable { .. }) => {
@@ -2674,7 +2742,8 @@ pub fn compile_function(
                 idx as i32,
             ));
 
-            this.cmds.extend(compile_terminator(&func, &block.term, globals));
+            this.cmds
+                .extend(compile_terminator(&func, &block.term, globals));
 
             result.push(this);
 
@@ -2709,7 +2778,12 @@ pub fn compile_function(
     (funcs, clobbers)
 }
 
-pub fn lshr_64_bit_const(op0_lo: ScoreHolder, op0_hi: ScoreHolder, amount: i32, dest: Name) -> Vec<Command> {
+pub fn lshr_64_bit_const(
+    op0_lo: ScoreHolder,
+    op0_hi: ScoreHolder,
+    amount: i32,
+    dest: Name,
+) -> Vec<Command> {
     let mut dest = ScoreHolder::from_local_name(dest, 8).into_iter();
     let dest_lo = dest.next().unwrap();
     let dest_hi = dest.next().unwrap();
@@ -2722,9 +2796,12 @@ pub fn lshr_64_bit_const(op0_lo: ScoreHolder, op0_hi: ScoreHolder, amount: i32, 
         if amount > 32 {
             cmds.push(assign(param(0, 0), op0_hi));
             cmds.push(assign_lit(param(1, 0), amount - 32));
-            cmds.push(McFuncCall {
-                id: McFuncId::new("intrinsic:lshr"),
-            }.into());
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:lshr"),
+                }
+                .into(),
+            );
             cmds.push(assign(dest_lo, param(0, 0)));
         } else {
             cmds.push(assign(dest_lo, op0_lo));
@@ -2742,17 +2819,23 @@ pub fn lshr_64_bit_const(op0_lo: ScoreHolder, op0_hi: ScoreHolder, amount: i32, 
         // hi' = hi lshr amount
         cmds.push(assign(param(0, 0), op0_hi));
         cmds.push(assign_lit(param(1, 0), amount));
-        cmds.push(McFuncCall {
-            id: McFuncId::new("intrinsic:lshr")
-        }.into());
+        cmds.push(
+            McFuncCall {
+                id: McFuncId::new("intrinsic:lshr"),
+            }
+            .into(),
+        );
         cmds.push(assign(dest_hi, param(0, 0)));
 
         // lo' = (lo lshr amount) + temp
         cmds.push(assign(param(0, 0), op0_lo));
         cmds.push(assign_lit(param(1, 0), amount));
-        cmds.push(McFuncCall {
-            id: McFuncId::new("intrinsic:lshr")
-        }.into());
+        cmds.push(
+            McFuncCall {
+                id: McFuncId::new("intrinsic:lshr"),
+            }
+            .into(),
+        );
         cmds.push(assign(dest_lo.clone(), param(0, 0)));
         cmds.push(make_op(dest_lo, "+=", temp));
 
@@ -2760,9 +2843,15 @@ pub fn lshr_64_bit_const(op0_lo: ScoreHolder, op0_hi: ScoreHolder, amount: i32, 
     }
 }
 
-pub fn mul_64_bit(op0_lo: ScoreHolder, op0_hi: ScoreHolder, op1_lo: ScoreHolder, op1_hi: ScoreHolder, dest: Name) -> Vec<Command> {
+pub fn mul_64_bit(
+    op0_lo: ScoreHolder,
+    op0_hi: ScoreHolder,
+    op1_lo: ScoreHolder,
+    op1_hi: ScoreHolder,
+    dest: Name,
+) -> Vec<Command> {
     // x_l*y_l + (x_h*y_l + x_l*y_h)*2^32
-    
+
     let mut dest = ScoreHolder::from_local_name(dest, 8).into_iter();
     let dest_lo = dest.next().unwrap();
     let dest_hi = dest.next().unwrap();
@@ -2771,9 +2860,12 @@ pub fn mul_64_bit(op0_lo: ScoreHolder, op0_hi: ScoreHolder, op1_lo: ScoreHolder,
 
     cmds.push(assign(param(0, 0), op0_lo));
     cmds.push(assign(param(1, 0), op1_lo));
-    cmds.push(McFuncCall {
-        id: McFuncId::new("intrinsic:mul_32_to_64"),
-    }.into());
+    cmds.push(
+        McFuncCall {
+            id: McFuncId::new("intrinsic:mul_32_to_64"),
+        }
+        .into(),
+    );
     cmds.push(assign(dest_lo, return_holder(0)));
     cmds.push(assign(dest_hi.clone(), return_holder(1)));
 
@@ -2793,7 +2885,12 @@ pub fn mul_64_bit(op0_lo: ScoreHolder, op0_hi: ScoreHolder, op1_lo: ScoreHolder,
 // if a < 0 && b >= 0 && added >= 0 { result = true }
 // if a >= 0 && b < 0 && added >= 0 { result = true }
 
-pub fn add_32_with_carry(op0: ScoreHolder, op1: ScoreHolder, dest: ScoreHolder, on_carry: Command) -> Vec<Command> {
+pub fn add_32_with_carry(
+    op0: ScoreHolder,
+    op1: ScoreHolder,
+    dest: ScoreHolder,
+    on_carry: Command,
+) -> Vec<Command> {
     let mut cmds = Vec::new();
 
     cmds.push(assign(dest.clone(), op0.clone()));
@@ -2854,7 +2951,13 @@ pub fn add_32_with_carry(op0: ScoreHolder, op1: ScoreHolder, dest: ScoreHolder, 
     cmds
 }
 
-pub fn add_64_bit(op0_lo: ScoreHolder, op0_hi: ScoreHolder, op1_lo: ScoreHolder, op1_hi: ScoreHolder, dest: Name) -> Vec<Command> {
+pub fn add_64_bit(
+    op0_lo: ScoreHolder,
+    op0_hi: ScoreHolder,
+    op1_lo: ScoreHolder,
+    op1_hi: ScoreHolder,
+    dest: Name,
+) -> Vec<Command> {
     let mut dest_iter = ScoreHolder::from_local_name(dest, 8).into_iter();
     let dest_lo = dest_iter.next().unwrap();
     let dest_hi = dest_iter.next().unwrap();
@@ -2864,7 +2967,12 @@ pub fn add_64_bit(op0_lo: ScoreHolder, op0_hi: ScoreHolder, op1_lo: ScoreHolder,
     cmds.push(assign(dest_hi.clone(), op0_hi));
     cmds.push(make_op(dest_hi.clone(), "+=", op1_hi));
 
-    cmds.extend(add_32_with_carry(op0_lo, op1_lo, dest_lo, make_op_lit(dest_hi, "+=", 1)));
+    cmds.extend(add_32_with_carry(
+        op0_lo,
+        op1_lo,
+        dest_lo,
+        make_op_lit(dest_hi, "+=", 1),
+    ));
 
     cmds
 }
@@ -2894,12 +3002,13 @@ pub fn compile_arithmetic(
             ScoreOpKind::MulAssign => {
                 cmds.extend(mul_64_bit(op0_lo, op0_hi, op1_lo, op1_hi, dest.clone()));
             }
-            _ => todo!("{:?}", kind)
+            _ => todo!("{:?}", kind),
         }
 
         cmds
     } else {
-        let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
+        let dest =
+            ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
 
         if let Type::VectorType {
             element_type,
@@ -3297,9 +3406,12 @@ fn zero_low_bytes(holder: ScoreHolder, bytes: u32) -> Vec<Command> {
     // Zero out the lower bits
     cmds.push(assign(param(0, 0), holder.clone()));
     cmds.push(assign_lit(param(1, 0), bytes as i32 * 8));
-    cmds.push(McFuncCall {
-        id: McFuncId::new("intrinsic:lshr"),
-    }.into());
+    cmds.push(
+        McFuncCall {
+            id: McFuncId::new("intrinsic:lshr"),
+        }
+        .into(),
+    );
     cmds.push(assign(holder.clone(), param(0, 0)));
 
     for _ in 0..bytes {
@@ -3463,9 +3575,14 @@ fn compile_getelementptr(
     start_cmds
 }
 
-pub fn compile_normal_icmp(target: ScoreHolder, source: ScoreHolder, predicate: &IntPredicate, dest: ScoreHolder) -> Vec<Command> {
+pub fn compile_normal_icmp(
+    target: ScoreHolder,
+    source: ScoreHolder,
+    predicate: &IntPredicate,
+    dest: ScoreHolder,
+) -> Vec<Command> {
     let mut cmds = Vec::new();
-    
+
     /* for IntPredicate::Eq
     cmds.push(assign_lit(dest.clone(), 0));
 
@@ -3486,9 +3603,8 @@ pub fn compile_normal_icmp(target: ScoreHolder, source: ScoreHolder, predicate: 
     cmds
     */
 
-    let signed_cmp = |rel, normal| {
-        compile_signed_cmp(target.clone(), source.clone(), dest.clone(), rel, normal)
-    };
+    let signed_cmp =
+        |rel, normal| compile_signed_cmp(target.clone(), source.clone(), dest.clone(), rel, normal);
 
     match predicate {
         IntPredicate::SGE => cmds.push(signed_cmp(cir::Relation::GreaterThanEq, true)),
@@ -3895,22 +4011,31 @@ pub fn compile_instr(
 
             // FIXME: THIS DOES AN SREM
             for s in source0.iter().cloned() {
-                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                    target: s.into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((..=-1).into())
-                }));
+                cmds.push(mark_assertion(
+                    true,
+                    &ExecuteCondition::Score {
+                        target: s.into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((..=-1).into()),
+                    },
+                ));
             }
 
             for s in source1.iter().cloned() {
-                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                    target: s.into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((..=-1).into())
-                }));
+                cmds.push(mark_assertion(
+                    true,
+                    &ExecuteCondition::Score {
+                        target: s.into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((..=-1).into()),
+                    },
+                ));
             }
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
+            let dest = ScoreHolder::from_local_name(
+                dest.clone(),
+                type_layout(&operand0.get_type()).size(),
+            );
 
             if let Type::VectorType {
                 element_type,
@@ -3960,22 +4085,31 @@ pub fn compile_instr(
 
             // FIXME: THIS DOES AN SREM
             for s in source0.iter().cloned() {
-                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                    target: s.into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((..=-1).into())
-                }));
+                cmds.push(mark_assertion(
+                    true,
+                    &ExecuteCondition::Score {
+                        target: s.into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((..=-1).into()),
+                    },
+                ));
             }
 
             for s in source1.iter().cloned() {
-                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                    target: s.into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((..=-1).into())
-                }));
+                cmds.push(mark_assertion(
+                    true,
+                    &ExecuteCondition::Score {
+                        target: s.into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((..=-1).into()),
+                    },
+                ));
             }
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
+            let dest = ScoreHolder::from_local_name(
+                dest.clone(),
+                type_layout(&operand0.get_type()).size(),
+            );
 
             if let Type::VectorType {
                 element_type,
@@ -4012,17 +4146,16 @@ pub fn compile_instr(
                 );
             }
             cmds
-
         }
         Instruction::ICmp(ICmp {
-            predicate: pred@IntPredicate::EQ,
+            predicate: pred @ IntPredicate::EQ,
             operand0,
             operand1,
             dest,
             ..
-        }) |
-        Instruction::ICmp(ICmp {
-            predicate: pred@IntPredicate::NE,
+        })
+        | Instruction::ICmp(ICmp {
+            predicate: pred @ IntPredicate::NE,
             operand0,
             operand1,
             dest,
@@ -4080,12 +4213,18 @@ pub fn compile_instr(
             cmds.extend(tmp_cmds);
 
             match operand0.get_type() {
-                Type::VectorType { element_type, num_elements } if matches!(*element_type, Type::IntegerType { bits: 32 }) => {
+                Type::VectorType {
+                    element_type,
+                    num_elements,
+                } if matches!(*element_type, Type::IntegerType { bits: 32 }) => {
                     if num_elements > 4 {
                         todo!()
                     }
 
-                    let dest = ScoreHolder::from_local_name(dest.clone(), num_elements).into_iter().next().unwrap();
+                    let dest = ScoreHolder::from_local_name(dest.clone(), num_elements)
+                        .into_iter()
+                        .next()
+                        .unwrap();
 
                     let dest_byte = get_unique_holder();
                     for (idx, (t, s)) in target.into_iter().zip(source.into_iter()).enumerate() {
@@ -4096,8 +4235,14 @@ pub fn compile_instr(
 
                     cmds
                 }
-                Type::VectorType { element_type, num_elements: 4 } if matches!(*element_type, Type::IntegerType { bits: 8 }) => {
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 4).into_iter().next().unwrap();
+                Type::VectorType {
+                    element_type,
+                    num_elements: 4,
+                } if matches!(*element_type, Type::IntegerType { bits: 8 }) => {
+                    let dest = ScoreHolder::from_local_name(dest.clone(), 4)
+                        .into_iter()
+                        .next()
+                        .unwrap();
                     let target = target.into_iter().next().unwrap();
                     let source = source.into_iter().next().unwrap();
 
@@ -4108,23 +4253,39 @@ pub fn compile_instr(
                         // FIXME: These should be ASRs, not just a divide!!
 
                         cmds.push(assign(target_byte.clone(), target.clone()));
-                        cmds.push(make_op_lit(target_byte.clone(), "*=", 1 << (8 * (3 - byte_idx))));
+                        cmds.push(make_op_lit(
+                            target_byte.clone(),
+                            "*=",
+                            1 << (8 * (3 - byte_idx)),
+                        ));
                         cmds.push(make_op_lit(target_byte.clone(), "/=", 1 << (8 * byte_idx)));
 
                         cmds.push(assign(source_byte.clone(), source.clone()));
-                        cmds.push(make_op_lit(source_byte.clone(), "*=", 1 << (8 * (3 - byte_idx))));
+                        cmds.push(make_op_lit(
+                            source_byte.clone(),
+                            "*=",
+                            1 << (8 * (3 - byte_idx)),
+                        ));
                         cmds.push(make_op_lit(source_byte.clone(), "/=", 1 << (8 * byte_idx)));
 
-                        cmds.extend(compile_normal_icmp(target_byte.clone(), source_byte.clone(), predicate, dest_byte.clone()));
+                        cmds.extend(compile_normal_icmp(
+                            target_byte.clone(),
+                            source_byte.clone(),
+                            predicate,
+                            dest_byte.clone(),
+                        ));
                         cmds.push(make_op_lit(dest_byte.clone(), "*=", 1 << (8 * byte_idx)));
                         cmds.push(make_op(dest.clone(), "+=", dest_byte.clone()));
                     }
 
                     cmds
                 }
-                ty@Type::VectorType { .. } => todo!("{:?}", ty),
+                ty @ Type::VectorType { .. } => todo!("{:?}", ty),
                 _ => {
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 1).into_iter().next().unwrap();
+                    let dest = ScoreHolder::from_local_name(dest.clone(), 1)
+                        .into_iter()
+                        .next()
+                        .unwrap();
 
                     if target.len() != 1 || source.len() != 1 {
                         todo!()
@@ -4138,7 +4299,7 @@ pub fn compile_instr(
                     cmds
                 }
             }
-       }
+        }
         Instruction::Phi(Phi {
             incoming_values,
             dest,
@@ -4397,11 +4558,14 @@ pub fn compile_instr(
             if type_layout(&element.get_type()).size() == 4 && offset % 4 == 0 {
                 cmds.push(assign(dest[insert_idx].clone(), elem));
             } else if type_layout(&element.get_type()).size() == 1 {
-                cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                    target: dest[insert_idx].clone().into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((0..=255).into()),
-                }));
+                cmds.push(mark_assertion(
+                    true,
+                    &ExecuteCondition::Score {
+                        target: dest[insert_idx].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((0..=255).into()),
+                    },
+                ));
 
                 if index == 0 {
                     cmds.extend(zero_low_bytes(dest[insert_idx].clone(), 1));
@@ -4440,7 +4604,7 @@ pub fn compile_instr(
                     let cond = ExecuteCondition::Score {
                         target: op.into(),
                         target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((1..=1).into())
+                        kind: ExecuteCondKind::Matches((1..=1).into()),
                     };
 
                     let mut on_one = Execute::new();
@@ -4455,14 +4619,14 @@ pub fn compile_instr(
 
                     cmds
                 } else {
-                    let (range, to_add) = if matches!(operand.get_type(), Type::IntegerType { bits: 8 })
-                    {
-                        (128..=255, -256)
-                    } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
-                        (32768..=65535, -65536)
-                    } else {
-                        todo!("{:?}", operand.get_type());
-                    };
+                    let (range, to_add) =
+                        if matches!(operand.get_type(), Type::IntegerType { bits: 8 }) {
+                            (128..=255, -256)
+                        } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
+                            (32768..=65535, -65536)
+                        } else {
+                            todo!("{:?}", operand.get_type());
+                        };
 
                     cmds.push(assign(dest.clone(), op));
                     let mut exec = Execute::new();
@@ -4599,11 +4763,12 @@ pub fn compile_instr(
 
                     cmds
                 }
-                Type::IntegerType { bits: 64 } |
-                Type::IntegerType { bits: 48 } => {
+                Type::IntegerType { bits: 64 } | Type::IntegerType { bits: 48 } => {
                     let dest = ScoreHolder::from_local_name(dest.clone(), 6);
 
-                    for (dest_word, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
+                    for (dest_word, (op0, op1)) in
+                        dest.into_iter().zip(op0.into_iter().zip(op1.into_iter()))
+                    {
                         cmds.push(assign(param(0, 0), op0));
                         cmds.push(assign(param(1, 0), op1));
 
@@ -4640,7 +4805,9 @@ pub fn compile_instr(
 
             match operand0.get_type() {
                 _ if layout.size() % 4 == 0 => {
-                    for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
+                    for (dest, (op0, op1)) in
+                        dest.into_iter().zip(op0.into_iter().zip(op1.into_iter()))
+                    {
                         cmds.push(assign(param(0, 0), op0));
                         cmds.push(assign(param(1, 0), op1));
                         cmds.push(
@@ -4655,8 +4822,7 @@ pub fn compile_instr(
                     cmds
                 }
                 // TODO: This is exactly the same as the above
-                Type::IntegerType { bits: 8 }
-                | Type::IntegerType { bits: 16 } => {
+                Type::IntegerType { bits: 8 } | Type::IntegerType { bits: 16 } => {
                     cmds.push(assign(param(0, 0), op0[0].clone()));
                     cmds.push(assign(param(1, 0), op1[0].clone()));
 
@@ -4771,13 +4937,12 @@ pub fn compile_instr(
             };
 
             let mask_vals = match mask {
-                Constant::AggregateZero(Type::VectorType { element_type: _, num_elements }) => {
-                    vec![Constant::Int { bits: 32, value: 0 }; *num_elements]
-                }
-                Constant::Vector(v) => {
-                    v.clone()
-                }
-                _ => unreachable!("mask: {:?}", mask)
+                Constant::AggregateZero(Type::VectorType {
+                    element_type: _,
+                    num_elements,
+                }) => vec![Constant::Int { bits: 32, value: 0 }; *num_elements],
+                Constant::Vector(v) => v.clone(),
+                _ => unreachable!("mask: {:?}", mask),
             };
 
             let dest_type = Type::VectorType {
@@ -4821,9 +4986,7 @@ pub fn compile_instr(
                     let dest_byte = get_unique_holder();
                     for (dest_byte_idx, mask_idx) in mask_vals.into_iter().enumerate() {
                         match mask_idx {
-                            Constant::Undef(_) => {
-
-                            }
+                            Constant::Undef(_) => {}
                             Constant::Int { bits: 32, value } => {
                                 let value = value as usize;
 
@@ -4841,14 +5004,18 @@ pub fn compile_instr(
                                 cmds.push(assign(dest_byte.clone(), source.clone()));
                                 cmds.push(make_op_lit(dest_byte.clone(), "/=", byte_idx as i32));
                                 cmds.push(make_op_lit(dest_byte.clone(), "%=", 256));
-                                cmds.push(make_op_lit(dest_byte.clone(), "*=", 1 << (8 * dest_byte_idx)));
+                                cmds.push(make_op_lit(
+                                    dest_byte.clone(),
+                                    "*=",
+                                    1 << (8 * dest_byte_idx),
+                                ));
                                 cmds.push(make_op(dest.clone(), "+=", dest_byte.clone()));
                             }
                             _ => unreachable!(),
                         }
                     }
                 }
-                _ => todo!("{:?}", element_type)
+                _ => todo!("{:?}", element_type),
             }
 
             cmds
@@ -4865,7 +5032,8 @@ pub fn compile_instr(
                 unreachable!()
             };
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&element_type).size());
+            let dest =
+                ScoreHolder::from_local_name(dest.clone(), type_layout(&element_type).size());
 
             let (mut cmds, vec) = eval_operand(vector, globals);
 
@@ -4884,7 +5052,7 @@ pub fn compile_instr(
                             cmds.push(assign(dest.clone(), vec[c / 4].clone()));
                             cmds.push(make_op_lit(dest, "/=", 1 << (8 * (c % 4))));
                         }
-                        ty => todo!("{:?}", ty)
+                        ty => todo!("{:?}", ty),
                     }
                 }
                 MaybeConst::NonConst(_, _) => todo!("{:?}", index),
@@ -4909,7 +5077,8 @@ pub fn compile_instr(
                 todo!("{:?}", vector)
             }
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&vector.get_type()).size());
+            let dest =
+                ScoreHolder::from_local_name(dest.clone(), type_layout(&vector.get_type()).size());
 
             let (mut cmds, vec) = eval_operand(vector, globals);
 
@@ -4921,7 +5090,9 @@ pub fn compile_instr(
 
             match eval_maybe_const(index, globals) {
                 MaybeConst::Const(c) => {
-                    for (word_idx, (src_word, dest_word)) in vec.into_iter().zip(dest.into_iter()).enumerate() {
+                    for (word_idx, (src_word, dest_word)) in
+                        vec.into_iter().zip(dest.into_iter()).enumerate()
+                    {
                         if word_idx == c as usize {
                             cmds.push(assign(dest_word, elem.clone()))
                         } else {
@@ -4933,7 +5104,6 @@ pub fn compile_instr(
             }
 
             cmds
-            
         }
         _ => todo!("instruction {:?}", instr),
     };
@@ -4991,8 +5161,7 @@ pub fn eval_constant(
         // FIXME: This should be sign extended???
         Constant::Int { bits: 24, value } => MaybeConst::Const(*value as i32),
         Constant::Int { bits: 32, value } => MaybeConst::Const(*value as i32),
-        Constant::Int { bits: 48, value } |
-        Constant::Int { bits: 64, value } => {
+        Constant::Int { bits: 48, value } | Constant::Int { bits: 64, value } => {
             // TODO: I mean it's *const* but not convenient...
             // See also: <i32 x 2>
             let num = get_unique_num();
@@ -5051,38 +5220,44 @@ pub fn eval_constant(
 
             let as_8 = elems
                 .iter()
-                .map(|e|
+                .map(|e| {
                     if let Constant::Int { bits: 8, value } = e {
                         Some(*value as u8)
                     } else {
                         None
                     }
-                )
+                })
                 .collect::<Option<Vec<u8>>>();
 
             let as_32 = elems
                 .iter()
-                .map(|e|
+                .map(|e| {
                     if let Constant::Int { bits: 32, value } = e {
                         Some(*value as i32)
                     } else {
                         None
                     }
-                )
+                })
                 .collect::<Option<Vec<i32>>>();
 
             let as_64 = elems
                 .iter()
-                .map(|e|
+                .map(|e| {
                     if let Constant::Int { bits: 64, value } = e {
                         Some(*value)
                     } else {
                         None
                     }
-                )
+                })
                 .collect::<Option<Vec<u64>>>();
 
-            let as_64 = as_64.map(|vec| vec.into_iter().flat_map(|v| std::iter::once(v as i32).chain(std::iter::once((v >> 32) as i32))).collect::<Vec<i32>>());
+            let as_64 = as_64.map(|vec| {
+                vec.into_iter()
+                    .flat_map(|v| {
+                        std::iter::once(v as i32).chain(std::iter::once((v >> 32) as i32))
+                    })
+                    .collect::<Vec<i32>>()
+            });
 
             if let Some(as_8) = as_8 {
                 if let [val0, val1, val2, val3] = as_8[..] {
@@ -5095,10 +5270,12 @@ pub fn eval_constant(
             } else if let Some(as_32) = as_32 {
                 let num = get_unique_num();
 
-                let (cmds, holders) = as_32.into_iter()
+                let (cmds, holders) = as_32
+                    .into_iter()
                     .enumerate()
                     .map(|(word_idx, word)| {
-                        let holder = ScoreHolder::new(format!("%temp{}%{}", num, word_idx)).unwrap();
+                        let holder =
+                            ScoreHolder::new(format!("%temp{}%{}", num, word_idx)).unwrap();
                         let cmd = assign_lit(holder.clone(), word);
                         (cmd, holder)
                     })
@@ -5108,10 +5285,12 @@ pub fn eval_constant(
             } else if let Some(as_64) = as_64 {
                 let num = get_unique_num();
 
-                let (cmds, holders) = as_64.into_iter()
+                let (cmds, holders) = as_64
+                    .into_iter()
                     .enumerate()
                     .map(|(word_idx, word)| {
-                        let holder = ScoreHolder::new(format!("%temp{}%{}", num, word_idx)).unwrap();
+                        let holder =
+                            ScoreHolder::new(format!("%temp{}%{}", num, word_idx)).unwrap();
                         let cmd = assign_lit(holder.clone(), word);
                         (cmd, holder)
                     })
@@ -5245,7 +5424,7 @@ fn get_unique_holder() -> ScoreHolder {
 #[cfg(test)]
 mod test {
     use super::*;
-    
+
     #[test]
     #[ignore]
     fn test_u64_shift_const() {

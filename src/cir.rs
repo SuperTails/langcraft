@@ -1145,15 +1145,10 @@ impl CommandParser<'_> {
             Some("add") => {
                 let obj = self.next_word().unwrap().to_owned();
                 let criteria = self.next_word().unwrap().to_owned();
-                ObjAdd { 
-                    obj,
-                    criteria,
-                }.into()
+                ObjAdd { obj, criteria }.into()
             }
-            Some("remove") => {
-                ObjRemove(self.next_word().unwrap().to_owned()).into()
-            }
-            nw => todo!("{:?}", nw)
+            Some("remove") => ObjRemove(self.next_word().unwrap().to_owned()).into(),
+            nw => todo!("{:?}", nw),
         }
     }
 
@@ -1269,7 +1264,11 @@ pub struct ObjAdd {
 
 impl fmt::Display for ObjAdd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "scoreboard objectives add {} {}", self.obj, self.criteria)
+        write!(
+            f,
+            "scoreboard objectives add {} {}",
+            self.obj, self.criteria
+        )
     }
 }
 

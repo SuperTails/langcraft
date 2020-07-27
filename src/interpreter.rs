@@ -1,5 +1,5 @@
 use crate::cir::*;
-use crate::compile_ir::{get_index, OBJECTIVE, pos_to_func_idx};
+use crate::compile_ir::{get_index, pos_to_func_idx, OBJECTIVE};
 use crate::Datapack;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -38,7 +38,7 @@ pub enum BreakKind {
     Read,
     Write,
     Access,
-} 
+}
 
 pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
@@ -117,7 +117,11 @@ impl Interpreter {
     }
 
     pub fn call_stack(&self) -> Vec<(&Function, usize)> {
-        self.call_stack.iter().copied().map(|(f, c)| (&self.program[f], c)).collect()
+        self.call_stack
+            .iter()
+            .copied()
+            .map(|(f, c)| (&self.program[f], c))
+            .collect()
     }
 
     /// `word_start` is in bytes, must be aligned to a multiple of 4
@@ -131,9 +135,10 @@ impl Interpreter {
         assert_eq!(addr % 4, 0);
 
         match self.memory_points.get(&(addr / 4)) {
-            Some(BreakKind::Access) |
-            Some(BreakKind::Read) => return Err(InterpError::BreakpointHit),
-            _ => {},
+            Some(BreakKind::Access) | Some(BreakKind::Read) => {
+                return Err(InterpError::BreakpointHit)
+            }
+            _ => {}
         };
 
         Ok(self.memory[addr / 4])
@@ -147,11 +152,12 @@ impl Interpreter {
 
     pub fn set_word(&mut self, value: i32, addr: usize) -> Result<(), InterpError> {
         assert_eq!(addr % 4, 0);
-        
+
         match self.memory_points.get(&(addr / 4)) {
-            Some(BreakKind::Access) |
-            Some(BreakKind::Write) => return Err(InterpError::BreakpointHit),
-            _ => {},
+            Some(BreakKind::Access) | Some(BreakKind::Write) => {
+                return Err(InterpError::BreakpointHit)
+            }
+            _ => {}
         };
 
         self.memory[addr / 4] = value;
@@ -161,9 +167,10 @@ impl Interpreter {
 
     pub fn set_byte(&mut self, value: u8, addr: usize) -> Result<(), InterpError> {
         match self.memory_points.get(&(addr / 4)) {
-            Some(BreakKind::Access) |
-            Some(BreakKind::Write) => return Err(InterpError::BreakpointHit),
-            _ => {},
+            Some(BreakKind::Access) | Some(BreakKind::Write) => {
+                return Err(InterpError::BreakpointHit)
+            }
+            _ => {}
         };
 
         let mut bytes = self.memory[addr / 4].to_le_bytes();
@@ -335,7 +342,7 @@ impl Interpreter {
             .iter()
             .any(|(i, _)| self.program[*i].id.name.contains("intrinsic"))
         {*/
-            //println!("{}", cmd);
+        //println!("{}", cmd);
         /*}*/
 
         match cmd {
@@ -654,9 +661,9 @@ impl Interpreter {
                     if let Command::SetBlock(SetBlock { pos: _, block, kind: _ }) = &**run {
                         eprintln!(
                             "Placed block at {} {} {}: {:?}",
-                            self.turtle_pos.0, 
-                            self.turtle_pos.1, 
-                            self.turtle_pos.2, 
+                            self.turtle_pos.0,
+                            self.turtle_pos.1,
+                            self.turtle_pos.2,
                             block
                         );
                     } else {
@@ -750,8 +757,7 @@ impl Interpreter {
                 }
                 println!(
                     "Executed {} commands from function '{}'",
-                    self.commands_run,
-                    top_func,
+                    self.commands_run, top_func,
                 );
                 self.commands_run = 0;
                 break;

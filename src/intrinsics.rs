@@ -115,19 +115,14 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         "intrinsic:llvm_ctlz_i32_inner",
         include_str!("intrinsic/llvm_ctlz_i32_inner.mcfunction"),
     ),
-    (
-        "intrinsic:shl",
-        include_str!("intrinsic/shl.mcfunction"),
-    )
+    ("intrinsic:shl", include_str!("intrinsic/shl.mcfunction")),
 ];
 
 lazy_static! {
     pub static ref INTRINSICS: Vec<Function> = {
         INTRINSIC_STRS
             .iter()
-            .map(|(name, body)| {
-                Function::from_str(FunctionId::new(name.to_owned()), body).unwrap()
-            })
+            .map(|(name, body)| Function::from_str(FunctionId::new(name.to_owned()), body).unwrap())
             .collect()
     };
 }
@@ -153,7 +148,10 @@ mod test {
         interp.call_stack = vec![(idx, 0)];
 
         for i in 0..31 {
-            interp.rust_scores.insert(cir::ScoreHolder::new(format!("%%{}", 1 << i)).unwrap(), 1 << i);
+            interp.rust_scores.insert(
+                cir::ScoreHolder::new(format!("%%{}", 1 << i)).unwrap(),
+                1 << i,
+            );
         }
 
         interp
@@ -174,7 +172,7 @@ mod test {
         interp.rust_scores.insert(param(1, 0), rhs as i32);
         println!("Running with lhs {}", lhs);
         interp.run_to_end().unwrap();
-        
+
         let actual_lo = *interp.rust_scores.get(&return_holder(0)).unwrap() as u32;
         let actual_hi = *interp.rust_scores.get(&return_holder(1)).unwrap() as u32;
 

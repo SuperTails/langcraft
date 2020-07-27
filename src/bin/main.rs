@@ -1,6 +1,6 @@
-use langcraft::Interpreter;
-use langcraft::interpreter::{InterpError};
+use langcraft::interpreter::InterpError;
 use langcraft::Datapack;
+use langcraft::Interpreter;
 use std::path::PathBuf;
 
 // TODO: Allow specifying breakpoints somehow
@@ -64,7 +64,7 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
             }
         } else {
             match interp.step() {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(InterpError::BreakpointHit) => {
                     hit_breakpoint = true;
                 }
@@ -188,8 +188,7 @@ fn parse_arguments() -> Result<Options, String> {
 }
 
 // TODO: Allow dynamically loading this, perhaps by reading a file?
-const INPUT: &str =
-"FN MAIN() {    
+const INPUT: &str = "FN MAIN() {    
 LET FOO = 0    
 WHILE FOO < 20{
 FOO = FOO + 1 
@@ -212,7 +211,10 @@ fn main() {
     });
 
     if options.output_folder.is_file() {
-        eprintln!("output path `{}` was a file", options.output_folder.display());
+        eprintln!(
+            "output path `{}` was a file",
+            options.output_folder.display()
+        );
         std::process::exit(1);
     }
 
@@ -223,7 +225,11 @@ fn main() {
 
     println!(
         "Generated {} commands",
-        datapack.functions.iter().map(|f| f.cmds.len()).sum::<usize>()
+        datapack
+            .functions
+            .iter()
+            .map(|f| f.cmds.len())
+            .sum::<usize>()
     );
 
     datapack.save(&options.output_folder).unwrap_or_else(|err| {

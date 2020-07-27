@@ -1,8 +1,8 @@
 use cir::{Function, FunctionId};
 use compile_ir::BuildOptions;
 pub use interpreter::Interpreter;
-use std::path::Path;
 use serde_json::json;
+use std::path::Path;
 
 pub mod cir;
 pub mod compile_ir;
@@ -20,7 +20,11 @@ pub struct Datapack {
 
 impl Datapack {
     pub fn run_index(&self) -> Option<usize> {
-        self.functions.iter().enumerate().find(|(_, f)| f.id == FunctionId::new("run")).map(|(i, _)| i)
+        self.functions
+            .iter()
+            .enumerate()
+            .find(|(_, f)| f.id == FunctionId::new("run"))
+            .map(|(i, _)| i)
     }
 
     pub fn from_bc(path: &Path) -> Result<Self, String> {
@@ -51,7 +55,10 @@ impl Datapack {
             }
         });
 
-        std::fs::write(output_folder.join("pack.mcmeta"), mcmeta_contents.to_string())?;
+        std::fs::write(
+            output_folder.join("pack.mcmeta"),
+            mcmeta_contents.to_string(),
+        )?;
 
         std::fs::create_dir_all(output_folder.join(Path::new("data/setup/functions/")))?;
         std::fs::write(
@@ -86,7 +93,7 @@ impl Datapack {
                 .join(Path::new("data"))
                 .join(Path::new(func.id.namespace()))
                 .join(Path::new("functions"));
-                
+
             for folder in path_folders {
                 full_path = full_path.join(Path::new(folder));
             }
