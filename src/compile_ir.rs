@@ -788,15 +788,7 @@ fn compile_global_var_init<'a>(
     static CONSTANTS: &[(&str, i32)] = &[
         ("%%31BITSHIFT", 1 << 31),
         ("%%ROW_SIZE", ROW_SIZE as i32),
-        ("%%4", 4),
-        ("%%16777216", 16777216),
         ("%%SIXTEEN", 16),
-        ("%%65536", 65536),
-        ("%%1024", 1024),
-        ("%%256", 256),
-        ("%%32", 32),
-        ("%%2", 2),
-        ("%%1", 1),
         ("%%-1", -1),
     ];
 
@@ -804,6 +796,13 @@ fn compile_global_var_init<'a>(
         cmds.push(assign_lit(
             ScoreHolder::new(name.to_string()).unwrap(),
             *value,
+        ));
+    }
+
+    for value in 0..31 {
+        cmds.push(assign_lit(
+            ScoreHolder::new(format!("%%{}", 1 << value)).unwrap(),
+            1 << value,
         ));
     }
 
