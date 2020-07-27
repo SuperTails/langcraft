@@ -503,6 +503,17 @@ impl Function {
 
         Ok(Function { id, cmds })
     }
+
+    pub fn get_line(&self, idx: usize) -> usize {
+        let mut line = 1;
+        for c in self.cmds[..idx].iter() {
+            line += 1;
+            if let Command::Comment(c) = c {
+                line += c.chars().filter(|c| *c == '\n').count();
+            }
+        }
+        line
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -819,7 +830,7 @@ pub enum Relation {
 }
 
 impl FromStr for Relation {
-    type Err = ();
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -828,7 +839,7 @@ impl FromStr for Relation {
             "=" => Ok(Relation::Eq),
             ">" => Ok(Relation::GreaterThan),
             ">=" => Ok(Relation::GreaterThanEq),
-            _ => Err(()),
+            s => Err(format!("invalid relation `{}`", s)),
         }
     }
 }

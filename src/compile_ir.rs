@@ -498,6 +498,8 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
     funcs.extend(after_blocks);
 
+    funcs.extend(crate::intrinsics::INTRINSICS.clone());
+
     println!("{:?}", clobber_list);
 
     apply_fixups(&mut funcs);
@@ -595,8 +597,10 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
             let (x, z) = func_idx_to_pos(idx);
             let pos = format!("{} 0 {}", x, z);
             let block = format!(
-                "minecraft:command_block{{Command:\"function rust:{}\"}}",
-                func.id
+                "minecraft:command_block{{Command:\"{}\"}}",
+                McFuncCall {
+                    id: func.id.clone()
+                }
             );
 
             SetBlock {
@@ -778,6 +782,7 @@ fn compile_global_var_init<'a>(
     // %%2
     // %%1
     // %%65536
+    // %%1024
 
     // TODO: This needs a better system
     static CONSTANTS: &[(&str, i32)] = &[
@@ -787,6 +792,7 @@ fn compile_global_var_init<'a>(
         ("%%16777216", 16777216),
         ("%%SIXTEEN", 16),
         ("%%65536", 65536),
+        ("%%1024", 1024),
         ("%%256", 256),
         ("%%32", 32),
         ("%%2", 2),
@@ -1186,7 +1192,7 @@ fn compile_memset(
 fn compile_memcpy(
     arguments: &[(Operand, Vec<llvm_ir::function::ParameterAttribute>)],
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
-) -> Vec<Command> {
+) -> (Vec<Command>, Option<Vec<Command>>) {
     use llvm_ir::function::Attribute;
     let get_align = |attrs: &[Attribute]| -> Option<u64> {
         attrs
@@ -1212,66 +1218,96 @@ fn compile_memcpy(
         let src1 = src1.into_iter().next().unwrap();
         let dest1 = dest1.into_iter().next().unwrap();
  
-        let word_len = match (get_align(dest_attr), get_align(src_attr), len) {
-            (Some(d), Some(s), Operand::ConstantOperand(Constant::Int { bits: 32, value })) if d % 4 == 0 && s % 4 == 0 && value % 4 == 0 => Some(value / 4),
-            _ => None
+        match (get_align(dest_attr), get_align(src_attr), len) {
+            (_, _, Operand::ConstantOperand(Constant::Int { bits: 32, value })) if *value > 1024 => {
+                cmds.extend(push(ScoreHolder::new("%%fixup".to_string()).unwrap()));
+                cmds.push(assign(param(0, 0), dest1));
+                cmds.push(assign(param(1, 0), src1));
+                cmds.push(assign_lit(param(2, 0), *value as i32));
+                cmds.push(assign_lit(param(4, 0), 1));
+                cmds.push(McFuncCall {
+                    id: McFuncId::new("intrinsic:memcpy%%fixup"),
+                }.into());
+
+                return (cmds, Some(Vec::new()));
+            }
+            (Some(d), Some(s), Operand::ConstantOperand(Constant::Int { bits: 32, value: len })) if d % 4 == 0 && s % 4 == 0 => {
+                let word_count = len / 4;
+                let byte_count = len % 4;
+
+                let tempsrc = get_unique_holder();
+                let tempdst = get_unique_holder();
+
+                cmds.push(Command::Comment(format!("Begin memcpy with src {} and dest {}", src1, dest1)));
+                cmds.push(assign(tempsrc.clone(), src1));
+                cmds.push(assign(tempdst.clone(), dest1));
+                cmds.push(assign_lit(param(4, 0), 0));
+                
+                let temp = get_unique_holder();
+
+                for _ in 0..word_count {
+                    cmds.push(assign(ptr(), tempsrc.clone()));
+                    cmds.push(McFuncCall {
+                        id: McFuncId::new("intrinsic:setptr")
+                    }.into());
+                    cmds.push(read_ptr(temp.clone()));
+                    cmds.push(make_op_lit(tempsrc.clone(), "+=", 4));
+
+                    cmds.push(assign(ptr(), tempdst.clone()));
+                    cmds.push(McFuncCall {
+                        id: McFuncId::new("intrinsic:setptr")
+                    }.into());
+                    cmds.push(write_ptr(temp.clone()));
+                    cmds.push(make_op_lit(tempdst.clone(), "+=", 4));
+                }
+
+                for _ in 0..byte_count {
+                    cmds.push(assign(ptr(), tempsrc.clone()));
+                    cmds.push(McFuncCall {
+                        id: McFuncId::new("intrinsic:load_byte")
+                    }.into());
+                    cmds.push(make_op_lit(tempsrc.clone(), "+=", 1));
+
+                    cmds.push(assign(param(2, 0), return_holder(0)));
+
+                    cmds.push(assign(ptr(), tempdst.clone()));
+                    cmds.push(McFuncCall {
+                        id: McFuncId::new("intrinsic:store_byte")
+                    }.into());
+                    cmds.push(make_op_lit(tempdst.clone(), "+=", 1));
+                }
+
+                cmds.push(Command::Comment("End memcpy".into()));
+            }
+            _ => {
+                let (tmp, len1) = eval_operand(len, globals);
+                cmds.extend(tmp);
+
+                assert_eq!(len1.len(), 1, "multiword length {:?}", len);
+                let len1 = len1.into_iter().next().unwrap();
+
+                cmds.push(assign(param(0, 0), dest1));
+                cmds.push(assign(param(1, 0), src1));
+                cmds.push(assign(param(2, 0), len1));
+                cmds.push(assign_lit(param(4, 0), 0));
+
+                if !matches!(
+                    volatile,
+                    Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })
+                ) {
+                    todo!("{:?}", volatile)
+                }
+
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:memcpy"),
+                    }
+                    .into(),
+                );
+            }
         };
 
-        if let Some(word_len) = word_len {
-            let tempsrc = get_unique_holder();
-            let tempdst = get_unique_holder();
-
-            cmds.push(Command::Comment(format!("Begin memcpy with src {} and dest {}", src1, dest1)));
-            cmds.push(assign(tempsrc.clone(), src1));
-            cmds.push(assign(tempdst.clone(), dest1));
-            
-            let temp = get_unique_holder();
-
-            for _ in 0..word_len {
-                cmds.push(assign(ptr(), tempsrc.clone()));
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("intrinsic:setptr")
-                }.into());
-                cmds.push(read_ptr(temp.clone()));
-                cmds.push(make_op_lit(tempsrc.clone(), "+=", 4));
-
-                cmds.push(assign(ptr(), tempdst.clone()));
-                cmds.push(McFuncCall {
-                    id: McFuncId::new("intrinsic:setptr")
-                }.into());
-                cmds.push(write_ptr(temp.clone()));
-                cmds.push(make_op_lit(tempdst.clone(), "+=", 4));
-            }
-
-            cmds.push(Command::Comment("End memcpy".into()));
-        } else {
-            let (tmp, len1) = eval_operand(len, globals);
-            cmds.extend(tmp);
-
-            assert_eq!(len1.len(), 1, "multiword length {:?}", len);
-            let len1 = len1.into_iter().next().unwrap();
-
-            cmds.push(assign(param(0, 0), dest1));
-            cmds.push(assign(param(1, 0), src1));
-            cmds.push(assign(param(2, 0), len1));
-
-            if !matches!(
-                volatile,
-                Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })
-            ) {
-                todo!("{:?}", volatile)
-            }
-
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("intrinsic:memcpy"),
-                }
-                .into(),
-            );
-
-        }
-
-        cmds
+        (cmds, None)
     } else {
         panic!("{:?}", arguments);
     }
@@ -2113,7 +2149,7 @@ fn compile_call(
             }
             "llvm.memcpy.p0i8.p0i8.i32" => {
                 assert_eq!(dest, None);
-                (compile_memcpy(arguments, globals), None)
+                compile_memcpy(arguments, globals)
             }
             "llvm.usub.with.overflow.i8" => {
                 let dest = dest.unwrap().into_iter().next().unwrap();

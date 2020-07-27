@@ -16,8 +16,12 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         include_str!("intrinsic/memcpy.mcfunction"),
     ),
     (
-        "intrinsic:memcpy_inner",
-        include_str!("intrinsic/memcpy_inner.mcfunction"),
+        "intrinsic:memcpy/next_byte",
+        include_str!("intrinsic/memcpy/next_byte.mcfunction"),
+    ),
+    (
+        "intrinsic:memcpy/inner",
+        include_str!("intrinsic/memcpy/inner.mcfunction"),
     ),
     ("intrinsic:or", include_str!("intrinsic/or.mcfunction")),
     (
@@ -296,21 +300,22 @@ mod test {
         }
     }
 
+    // TODO: Generalize, and then test very large memcpy calls
     #[test]
     fn memcpy() {
         let mut interp = create_interp("intrinsic:memcpy");
 
-        for idx in 0..30 {
+        for idx in 0..50 {
             interp.set_byte(0xAA, idx).unwrap();
         }
 
         // Setup source
-        let data = [1, 2, 3, 4, 5, 6, 7];
+        let data = [1, 2, 3, 4, 5, 6, 7, 8, 9];
         for (idx, byte) in data.iter().copied().enumerate() {
             interp.set_byte(byte, 5 + idx).unwrap();
         }
 
-        println!("Memory before:");
+        println!("Memory before: (address, value)");
         for b in 0..32 {
             print!("{:02X} ", b);
         }
@@ -324,18 +329,28 @@ mod test {
         interp.rust_scores.insert(param(2, 0), data.len() as i32);
         interp.run_to_end().unwrap();
 
+        println!("Memory after: (address, value)");
+        for b in 0..32 {
+            print!("{:02X} ", b);
+        }
+        println!();
+        for b in 0..32 {
+            print!("{:02X} ", interp.get_byte(b).unwrap());
+        }
+
         for (idx, expected) in data.iter().copied().enumerate() {
             // Make sure nothing changed
             let actual = interp.get_byte(5 + idx).unwrap();
             assert_eq!(expected, actual);
         }
+
         for (idx, expected) in data.iter().copied().enumerate() {
             let actual = interp.get_byte(15 + idx).unwrap();
             assert_eq!(expected, actual);
         }
         // Make sure nothing changed
         assert_eq!(0xAA, interp.get_byte(14).unwrap());
-        assert_eq!(0xAA, interp.get_byte(15 + 7).unwrap());
+        assert_eq!(0xAA, interp.get_byte(15 + 9).unwrap());
     }
 
     #[test]
@@ -466,9 +481,45 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn memset() {
-        todo!("THIS TEST")
+        test_memset(3, 42, 9);
+        test_memset(3, 42, 4);
+        test_memset(3, 42, 2);
+
+        test_memset(4, 42, 6);
+        test_memset(4, 42, 4);
+        test_memset(4, 42, 2);
+    }
+
+    fn test_memset(dest: usize, value: u8, len: usize) {
+        let mut interp = create_interp("intrinsic:memset");
+
+        for idx in 0..30 {
+            interp.set_byte(0xAA, idx).unwrap();
+        }
+
+        interp.rust_scores.insert(param(0, 0), dest as i32);
+        interp.rust_scores.insert(param(1, 0), value as i32);
+        interp.rust_scores.insert(param(2, 0), len as i32);
+        interp.run_to_end().unwrap();
+
+        for idx in 0..len {
+            let actual = interp.get_byte(dest + idx).unwrap();
+            if value != actual {
+                eprintln!("Dest:  {}", dest);
+                eprintln!("Value: {}", value);
+                eprintln!("Len:   {}", len);
+                eprintln!();
+                eprintln!("Address:  {}", dest + idx);
+                eprintln!("Actual:   {:#04X}", actual);
+                eprintln!("Expected: {:#04X}", value);
+                panic!();
+            }
+        }
+
+        // Make sure nothing changed
+        assert_eq!(0xAA, interp.get_byte(dest - 1).unwrap());
+        assert_eq!(0xAA, interp.get_byte(dest + len).unwrap());
     }
 
     #[test]

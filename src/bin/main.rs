@@ -250,11 +250,16 @@ fn main() {
             }
             Err(err) => {
                 eprintln!("==========================================");
-                eprintln!("Output:");
+                eprintln!("=== Output ===");
                 for i in interp.output.iter() {
                     eprintln!("{}", i);
                 }
                 eprintln!("=== End output ===");
+                eprintln!("=== Call stack ===");
+                for (f, c) in interp.call_stack() {
+                    eprintln!("{} line {}", f.id, f.get_line(c));
+                }
+                eprintln!("=== End call stack ===");
                 eprintln!("Encountered interpreter error: {}", err);
             }
         }

@@ -116,6 +116,10 @@ impl Interpreter {
         }
     }
 
+    pub fn call_stack(&self) -> Vec<(&Function, usize)> {
+        self.call_stack.iter().copied().map(|(f, c)| (&self.program[f], c)).collect()
+    }
+
     /// `word_start` is in bytes, must be aligned to a multiple of 4
     pub fn set_mem_breakpoint(&mut self, word_start: usize, kind: BreakKind) {
         assert_eq!(word_start % 4, 0);
@@ -390,6 +394,11 @@ impl Interpreter {
                                 }
                                 self.rust_scores.insert(target.clone(), val);
                             }
+                            ScoreOpKind::Min => {
+                                let mut val = self.get_rust_score(target).unwrap();
+                                val = val.min(rhs);
+                                self.rust_scores.insert(target.clone(), val);
+                            }
                             _ => todo!("{}", kind)
                         }
                     } else {
@@ -453,7 +462,11 @@ impl Interpreter {
                         .split_whitespace()
                         .map(|s| {
                             let (st, relative) = if s.starts_with('~') {
-                                (&s[1..], true)
+                                if s == "~" {
+                                    return (0, true)
+                                } else {
+                                    (&s[1..], true)
+                                }
                             } else {
                                 (s, false)
                             };
@@ -461,27 +474,38 @@ impl Interpreter {
                         });
 
                     let (x, x_rel) = coords.next().unwrap();
-                    let (y, _y_rel) = coords.next().unwrap();
+                    let (y, y_rel) = coords.next().unwrap();
                     let (z, z_rel) = coords.next().unwrap();
 
-                    if x_rel {
-                        todo!()
-                    }
+                    if x == 0 && x_rel && y == 1 && y_rel && z == 0 && z_rel {
+                        println!("Branching to self");
 
-                    if z_rel {
-                        todo!()
-                    }
-
-                    if y != 1 {
-                        todo!("{} {}", pos, block);
+                        if let [(func_idx, _)] = &self.call_stack[..] {
+                            assert_eq!(self.next_pos, None);
+                            self.next_pos = Some((*func_idx as usize, 0));
+                        } else {
+                            todo!()
+                        }
                     } else {
-                        let idx = pos_to_func_idx(x, z);
+                        if x_rel {
+                            todo!()
+                        }
 
-                        println!("Branching to {}", self.program[idx as usize].id);
+                        if z_rel {
+                            todo!()
+                        }
 
-                        assert_eq!(self.next_pos, None);
-                        self.next_pos = Some((idx as usize, 0));
+                        if y != 1 {
+                            todo!("{} {}", pos, block);
+                        } else {
+                            let idx = pos_to_func_idx(x, z);
 
+                            println!("Branching to {}", self.program[idx as usize].id);
+
+                            assert_eq!(self.next_pos, None);
+                            self.next_pos = Some((idx as usize, 0));
+
+                        }
                     }
                 } else {
                     todo!()
