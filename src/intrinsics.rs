@@ -152,31 +152,16 @@ mod test {
 
         interp.call_stack = vec![(idx, 0)];
 
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%4".into()).unwrap(), 4);
+        for i in 0..31 {
+            interp.rust_scores.insert(cir::ScoreHolder::new(format!("%%{}", 1 << i)).unwrap(), 1 << i);
+        }
+
         interp
             .rust_scores
             .insert(cir::ScoreHolder::new("%%SIXTEEN".into()).unwrap(), 16);
         interp
             .rust_scores
-            .insert(cir::ScoreHolder::new("%%256".into()).unwrap(), 256);
-        interp
-            .rust_scores
             .insert(cir::ScoreHolder::new("%%-1".into()).unwrap(), -1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%1".into()).unwrap(), 1);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%2".into()).unwrap(), 2);
-        interp
-            .rust_scores
-            .insert(cir::ScoreHolder::new("%%65536".into()).unwrap(), 65536);
-        interp.rust_scores.insert(
-            cir::ScoreHolder::new("%%16777216".into()).unwrap(),
-            16777216,
-        );
 
         interp
     }
@@ -327,6 +312,7 @@ mod test {
         interp.rust_scores.insert(param(0, 0), 15);
         interp.rust_scores.insert(param(1, 0), 5);
         interp.rust_scores.insert(param(2, 0), data.len() as i32);
+        interp.rust_scores.insert(param(4, 0), 0);
         interp.run_to_end().unwrap();
 
         println!("Memory after: (address, value)");

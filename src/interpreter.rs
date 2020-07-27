@@ -622,23 +622,6 @@ impl Interpreter {
                 self.ptr_pos.0 += -2;
                 self.ptr_pos.1 = 1;
             }
-            /*cmd if cmd.to_string().starts_with("execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get") => {
-                let sg = if let Command::Execute(Execute { run: Some(sg), .. }) = cmd {
-                    &**sg
-                } else {
-                    unreachable!()
-                };
-
-                if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = sg {
-                    if target_obj != OBJECTIVE {
-                        todo!("{:?}", target_obj)
-                    }
-
-                    self.ptr_pos.2 = *self.rust_scores.get(target).unwrap_or_else(|| panic!("read from uninitialized variable {}", target));
-                } else {
-                    todo!("{:?}", sg)
-                }
-            }*/
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run") => {
                 let sg = if let Command::Execute(Execute { run: Some(sg), .. }) = cmd {
                     &**sg

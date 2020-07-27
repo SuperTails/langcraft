@@ -13,7 +13,6 @@ use llvm_ir::constant::BitCast as BitCastConst;
 use llvm_ir::constant::GetElementPtr as GetElementPtrConst;
 use llvm_ir::constant::ICmp as ICmpConst;
 use llvm_ir::constant::Select as SelectConst;
-use llvm_ir::debugloc::HasDebugLoc;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
     InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem, Select, Shl,
@@ -2393,6 +2392,219 @@ fn compile_call(
     }
 }
 
+pub fn compile_terminator(parent: &Function, term: &Terminator, globals: &GlobalVarList) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    match &term {
+        Terminator::Ret(Ret {
+            return_operand: None,
+            ..
+        }) => {
+            cmds.push(Command::Comment("return".to_string()));
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("%%loadregs"),
+                }
+                .into(),
+            );
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:pop_and_branch"),
+                }
+                .into(),
+            );
+
+            cmds
+        }
+        Terminator::Ret(Ret {
+            return_operand: Some(operand),
+            ..
+        }) => {
+            cmds.push(Command::Comment(format!("return operand {:?}", operand)));
+
+            let (tmp, source) = eval_operand(operand, globals);
+
+            cmds.extend(tmp);
+
+            for (idx, word) in source.into_iter().enumerate() {
+                cmds.push(assign(return_holder(idx), word));
+            }
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("%%loadregs"),
+                }
+                .into(),
+            );
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:pop_and_branch"),
+                }
+                .into(),
+            );
+
+            cmds
+        }
+        Terminator::Br(Br { dest, .. }) => {
+            let mut id = McFuncId::new_block(&parent.name, dest.clone());
+
+            id.name.push_str("%%fixup");
+
+            cmds.push(McFuncCall { id }.into());
+
+            cmds
+        }
+        Terminator::CondBr(CondBr {
+            condition,
+            true_dest,
+            false_dest,
+            ..
+        }) => {
+            let (tmp, cond) = eval_operand(condition, globals);
+            cmds.extend(tmp);
+
+            assert_eq!(cond.len(), 1);
+            let cond = cond[0].clone();
+
+            let mut true_dest = McFuncId::new_block(&parent.name, true_dest.clone());
+            let mut false_dest = McFuncId::new_block(&parent.name, false_dest.clone());
+
+            true_dest.name.push_str("%%fixup");
+            false_dest.name.push_str("%%fixup");
+
+            let mut true_cmd = Execute::new();
+            true_cmd
+                .with_if(ExecuteCondition::Score {
+                    target: Target::Uuid(cond.clone()),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
+                })
+                .with_run(McFuncCall { id: true_dest });
+
+            let mut false_cmd = Execute::new();
+            false_cmd
+                .with_unless(ExecuteCondition::Score {
+                    target: Target::Uuid(cond),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
+                })
+                .with_run(McFuncCall { id: false_dest });
+
+            cmds.push(true_cmd.into());
+            cmds.push(false_cmd.into());
+
+            cmds
+        }
+        Terminator::Switch(Switch {
+            operand,
+            dests,
+            default_dest,
+            ..
+        }) => {
+            let (tmp, operand) = eval_operand(operand, globals);
+            cmds.extend(tmp);
+
+            if operand.len() != 1 {
+                todo!("multibyte operand in switch {:?}", operand);
+            }
+
+            let operand = operand[0].clone();
+
+            let default_tracker = get_unique_holder();
+
+            cmds.push(assign_lit(default_tracker.clone(), 0));
+
+            for (dest_value, dest_name) in dests.iter() {
+                let dest_value = if let Constant::Int { value, .. } = dest_value {
+                    *value as i32
+                } else {
+                    todo!("{:?}", dest_value)
+                };
+
+                let mut dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
+
+                dest_id.name.push_str("%%fixup");
+
+                let mut branch_cmd = Execute::new();
+                branch_cmd.with_if(ExecuteCondition::Score {
+                    target: Target::Uuid(operand.clone()),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ExecuteCondKind::Matches(cir::McRange::Between(
+                        dest_value..=dest_value,
+                    )),
+                });
+
+                let mut add_cmd = branch_cmd.clone();
+
+                add_cmd.with_run(assign_lit(default_tracker.clone(), 1));
+                branch_cmd.with_run(McFuncCall { id: dest_id });
+
+                cmds.push(add_cmd.into());
+                cmds.push(branch_cmd.into());
+            }
+
+            let mut default_dest = McFuncId::new_block(&parent.name, default_dest.clone());
+
+            default_dest.name.push_str("%%fixup");
+
+            let mut default_cmd = Execute::new();
+            default_cmd.with_if(ExecuteCondition::Score {
+                target: default_tracker.into(),
+                target_obj: OBJECTIVE.to_string(),
+                kind: ExecuteCondKind::Matches(cir::McRange::Between(0..=0)),
+            });
+            default_cmd.with_run(McFuncCall { id: default_dest });
+
+            cmds.push(default_cmd.into());
+            
+            cmds
+        }
+        Terminator::Unreachable(Unreachable { .. }) => {
+            cmds.push(mark_unreachable());
+            cmds.push(
+                Tellraw {
+                    target: cir::Selector {
+                        var: cir::SelectorVariable::AllPlayers,
+                        args: Vec::new(),
+                    }
+                    .into(),
+                    message: cir::TextBuilder::new()
+                        .append_text("ENTERED UNREACHABLE CODE".into())
+                        .build(),
+                }
+                .into(),
+            );
+
+            cmds
+        }
+        Terminator::Resume(_) => {
+            cmds.push(mark_todo());
+
+            let message = cir::TextBuilder::new()
+                .append_text("OH NO EXCEPTION HANDLING TOOD".into())
+                .build();
+
+            cmds.push(
+                Tellraw {
+                    target: cir::Selector {
+                        var: cir::SelectorVariable::AllPlayers,
+                        args: Vec::new(),
+                    }
+                    .into(),
+                    message,
+                }
+                .into(),
+            );
+
+            cmds
+        }
+        term => todo!("terminator {:?}", term),
+    }
+}
+
 pub fn compile_function(
     func: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
@@ -2421,10 +2633,6 @@ pub fn compile_function(
                 id: McFuncId::new_sub(func.name.clone(), block.name.clone(), sub),
                 cmds: vec![],
             };
-
-            if !block.instrs.is_empty() {
-                println!("{:?}", block.instrs[0].get_debug_loc());
-            }
 
             let mut this = make_new_func(sub);
             sub += 1;
@@ -2466,201 +2674,7 @@ pub fn compile_function(
                 idx as i32,
             ));
 
-            match &block.term {
-                Terminator::Ret(Ret {
-                    return_operand: None,
-                    ..
-                }) => {
-                    this.cmds.push(Command::Comment("return".to_string()));
-
-                    this.cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("%%loadregs"),
-                        }
-                        .into(),
-                    );
-
-                    this.cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:pop_and_branch"),
-                        }
-                        .into(),
-                    );
-                }
-                Terminator::Ret(Ret {
-                    return_operand: Some(operand),
-                    ..
-                }) => {
-                    this.cmds
-                        .push(Command::Comment(format!("return operand {:?}", operand)));
-
-                    let (cmds, source) = eval_operand(operand, globals);
-
-                    this.cmds.extend(cmds);
-
-                    for (idx, word) in source.into_iter().enumerate() {
-                        this.cmds.push(assign(return_holder(idx), word));
-                    }
-
-                    this.cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("%%loadregs"),
-                        }
-                        .into(),
-                    );
-
-                    this.cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:pop_and_branch"),
-                        }
-                        .into(),
-                    );
-                }
-                Terminator::Br(Br { dest, .. }) => {
-                    let mut id = McFuncId::new_block(&func.name, dest.clone());
-
-                    id.name.push_str("%%fixup");
-
-                    this.cmds.push(McFuncCall { id }.into());
-                }
-                Terminator::CondBr(CondBr {
-                    condition,
-                    true_dest,
-                    false_dest,
-                    ..
-                }) => {
-                    let (cmds, cond) = eval_operand(condition, globals);
-                    this.cmds.extend(cmds);
-
-                    assert_eq!(cond.len(), 1);
-                    let cond = cond[0].clone();
-
-                    let mut true_dest = McFuncId::new_block(&func.name, true_dest.clone());
-                    let mut false_dest = McFuncId::new_block(&func.name, false_dest.clone());
-
-                    true_dest.name.push_str("%%fixup");
-                    false_dest.name.push_str("%%fixup");
-
-                    let mut true_cmd = Execute::new();
-                    true_cmd
-                        .with_if(ExecuteCondition::Score {
-                            target: Target::Uuid(cond.clone()),
-                            target_obj: OBJECTIVE.to_string(),
-                            kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
-                        })
-                        .with_run(McFuncCall { id: true_dest });
-
-                    let mut false_cmd = Execute::new();
-                    false_cmd
-                        .with_unless(ExecuteCondition::Score {
-                            target: Target::Uuid(cond),
-                            target_obj: OBJECTIVE.to_string(),
-                            kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
-                        })
-                        .with_run(McFuncCall { id: false_dest });
-
-                    this.cmds.push(true_cmd.into());
-                    this.cmds.push(false_cmd.into());
-                }
-                Terminator::Switch(Switch {
-                    operand,
-                    dests,
-                    default_dest,
-                    ..
-                }) => {
-                    let (cmds, operand) = eval_operand(operand, globals);
-                    this.cmds.extend(cmds);
-
-                    if operand.len() != 1 {
-                        todo!("multibyte operand in switch {:?}", operand);
-                    }
-
-                    let operand = operand[0].clone();
-
-                    let default_tracker = get_unique_holder();
-
-                    this.cmds.push(assign_lit(default_tracker.clone(), 0));
-
-                    for (dest_value, dest_name) in dests.iter() {
-                        let dest_value = if let Constant::Int { value, .. } = dest_value {
-                            *value as i32
-                        } else {
-                            todo!("{:?}", dest_value)
-                        };
-
-                        let mut dest_id = McFuncId::new_block(&func.name, dest_name.clone());
-
-                        dest_id.name.push_str("%%fixup");
-
-                        let mut branch_cmd = Execute::new();
-                        branch_cmd.with_if(ExecuteCondition::Score {
-                            target: Target::Uuid(operand.clone()),
-                            target_obj: OBJECTIVE.to_string(),
-                            kind: ExecuteCondKind::Matches(cir::McRange::Between(
-                                dest_value..=dest_value,
-                            )),
-                        });
-
-                        let mut add_cmd = branch_cmd.clone();
-
-                        add_cmd.with_run(assign_lit(default_tracker.clone(), 1));
-                        branch_cmd.with_run(McFuncCall { id: dest_id });
-
-                        this.cmds.push(add_cmd.into());
-                        this.cmds.push(branch_cmd.into());
-                    }
-
-                    let mut default_dest = McFuncId::new_block(&func.name, default_dest.clone());
-
-                    default_dest.name.push_str("%%fixup");
-
-                    let mut default_cmd = Execute::new();
-                    default_cmd.with_if(ExecuteCondition::Score {
-                        target: default_tracker.into(),
-                        target_obj: OBJECTIVE.to_string(),
-                        kind: ExecuteCondKind::Matches(cir::McRange::Between(0..=0)),
-                    });
-                    default_cmd.with_run(McFuncCall { id: default_dest });
-
-                    this.cmds.push(default_cmd.into());
-                }
-                Terminator::Unreachable(Unreachable { .. }) => {
-                    this.cmds.push(mark_unreachable());
-                    this.cmds.push(
-                        Tellraw {
-                            target: cir::Selector {
-                                var: cir::SelectorVariable::AllPlayers,
-                                args: Vec::new(),
-                            }
-                            .into(),
-                            message: cir::TextBuilder::new()
-                                .append_text("ENTERED UNREACHABLE CODE".into())
-                                .build(),
-                        }
-                        .into(),
-                    );
-                }
-                Terminator::Resume(_) => {
-                    this.cmds.push(mark_todo());
-
-                    let message = cir::TextBuilder::new()
-                        .append_text("OH NO EXCEPTION HANDLING TOOD".into())
-                        .build();
-
-                    this.cmds.push(
-                        Tellraw {
-                            target: cir::Selector {
-                                var: cir::SelectorVariable::AllPlayers,
-                                args: Vec::new(),
-                            }
-                            .into(),
-                            message,
-                        }
-                        .into(),
-                    )
-                }
-                term => todo!("terminator {:?}", term),
-            }
+            this.cmds.extend(compile_terminator(&func, &block.term, globals));
 
             result.push(this);
 
