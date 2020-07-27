@@ -3,6 +3,8 @@
 # i32 len  == %param2%0
 # i1  is_volatile == %param3%0
 
+execute if score %param4%0 rust matches 1.. run setblock ~ ~1 ~ minecraft:air
+
 scoreboard players operation %%temp0_memcpy rust = %param0%0 rust
 scoreboard players operation %%temp1_memcpy rust = %param1%0 rust
 scoreboard players operation %%temp2_memcpy rust = %param2%0 rust

@@ -452,32 +452,30 @@ impl Interpreter {
                 self.output.push(msg);
             }
             Command::SetBlock(SetBlock { pos, block, kind: _kind }) => {
+                let mut coords = pos
+                    .split_whitespace()
+                    .map(|s| {
+                        let (st, relative) = if s.starts_with('~') {
+                            if s == "~" {
+                                return (0, true)
+                            } else {
+                                (&s[1..], true)
+                            }
+                        } else {
+                            (s, false)
+                        };
+                        (st.parse::<i32>().unwrap_or_else(|_| panic!("invalid {}", s)), relative)
+                    });
+
+                let (x, x_rel) = coords.next().unwrap();
+                let (y, y_rel) = coords.next().unwrap();
+                let (z, z_rel) = coords.next().unwrap();
+
                 if block.starts_with("minecraft:command_block") {
                     // Command block placement
                     println!("Command block placement at {} block {}", pos, block);
-                } else if pos == "~ ~1 ~" && block == "minecraft:air" {
-                    // Clearing command block activation
-                } else if block == "minecraft:redstone_block" {
-                    let mut coords = pos
-                        .split_whitespace()
-                        .map(|s| {
-                            let (st, relative) = if s.starts_with('~') {
-                                if s == "~" {
-                                    return (0, true)
-                                } else {
-                                    (&s[1..], true)
-                                }
-                            } else {
-                                (s, false)
-                            };
-                            (st.parse::<i32>().unwrap_or_else(|_| panic!("invalid {}", s)), relative)
-                        });
-
-                    let (x, x_rel) = coords.next().unwrap();
-                    let (y, y_rel) = coords.next().unwrap();
-                    let (z, z_rel) = coords.next().unwrap();
-
-                    if x == 0 && x_rel && y == 1 && y_rel && z == 0 && z_rel {
+                } else if x == 0 && x_rel && y == 1 && y_rel && z == 0 && z_rel {
+                    if block == "minecraft:redstone_block" {
                         println!("Branching to self");
 
                         if let [(func_idx, _)] = &self.call_stack[..] {
@@ -486,29 +484,30 @@ impl Interpreter {
                         } else {
                             todo!()
                         }
+                    } else if block == "minecraft:air" {
+                        // Do nothing
                     } else {
-                        if x_rel {
-                            todo!()
-                        }
-
-                        if z_rel {
-                            todo!()
-                        }
-
-                        if y != 1 {
-                            todo!("{} {}", pos, block);
-                        } else {
-                            let idx = pos_to_func_idx(x, z);
-
-                            println!("Branching to {}", self.program[idx as usize].id);
-
-                            assert_eq!(self.next_pos, None);
-                            self.next_pos = Some((idx as usize, 0));
-
-                        }
+                        todo!("{:?}", cmd)
                     }
                 } else {
-                    todo!()
+                    if x_rel {
+                        todo!()
+                    }
+
+                    if z_rel {
+                        todo!()
+                    }
+
+                    if y != 1 {
+                        todo!("{} {}", pos, block);
+                    } else if block == "minecraft:redstone_block" {
+                        let idx = pos_to_func_idx(x, z);
+
+                        println!("Branching to {}", self.program[idx as usize].id);
+
+                        assert_eq!(self.next_pos, None);
+                        self.next_pos = Some((idx as usize, 0));
+                    }
                 }
             }
             cmd if cmd.to_string().starts_with("execute as @e[tag=turtle] store result entity @s Pos[0] double 1 run") => {
