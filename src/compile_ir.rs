@@ -1,3 +1,4 @@
+use crate::analysis::{AbstractBlock, BlockEnd};
 use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
 use crate::cir::FunctionId as McFuncId;
@@ -450,6 +451,54 @@ fn apply_fixups(funcs: &mut [McFunction]) {
     }
 }
 
+pub fn save_regs<T>(regs: T) -> Vec<Command>
+where
+    T: IntoIterator<Item = ScoreHolder>
+{
+    let base_set = assign(stackbaseptr(), stackptr());
+
+    regs
+        .into_iter()
+        .chain(std::iter::once(stackbaseptr()))
+        .filter(|reg| {
+            reg != &stackptr() &&
+            reg != &ptr() &&
+            //reg != &stackbaseptr() &&
+            reg != &ScoreHolder::new("%%fixup".into()).unwrap() &&
+            reg != &ScoreHolder::new("%phi".into()).unwrap() &&
+            !reg.as_ref().contains("%%fixup") &&
+            !reg.as_ref().starts_with("%return%")
+        })
+        .map(push)
+        .flatten()
+        .chain(std::iter::once(base_set))
+        .collect()
+}
+
+pub fn load_regs<T>(regs: T) -> Vec<Command>
+where
+    T: DoubleEndedIterator<Item = ScoreHolder>
+{
+    let base_read = assign(stackptr(), stackbaseptr());
+
+    std::iter::once(base_read).chain(
+        regs
+            .filter(|reg| {
+                reg != &stackptr() &&
+                reg != &ptr() &&
+                //reg != &stackbaseptr() &&
+                reg != &ScoreHolder::new("%%fixup".into()).unwrap() &&
+                reg != &ScoreHolder::new("%phi".into()).unwrap() &&
+                !reg.as_ref().contains("%%fixup") &&
+                !reg.as_ref().starts_with("%return%")
+            })
+            .chain(std::iter::once(stackbaseptr()))
+            .rev()
+            .map(pop)
+            .flatten()
+    ).collect()
+}
+
 pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
     let (mut init_cmds, globals) = compile_global_var_init(&module.global_vars, &module.functions);
 
@@ -471,20 +520,11 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
     let mut after_blocks = Vec::new();
 
-    for (mc_funcs, mut clobbers) in module
+    for (mc_funcs, clobbers) in module
         .functions
         .iter()
         .map(|f| compile_function(f, &globals, options))
     {
-        clobbers.remove(&stackptr());
-        clobbers.remove(&ptr());
-        clobbers.remove(&ScoreHolder::new("%%fixup".to_string()).unwrap());
-        clobbers.remove(&ScoreHolder::new("%phi".to_string()).unwrap());
-        clobbers = clobbers
-            .into_iter()
-            .filter(|e| !e.0.as_ref().starts_with("%return%") && !e.0.as_ref().contains("%%fixup"))
-            .collect();
-
         for McFunction { id, .. } in mc_funcs.iter() {
             clobber_list.insert(
                 id.name.clone(),
@@ -506,56 +546,6 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     apply_fixups(&mut funcs);
 
     for func in funcs.iter_mut() {
-        let get_save_idx = |cmds: &[Command]| {
-            cmds.iter()
-                .enumerate()
-                .find(|(_, c)| {
-                    if let Command::FuncCall(McFuncCall { id }) = c {
-                        id.name == "%%saveregs"
-                    } else {
-                        false
-                    }
-                })
-                .map(|(i, _)| i)
-        };
-
-        while let Some(save_idx) = get_save_idx(&func.cmds) {
-            println!("Adding save code at {} idx {}", func.id, save_idx);
-            func.cmds.remove(save_idx);
-
-            let base_set = assign(stackbaseptr(), stackptr());
-
-            /*let message = cir::TextBuilder::new()
-            .append_text(format!("%stackptr at start of {} is ", func.id))
-            .append_score(stackptr(), OBJECTIVE.into(), None)
-            .build();*/
-
-            let save_code = /*std::iter::once(
-                Tellraw {
-                    target: cir::Selector {
-                        var: cir::SelectorVariable::AllPlayers,
-                        args: vec![],
-                    }
-                    .into(),
-                    message,
-                }
-                .into(),
-            )
-            .chain(*/
-                clobber_list
-                    .get(&func.id.name)
-                    .unwrap()
-                    .iter()
-                    .cloned()
-                    .chain(std::iter::once(stackbaseptr()))
-                    .map(push)
-                    .flatten()
-                    .chain(std::iter::once(base_set));
-            //);
-
-            func.cmds.splice(save_idx..save_idx, save_code);
-        }
-
         let get_load_idx = |cmds: &[Command]| {
             cmds.iter()
                 .enumerate()
@@ -573,21 +563,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
             println!("Adding load code at {} idx {}", func.id, load_idx);
             func.cmds.remove(load_idx);
 
-            let base_read = assign(stackptr(), stackbaseptr());
-
-            let load_code = std::iter::once(base_read).chain(
-                clobber_list
-                    .get(&func.id.name)
-                    .unwrap()
-                    .iter()
-                    .cloned()
-                    .chain(std::iter::once(stackbaseptr()))
-                    .rev()
-                    .map(pop)
-                    .flatten(),
-            );
-
-            func.cmds.splice(load_idx..load_idx, load_code);
+            func.cmds.splice(load_idx..load_idx, load_regs(clobber_list.get(&func.id.name).unwrap().clone().into_iter()));
         }
     }
 
@@ -2662,19 +2638,62 @@ pub fn compile_terminator(
     }
 }
 
-pub enum BlockEnd {
-    StaticCall(McFuncId),
-    DynCall,
-    Normal(Box<Terminator>),
-}
-
-struct AbstractBlock {
-    needs_prolog: bool,
-    body: McFunction,
-    term: BlockEnd,
-}
-
 #[allow(clippy::reversed_empty_ranges)]
+fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, parent: &Function, mut clobbers: BTreeSet<ScoreHolder>, globals: &GlobalVarList) -> McFunction {
+    if needs_prolog {
+        let mut prolog = Vec::new();
+
+        for (idx, arg) in parent.parameters.iter().enumerate() {
+            let arg_size = type_layout(&arg.ty).size();
+
+            for (arg_word, arg_holder) in
+                ScoreHolder::from_local_name(arg.name.clone(), arg_size)
+                    .into_iter()
+                    .enumerate()
+            {
+                clobbers.insert(arg_holder.clone());
+                prolog.push(assign(arg_holder, param(idx, arg_word)));
+            }
+        }
+
+        prolog.splice(0..0, save_regs(clobbers));
+
+        body.cmds.splice(1..1, prolog);
+    }
+
+    match term {
+        BlockEnd::Inlined(_) => {
+            todo!()
+        }
+        BlockEnd::StaticCall(id) => {
+            body.cmds.push(McFuncCall { id }.into())
+        }
+        BlockEnd::DynCall => {
+            // FIXME: This is identical to the one at the end of `compile_call`
+            let mut set_block = Execute::new();
+            set_block.with_at(
+                cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=ptr".into())],
+                }
+                .into(),
+            );
+            set_block.with_run(SetBlock {
+                pos: "~-2 1 ~".into(),
+                block: "minecraft:redstone_block".into(),
+                kind: SetBlockKind::Replace,
+            });
+
+            body.cmds.push(set_block.into());
+        }
+        BlockEnd::Normal(t) => {
+            body.cmds.extend(compile_terminator(&parent, &t, globals));
+        }
+    }
+
+    body
+}
+
 pub fn compile_function(
     func: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
@@ -2766,67 +2785,13 @@ pub fn compile_function(
         })
         .collect::<Vec<_>>();
 
-    let funcs = funcs
-        .into_iter()
-        .map(|AbstractBlock { needs_prolog, mut body, term }| {
-            if needs_prolog {
-                let mut prolog = Vec::new();
-                prolog.push(
-                    McFuncCall {
-                        id: McFuncId::new("%%saveregs"),
-                    }
-                    .into(),
-                );
-
-                for (idx, arg) in func.parameters.iter().enumerate() {
-                    let arg_size = type_layout(&arg.ty).size();
-
-                    for (arg_word, arg_holder) in
-                        ScoreHolder::from_local_name(arg.name.clone(), arg_size)
-                            .into_iter()
-                            .enumerate()
-                    {
-                        prolog.push(assign(arg_holder, param(idx, arg_word)));
-                    }
-                }
-
-                body.cmds.splice(1..1, prolog);
-            }
-
-            match term {
-                BlockEnd::StaticCall(id) => {
-                    body.cmds.push(McFuncCall { id }.into())
-                }
-                BlockEnd::DynCall => {
-                    // FIXME: This is identical to the one at the end of `compile_call`
-                    let mut set_block = Execute::new();
-                    set_block.with_at(
-                        cir::Selector {
-                            var: cir::SelectorVariable::AllEntities,
-                            args: vec![cir::SelectorArg("tag=ptr".into())],
-                        }
-                        .into(),
-                    );
-                    set_block.with_run(SetBlock {
-                        pos: "~-2 1 ~".into(),
-                        block: "minecraft:redstone_block".into(),
-                        kind: SetBlockKind::Replace,
-                    });
-
-                    body.cmds.push(set_block.into());
-                }
-                BlockEnd::Normal(t) => {
-                    body.cmds.extend(compile_terminator(&func, &t, globals));
-                }
-            }
-
-            body
-        })
-        .collect::<Vec<_>>();
+    /*for (idx, func) in funcs.iter().enumerate() {
+        println!("Body command count for {}: {:?}", func.body.id, estimate_body_cmds(&funcs, idx));
+    }*/
 
     let mut clobbers = HashMap::new();
     for f in funcs.iter() {
-        for c in f.cmds.iter() {
+        for c in f.body.cmds.iter() {
             cir::merge_uses(&mut clobbers, &c.holder_uses());
         }
     }
@@ -2834,7 +2799,15 @@ pub fn compile_function(
     let clobbers = clobbers
         .into_iter()
         .map(|(c, u)| ((*c).clone(), u))
-        .collect();
+        .collect::<HashMap<_, _>>();
+
+    let funcs = funcs
+        .into_iter()
+        .map(|block| {
+            let clobbers = clobbers.keys().cloned().collect();
+            reify_block(block, func, clobbers, globals)
+        })
+        .collect::<Vec<_>>();
 
     (funcs, clobbers)
 }

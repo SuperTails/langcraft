@@ -7,6 +7,7 @@ use std::path::Path;
 pub mod cir;
 pub mod compile_ir;
 pub mod interpreter;
+pub mod analysis;
 mod intrinsics;
 
 static SETUP_STR: &str = include_str!("setup.mcfunction");
