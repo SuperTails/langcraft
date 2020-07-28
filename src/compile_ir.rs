@@ -2342,24 +2342,13 @@ fn compile_call(
 
             before_cmds.extend(setup_arguments(arguments, globals));
 
-            // We don't actually want to use this, so we basically just `assert!(false)`
-            before_cmds.push(mark_assertion(
-                false,
-                &ExecuteCondition::Score {
-                    target: ScoreHolder::new("%%2".into()).unwrap().into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((0..=0).into()),
-                },
-            ));
-
             let temp_z = get_unique_holder();
             before_cmds.push(assign(temp_z.clone(), func_ptr.clone()));
-            // FIXME: These should use ROW_SIZE
-            before_cmds.push(make_op_lit(temp_z.clone(), "%=", 32));
+            before_cmds.push(make_op_lit(temp_z.clone(), "%=", ROW_SIZE as i32));
 
             let temp_x = get_unique_holder();
             before_cmds.push(assign(temp_x.clone(), func_ptr));
-            before_cmds.push(make_op_lit(temp_x.clone(), "/=", 32));
+            before_cmds.push(make_op_lit(temp_x.clone(), "/=", ROW_SIZE as i32));
             before_cmds.push(make_op_lit(temp_x.clone(), "*=", -1));
 
             // execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get func_ptr 1
@@ -2673,6 +2662,19 @@ pub fn compile_terminator(
     }
 }
 
+pub enum BlockEnd {
+    StaticCall(McFuncId),
+    DynCall,
+    Normal(Box<Terminator>),
+}
+
+struct AbstractBlock {
+    needs_prolog: bool,
+    body: McFunction,
+    term: BlockEnd,
+}
+
+#[allow(clippy::reversed_empty_ranges)]
 pub fn compile_function(
     func: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
@@ -2706,7 +2708,70 @@ pub fn compile_function(
             sub += 1;
 
             if idx == 0 {
-                this.cmds.push(
+            }
+
+            for instr in block.instrs.iter() {
+                let (mut before, after) = compile_instr(instr, func, globals, options);
+
+                if let Some(after) = after {
+                    let term = match before.pop().unwrap() {
+                        Command::FuncCall(McFuncCall { id }) if id.name.ends_with("%%fixup") => {
+                            BlockEnd::StaticCall(id)
+                        }
+                        cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~-2 1 ~ minecraft:redstone_block replace" => {
+                            BlockEnd::DynCall
+                        }
+                        b => todo!("{:?}", b),
+                    };
+
+                    this.cmds.extend(before);
+
+                    result.push(AbstractBlock {
+                        needs_prolog: idx == 0 && sub == 1,
+                        body: std::mem::replace(&mut this, make_new_func(sub)),
+                        term,
+                    });
+                    sub += 1;
+
+                    this.cmds.extend(after);
+                } else {
+                    this.cmds.extend(before);
+                }
+            }
+
+            this.cmds.push(assign_lit(
+                ScoreHolder::new("%phi".to_string()).unwrap(),
+                idx as i32,
+            ));
+
+            result.push(AbstractBlock {
+                needs_prolog: idx == 0 && sub == 1,
+                body: this,
+                term: BlockEnd::Normal(Box::new(block.term.clone())),
+            });
+
+            for sub_block in result.iter_mut() {
+                sub_block.body.cmds.insert(
+                    0,
+                    SetBlock {
+                        pos: "~ ~1 ~".to_string(),
+                        block: "minecraft:air".to_string(),
+                        kind: SetBlockKind::Replace,
+                    }
+                    .into(),
+                );
+            }
+
+            result
+        })
+        .collect::<Vec<_>>();
+
+    let funcs = funcs
+        .into_iter()
+        .map(|AbstractBlock { needs_prolog, mut body, term }| {
+            if needs_prolog {
+                let mut prolog = Vec::new();
+                prolog.push(
                     McFuncCall {
                         id: McFuncId::new("%%saveregs"),
                     }
@@ -2721,45 +2786,41 @@ pub fn compile_function(
                             .into_iter()
                             .enumerate()
                     {
-                        this.cmds.push(assign(arg_holder, param(idx, arg_word)));
+                        prolog.push(assign(arg_holder, param(idx, arg_word)));
                     }
                 }
+
+                body.cmds.splice(1..1, prolog);
             }
 
-            for instr in block.instrs.iter() {
-                let (before, after) = compile_instr(instr, func, globals, options);
-                this.cmds.extend(before);
-
-                if let Some(after) = after {
-                    result.push(std::mem::replace(&mut this, make_new_func(sub)));
-                    sub += 1;
-                    this.cmds.extend(after);
+            match term {
+                BlockEnd::StaticCall(id) => {
+                    body.cmds.push(McFuncCall { id }.into())
                 }
-            }
-
-            this.cmds.push(assign_lit(
-                ScoreHolder::new("%phi".to_string()).unwrap(),
-                idx as i32,
-            ));
-
-            this.cmds
-                .extend(compile_terminator(&func, &block.term, globals));
-
-            result.push(this);
-
-            for sub_block in result.iter_mut() {
-                sub_block.cmds.insert(
-                    0,
-                    SetBlock {
-                        pos: "~ ~1 ~".to_string(),
-                        block: "minecraft:air".to_string(),
+                BlockEnd::DynCall => {
+                    // FIXME: This is identical to the one at the end of `compile_call`
+                    let mut set_block = Execute::new();
+                    set_block.with_at(
+                        cir::Selector {
+                            var: cir::SelectorVariable::AllEntities,
+                            args: vec![cir::SelectorArg("tag=ptr".into())],
+                        }
+                        .into(),
+                    );
+                    set_block.with_run(SetBlock {
+                        pos: "~-2 1 ~".into(),
+                        block: "minecraft:redstone_block".into(),
                         kind: SetBlockKind::Replace,
-                    }
-                    .into(),
-                );
+                    });
+
+                    body.cmds.push(set_block.into());
+                }
+                BlockEnd::Normal(t) => {
+                    body.cmds.extend(compile_terminator(&func, &t, globals));
+                }
             }
 
-            result
+            body
         })
         .collect::<Vec<_>>();
 

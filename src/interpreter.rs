@@ -116,6 +116,10 @@ impl Interpreter {
         }
     }
 
+    pub fn program(&self) -> &[Function] {
+        &self.program
+    }
+
     pub fn call_stack(&self) -> Vec<(&Function, usize)> {
         self.call_stack
             .iter()
@@ -543,14 +547,61 @@ impl Interpreter {
                     unreachable!()
                 }
             }
-            cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~ ~ ~ minecraft:redstone_block replace" => {
-                if self.ptr_pos.1 == 1 {
-                    let idx = pos_to_func_idx(self.ptr_pos.0, self.ptr_pos.2);
-                    println!("Return to {}", idx);
-                    assert_eq!(self.next_pos, None);
-                    self.next_pos = Some((idx as usize, 0));
+            cmd if cmd.to_string().starts_with("execute at @e[tag=ptr] run setblock") => {
+                let (block, pos) = if let Command::Execute(Execute { run: Some(run), .. }) = cmd {
+                    if let Command::SetBlock(SetBlock { block, pos, kind: _ }) = &**run {
+                        (block, pos)
+                    } else {
+                        unreachable!()
+                    }
                 } else {
-                    panic!("attempt to return improperly")
+                    unreachable!()
+                };
+
+                let mut coords = pos
+                    .split_whitespace()
+                    .map(|s| {
+                        let (st, relative) = if s.starts_with('~') {
+                            if s == "~" {
+                                return (0, true)
+                            } else {
+                                (&s[1..], true)
+                            }
+                        } else {
+                            (s, false)
+                        };
+                        (st.parse::<i32>().unwrap_or_else(|_| panic!("invalid {}", s)), relative)
+                    });
+
+                let (x, x_rel) = coords.next().unwrap();
+                let (y, y_rel) = coords.next().unwrap();
+                let (z, z_rel) = coords.next().unwrap();
+
+                if block == "minecraft:redstone_block" {
+                    let x = if x_rel {
+                        x + self.ptr_pos.0
+                    } else {
+                        x
+                    };
+                    let y = if y_rel {
+                        y + self.ptr_pos.1
+                    } else {
+                        y
+                    };
+                    let z = if z_rel {
+                        z + self.ptr_pos.2
+                    } else {
+                        z
+                    };
+
+                    if y == 1 {
+                        let idx = pos_to_func_idx(x, z);
+                        println!("Return to {}", idx);
+                        assert_eq!(self.next_pos, None);
+                        self.next_pos = Some((idx as usize, 0));
+                    } else {
+                        panic!("attempt to branch improperly")
+                    }
                 }
             }
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr] run") => {
@@ -561,19 +612,23 @@ impl Interpreter {
                 };
 
                 if let Command::Data(Data { target: DataTarget::Block(block), kind: DataKind::Modify { path, kind: DataModifyKind::Set, source: DataModifySource::Value(v) } }) = run {
-                    if block != "~ ~ ~" {
-                        todo!("{:?}", block);
-                    }
+                    let index = match block.as_str() {
+                        "~ ~ ~" => {
+                            get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)
+                        }
+                        "~-2 1 ~" => {
+                            get_index(self.ptr_pos.0 - 2, 1, self.ptr_pos.2)
+                        }
+                        _ => todo!("{:?}", block)
+                    };
 
                     if path != "RecordItem.tag.Memory" {
                         todo!("{:?}", path);
                     }
 
-                    let index = get_index(self.ptr_pos.0, self.ptr_pos.1, self.ptr_pos.2)?;
-
-                    self.set_word(*v, index as usize)?;
+                    self.set_word(*v, index.unwrap() as usize)?;
                 } else {
-                    todo!("{:?}", run)
+                    todo!("{:?}", cmd)
                 }
             }
             cmd if cmd.to_string().starts_with("execute at @e[tag=ptr]") => {
