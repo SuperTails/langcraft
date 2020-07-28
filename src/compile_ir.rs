@@ -451,6 +451,7 @@ fn apply_fixups(funcs: &mut [McFunction]) {
     }
 }
 
+
 pub fn save_regs<T>(regs: T) -> Vec<Command>
 where
     T: IntoIterator<Item = ScoreHolder>
@@ -475,14 +476,16 @@ where
         .collect()
 }
 
-pub fn load_regs<T>(regs: T) -> Vec<Command>
+pub fn load_regs<T, U>(regs: T) -> Vec<Command>
 where
-    T: DoubleEndedIterator<Item = ScoreHolder>
+    T: IntoIterator<Item=ScoreHolder, IntoIter=U>,
+    U: DoubleEndedIterator + Iterator<Item=ScoreHolder>,
 {
     let base_read = assign(stackptr(), stackbaseptr());
 
     std::iter::once(base_read).chain(
         regs
+            .into_iter()
             .filter(|reg| {
                 reg != &stackptr() &&
                 reg != &ptr() &&
@@ -544,28 +547,6 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     println!("{:?}", clobber_list);
 
     apply_fixups(&mut funcs);
-
-    for func in funcs.iter_mut() {
-        let get_load_idx = |cmds: &[Command]| {
-            cmds.iter()
-                .enumerate()
-                .find(|(_, c)| {
-                    if let Command::FuncCall(McFuncCall { id }) = c {
-                        id.name == "%%loadregs"
-                    } else {
-                        false
-                    }
-                })
-                .map(|(i, _)| i)
-        };
-
-        while let Some(load_idx) = get_load_idx(&func.cmds) {
-            println!("Adding load code at {} idx {}", func.id, load_idx);
-            func.cmds.remove(load_idx);
-
-            func.cmds.splice(load_idx..load_idx, load_regs(clobber_list.get(&func.id.name).unwrap().clone().into_iter()));
-        }
-    }
 
     let mut build_cmds = funcs
         .iter()
@@ -2426,6 +2407,7 @@ fn compile_call(
 pub fn compile_terminator(
     parent: &Function,
     term: &Terminator,
+    clobbers: BTreeSet<ScoreHolder>,
     globals: &GlobalVarList,
 ) -> Vec<Command> {
     let mut cmds = Vec::new();
@@ -2437,12 +2419,7 @@ pub fn compile_terminator(
         }) => {
             cmds.push(Command::Comment("return".to_string()));
 
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("%%loadregs"),
-                }
-                .into(),
-            );
+            cmds.extend(load_regs(clobbers));
 
             cmds.push(
                 McFuncCall {
@@ -2467,12 +2444,7 @@ pub fn compile_terminator(
                 cmds.push(assign(return_holder(idx), word));
             }
 
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("%%loadregs"),
-                }
-                .into(),
-            );
+            cmds.extend(load_regs(clobbers));
 
             cmds.push(
                 McFuncCall {
@@ -2656,7 +2628,7 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, pa
             }
         }
 
-        prolog.splice(0..0, save_regs(clobbers));
+        prolog.splice(0..0, save_regs(clobbers.clone()));
 
         body.cmds.splice(1..1, prolog);
     }
@@ -2687,7 +2659,7 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, pa
             body.cmds.push(set_block.into());
         }
         BlockEnd::Normal(t) => {
-            body.cmds.extend(compile_terminator(&parent, &t, globals));
+            body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals));
         }
     }
 
