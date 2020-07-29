@@ -346,7 +346,7 @@ impl Interpreter {
             .iter()
             .any(|(i, _)| self.program[*i].id.name.contains("intrinsic"))
         {*/
-        //println!("{}", cmd);
+        eprintln!("{}", cmd);
         /*}*/
 
         match cmd {
@@ -808,6 +808,7 @@ impl Interpreter {
         loop {
             if self.call_stack.is_empty() {
                 if let Some(n) = self.next_pos.take() {
+                    eprintln!("Now about to execute {}", &self.program[n.0].id);
                     self.call_stack.push(n);
                 }
                 println!(

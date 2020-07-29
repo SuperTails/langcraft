@@ -513,38 +513,59 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
     init_cmds.push(assign_lit(stackbaseptr(), 0));
 
-    let init_func = McFunction {
-        id: McFuncId::new("init"),
-        cmds: init_cmds,
-    };
-
     let mut clobber_list = HashMap::<String, BTreeSet<ScoreHolder>>::new();
-    let mut funcs = vec![init_func];
+
+    let mut funcs = Vec::new();
 
     let mut after_blocks = Vec::new();
 
-    for (mc_funcs, clobbers) in module
+    for (parent, (mc_funcs, clobbers)) in module
         .functions
         .iter()
-        .map(|f| compile_function(f, &globals, options))
+        .map(|f| (f, compile_function(f, &globals, options)))
     {
-        for McFunction { id, .. } in mc_funcs.iter() {
+        for AbstractBlock { body: McFunction { id, .. }, .. } in mc_funcs.iter() {
             clobber_list.insert(
                 id.name.clone(),
                 clobbers.clone().into_iter().map(|c| c.0).collect(),
             );
         }
 
-        let mut f = mc_funcs.into_iter();
+        let mut f = mc_funcs.into_iter().zip(std::iter::repeat(parent));
         funcs.push(f.next().unwrap());
         after_blocks.extend(f);
     }
 
     funcs.extend(after_blocks);
 
-    funcs.extend(crate::intrinsics::INTRINSICS.clone());
+    println!("funcs:");
+    for func in funcs.iter() {
+        println!("{}", func.0.body.id);
+        match &func.0.term {
+            BlockEnd::Inlined(_) => {
+                unreachable!()
+            }
+            BlockEnd::DynCall => {
+                println!("\tdynamic");
+            }
+            BlockEnd::StaticCall(c) => {
+                println!("\tstatic {}", c)
+            }
+            BlockEnd::Normal(n) => {
+                println!("\tnormal: {:?}", n)
+            }
+        }
+    }
 
-    println!("{:?}", clobber_list);
+    let mut funcs = funcs
+        .into_iter()
+        .map(|(block, parent)| {
+            let clobbers = clobber_list.get(&block.body.id.name).unwrap().clone();
+            reify_block(block, parent, clobbers, &globals)
+        })
+        .collect::<Vec<_>>();
+
+    funcs.extend(crate::intrinsics::INTRINSICS.clone());
 
     apply_fixups(&mut funcs);
 
@@ -580,7 +601,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
         .into(),
     );
 
-    funcs[0].cmds.extend(build_cmds);
+    init_cmds.extend(build_cmds);
 
     let main_idx = funcs
         .iter()
@@ -601,6 +622,14 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
             func.cmds.insert(0, print_entry(&func.id));
         }
     }
+
+    let init_func = McFunction {
+        id: McFuncId::new("init"),
+        cmds: init_cmds,
+    };
+
+    let init_idx = funcs.len();
+    funcs.push(init_func);
 
     let (main_x, main_z) = func_idx_to_pos(main_idx);
     funcs.push(McFunction {
@@ -625,7 +654,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     }
 
     #[allow(clippy::reversed_empty_ranges)]
-    funcs[0].cmds.splice(
+    funcs[init_idx].cmds.splice(
         0..0,
         all_clobbers.iter().map(|c| assign_lit((*c).clone(), 1)),
     );
@@ -721,7 +750,7 @@ fn compile_global_var_init<'a>(
     let mut globals = global_var_layout(vars);
     for (idx, func) in funcs.iter().enumerate() {
         let name = Box::leak(Box::new(Name::Name(func.name.clone())));
-        globals.insert(name, (idx as u32 + 1, None));
+        globals.insert(name, (idx as u32, None));
     }
 
     let mut cmds = Vec::new();
@@ -2666,11 +2695,11 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, pa
     body
 }
 
-pub fn compile_function(
+fn compile_function(
     func: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
     options: &BuildOptions,
-) -> (Vec<McFunction>, HashMap<ScoreHolder, cir::HolderUse>) {
+) -> (Vec<AbstractBlock>, HashMap<ScoreHolder, cir::HolderUse>) {
     if func.is_var_arg {
         todo!("functions with variadic arguments");
     }
@@ -2772,14 +2801,6 @@ pub fn compile_function(
         .into_iter()
         .map(|(c, u)| ((*c).clone(), u))
         .collect::<HashMap<_, _>>();
-
-    let funcs = funcs
-        .into_iter()
-        .map(|block| {
-            let clobbers = clobbers.keys().cloned().collect();
-            reify_block(block, func, clobbers, globals)
-        })
-        .collect::<Vec<_>>();
 
     (funcs, clobbers)
 }

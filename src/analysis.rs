@@ -15,15 +15,15 @@ pub(crate) struct AbstractBlock {
     pub term: BlockEnd,
 }
 
-pub(crate) fn has_call_cycle(funcs: &[AbstractBlock], index: usize) -> bool {
+pub(crate) fn has_call_cycle(funcs: &[&Function], index: usize) -> bool {
     let mut visited = HashSet::new();
     has_call_cycle_inner(funcs, index, &mut visited)
 }
 
-fn has_call_cycle_inner(funcs: &[AbstractBlock], index: usize, visited: &mut HashSet<usize>) -> bool {
-    for cmd in funcs[index].body.cmds.iter() {
+fn has_call_cycle_inner(funcs: &[&Function], index: usize, visited: &mut HashSet<usize>) -> bool {
+    for cmd in funcs[index].cmds.iter() {
         if let Command::FuncCall(FuncCall { id }) = cmd {
-            let callee_idx = funcs.iter().enumerate().find(|f| &f.1.body.id == id).unwrap().0;
+            let callee_idx = funcs.iter().enumerate().find(|f| &f.1.id == id).unwrap().0;
             if visited.contains(&callee_idx) {
                 return true;
             } else {
