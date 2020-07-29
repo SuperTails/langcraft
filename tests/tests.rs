@@ -1,4 +1,5 @@
 use langcraft::{Datapack, Interpreter};
+use langcraft::cir::ScoreHolder;
 use std::path::Path;
 
 pub fn compile_and_run(path: &Path) -> Interpreter {
@@ -40,4 +41,18 @@ pub fn dyn_call() {
         compile_and_run(Path::new("./tests/dyn_call.bc")).output,
         vec!["42"],
     )
+}
+
+pub fn do_c_test(path: &Path, output: Vec<&str>) {
+    let interp = compile_and_run(path);
+    assert_eq!(interp.get_rust_score(&ScoreHolder::new("%return%0".to_string()).unwrap()).unwrap(), 0);
+    assert_eq!(interp.output, output);
+}
+
+// Compiled version of most tests from https://github.com/c-testsuite/c-testsuite
+#[test]
+pub fn run_c_tests() {
+    for file in std::fs::read_dir("./tests/c_testsuite/").unwrap() {
+        do_c_test(&file.unwrap().path(), vec![]);
+    }
 }
