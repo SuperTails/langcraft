@@ -370,19 +370,9 @@ where
     ).collect()
 }
 
-pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
-    let mut alloc = StaticAllocator(4);
-    
-    let (mut init_cmds, globals) = compile_global_var_init(&module.global_vars, &module.functions, &mut alloc);
+type AbstractCompileOutput<'a> = (Vec<(AbstractBlock, &'a Function)>, HashMap<String, BTreeSet<ScoreHolder>>, HashMap<String, McFuncId>);
 
-    let main_return = alloc.reserve(4);
-
-    init_cmds.push(set_memory(-1, main_return as i32));
-
-    init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
-
-    init_cmds.push(assign_lit(stackbaseptr(), 0));
-
+fn compile_module_abstract<'a>(module: &'a Module, options: &BuildOptions, globals: &GlobalVarList) -> AbstractCompileOutput<'a> {
     let mut clobber_list = HashMap::<String, BTreeSet<ScoreHolder>>::new();
 
     let mut funcs = Vec::new();
@@ -431,6 +421,29 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
         }
     }
 
+    for intr in crate::intrinsics::INTRINSICS.iter() {
+        assert_eq!(func_starts.insert(intr.id.to_string(), intr.id.clone()), None);
+    }
+
+    (funcs, clobber_list, func_starts)
+}
+
+pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
+    // Steps in compiling a module:
+    // 1. Lay out global variables
+    // 2. Convert LLVM functions to abstract blocks
+    // 3. Create a call graph from the abstract blocks
+    // 4. Add "inlined" nodes to the call graph
+    // 5. Do relocations
+    // 6. Add global variable init commands
+    
+    let mut alloc = StaticAllocator(4);
+    
+    let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
+
+    // Step 2: Convert LLVM functions to abstract blocks
+    let (funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
+
     let mut funcs = funcs
         .into_iter()
         .map(|(block, parent)| {
@@ -441,8 +454,13 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
     funcs.extend(crate::intrinsics::INTRINSICS.clone());
 
-    let mut funcs = do_relocation(funcs, &func_starts);
+    let mut funcs = do_relocation(funcs, &func_starts, &mut globals);
 
+    let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals);
+    let main_return = alloc.reserve(4);
+    init_cmds.push(set_memory(-1, main_return as i32));
+    init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
+    init_cmds.push(assign_lit(stackbaseptr(), 0));
     init_cmds.extend(make_build_cmds(&funcs));
 
     let mut all_clobbers = BTreeSet::new();
@@ -485,10 +503,24 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
 /// Finalizes the locations of the generated functions
 /// and applies any necessary fixups
-fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>) -> Vec<McFunction>
+fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: &mut GlobalVarList) -> Vec<McFunction>
     where T: IntoIterator<Item=McFunction>
 {
     let mut funcs = funcs.into_iter().collect::<Vec<_>>();
+
+    for (func, func_id) in func_starts.iter() {
+        let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0;
+
+        let name = Name::Name(func.clone());
+        #[allow(clippy::map_entry)]
+        if globals.contains_key(&name) {
+            globals.get_mut(&name).unwrap().0 = idx as u32;
+        } else {
+            assert!(func.contains("intrinsic"));
+            let name = Box::leak(Box::new(name));
+            globals.insert(name, (idx as u32, None));
+        }
+    }
 
     println!("func starts:");
     for f in func_starts.iter() {
@@ -695,12 +727,7 @@ fn apply_return_fixups(funcs: &mut [McFunction]) {
     }
 }
 
-// This doesn't change what the function clobbers
-fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
-    apply_branch_fixups(funcs);
-    apply_return_fixups(funcs);
-    apply_func_ref_fixups(funcs, func_starts);
-
+fn apply_call_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
     for func_idx in 0..funcs.len() {
         let mut cmd_idx = 0;
         while cmd_idx < funcs[func_idx].cmds.len() {
@@ -709,7 +736,7 @@ fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId
                 if c.starts_with("!FIXUPCALL ") {
                     let name = c["!FIXUPCALL ".len()..].to_owned();
 
-                    let call_id = func_starts.get(&name).unwrap();
+                    let call_id = func_starts.get(&name).unwrap_or_else(|| panic!("failed to get {}", name));
                     let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == call_id).unwrap().0;
                     let (x, z) = func_idx_to_pos(idx);
 
@@ -728,12 +755,26 @@ fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId
                 }
             }
 
-            let as_string = funcs[func_idx].cmds[cmd_idx].to_string();
-            if as_string.contains("%%fixup") || as_string.contains("!FIXUP") {
-                todo!("{}", funcs[func_idx].cmds[cmd_idx])
-            }
-
             cmd_idx += 1;
+        }
+    }
+
+}
+
+// This doesn't change what the function clobbers
+fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
+    apply_branch_fixups(funcs);
+    apply_return_fixups(funcs);
+    apply_func_ref_fixups(funcs, func_starts);
+    apply_call_fixups(funcs, func_starts);
+
+    // Make sure we didn't miss anything
+    for func in funcs.iter() {
+        for cmd in func.cmds.iter() {
+            let as_string = cmd.to_string();
+            if as_string.contains("%%fixup") || as_string.contains("!FIXUP") {
+                todo!("{}", cmd)
+            }
         }
     }
 }
@@ -857,21 +898,12 @@ type GlobalVarList<'a> = HashMap<&'a Name, (u32, Option<Constant>)>;
 
 fn compile_global_var_init<'a>(
     vars: &'a [GlobalVariable],
-    funcs: &[Function],
-    alloc: &mut StaticAllocator,
-) -> (Vec<Command>, GlobalVarList<'a>) {
-    let mut globals = global_var_layout(vars, alloc);
-    for func in funcs.iter() {
-        let name = Box::leak(Box::new(Name::Name(func.name.clone())));
-        globals.insert(name, (u32::MAX, None));
-    }
-
+    globals: &mut GlobalVarList,
+) -> Vec<Command> {
     let mut cmds = Vec::new();
 
     for var in vars {
-        let (tmp, value) = one_global_var_init(var, &globals);
-        cmds.extend(tmp);
-        assert_eq!(globals.get_mut(&var.name).unwrap().1.replace(value), None);
+        cmds.extend(one_global_var_init(var, &globals));
     }
 
     // Currently used constants:
@@ -906,10 +938,10 @@ fn compile_global_var_init<'a>(
         ));
     }
 
-    (cmds, globals)
+    cmds
 }
 
-fn global_var_layout<'a>(v: &'a [GlobalVariable], alloc: &mut StaticAllocator) -> GlobalVarList<'a> {
+fn global_var_layout<'a>(v: &'a [GlobalVariable], funcs: &[Function], alloc: &mut StaticAllocator) -> GlobalVarList<'a> {
     let mut result = HashMap::new();
     for v in v.iter() {
         let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
@@ -919,8 +951,14 @@ fn global_var_layout<'a>(v: &'a [GlobalVariable], alloc: &mut StaticAllocator) -
         };
 
         let start = alloc.reserve(type_layout(pointee_type).size() as u32);
-        result.insert(&v.name, (start, None));
+        result.insert(&v.name, (start, Some(v.initializer.clone().unwrap())));
     }
+
+    for func in funcs.iter() {
+        let name = Box::leak(Box::new(Name::Name(func.name.clone())));
+        result.insert(name, (u32::MAX, None));
+    }
+
     result
 }
 
@@ -1032,7 +1070,7 @@ fn init_data(
         } => {
             let val = match eval_constant(&value, globals) {
                 MaybeConst::Const(c) => c,
-                _ => todo!("{:?}", value)
+                _ => todo!("{:?}", value),
             };
 
             val.to_le_bytes()
@@ -1109,7 +1147,7 @@ fn init_data(
     }
 }
 
-fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> (Vec<Command>, Constant) {
+fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> Vec<Command> {
     if matches!(v.name, Name::Number(_)) {
         todo!()
     }
@@ -1160,7 +1198,7 @@ fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> (Vec<Comm
                 }
             }
 
-            (cmds, v.initializer.clone().unwrap())
+            cmds
         }
         _ => todo!("{:?}", v.ty),
     }
@@ -1324,7 +1362,7 @@ fn compile_memcpy(
             (_, _, Operand::ConstantOperand(Constant::Int { bits: 32, value }))
                 if *value > 1024 =>
             {
-                cmds.extend(push(ScoreHolder::new("%%fixup".to_string()).unwrap()));
+                cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
                 cmds.push(assign(param(0, 0), dest1));
                 cmds.push(assign(param(1, 0), src1));
                 cmds.push(assign_lit(param(2, 0), *value as i32));

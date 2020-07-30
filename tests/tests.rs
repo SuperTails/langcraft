@@ -62,3 +62,9 @@ pub fn run_c_tests() {
         do_c_test(&file.path(), vec![]);
     }
 }
+
+#[test]
+pub fn func_ptr_cast() {
+    let interp = compile_and_run(Path::new("./tests/func_ptr_cast.bc"));
+    assert_eq!(interp.output, vec!["42", "42"]);
+}
