@@ -4,7 +4,7 @@ use llvm_ir::Terminator;
 
 pub(crate) enum BlockEnd {
     Inlined(Box<AbstractBlock>),
-    StaticCall(FunctionId),
+    StaticCall(String),
     DynCall,
     Normal(Box<Terminator>),
 }

@@ -68,6 +68,8 @@ lazy_static! {
 #[serde(try_from = "String")]
 pub struct ScoreHolder(String);
 
+// FIXME: ScoreHolders depend on a `NameAlloc`, so they can't just be deserialized really
+
 impl ScoreHolder {
     pub fn new(string: String) -> Result<Self, String> {
         if string.is_empty() {
@@ -84,6 +86,10 @@ impl ScoreHolder {
         }
 
         Ok(ScoreHolder(string))
+    }
+
+    pub fn new_unchecked(string: String) -> Self {
+        ScoreHolder(string)
     }
 
     pub fn legal(c: char, is_first: bool) -> bool {

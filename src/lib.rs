@@ -30,9 +30,6 @@ impl Datapack {
 
     pub fn from_bc(path: &Path) -> Result<Self, String> {
         let mut functions = compile_bc(path)?;
-        for func in functions.iter() {
-            println!("{:?}", func.id);
-        }
         functions.extend(intrinsics::INTRINSICS.iter().cloned());
         Ok(Datapack {
             functions,

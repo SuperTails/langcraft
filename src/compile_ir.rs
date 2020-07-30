@@ -321,136 +321,6 @@ pub struct BuildOptions {
     pub log_trace: bool,
 }
 
-// This doesn't change what the function clobbers
-fn apply_fixups(funcs: &mut [McFunction]) {
-    for func_idx in 0..funcs.len() {
-        let mut cmd_idx = 0;
-        while cmd_idx < funcs[func_idx].cmds.len() {
-            if let Command::FuncCall(McFuncCall { id }) = &mut funcs[func_idx].cmds[cmd_idx] {
-                // TODO: `strip_suffix` is nightly but it's exactly what I'm doing
-                if id.name.ends_with("%%fixup") {
-                    // It doesn't matter what we replace it with
-                    // because the whole command gets removed
-                    let mut id = std::mem::replace(id, McFuncId::new(""));
-                    id.name.truncate(id.name.len() - "%%fixup".len());
-
-                    let idx = funcs
-                        .iter()
-                        .enumerate()
-                        .find(|(_, f)| f.id == id)
-                        .map(|(i, _)| i)
-                        .unwrap_or_else(|| {
-                            funcs
-                                .iter()
-                                .enumerate()
-                                .find(|(_, f)| f.id.name == id.name)
-                                .map(|(i, _)| i)
-                                .unwrap_or_else(|| panic!("could not find {:?}", id))
-                        });
-
-                    let (x, z) = func_idx_to_pos(idx);
-
-                    let pos = format!("{} 1 {}", x, z);
-                    let block = "minecraft:redstone_block".to_string();
-
-                    funcs[func_idx].cmds[cmd_idx] = SetBlock {
-                        pos,
-                        block,
-                        kind: SetBlockKind::Destroy,
-                    }
-                    .into();
-                    funcs[func_idx]
-                        .cmds
-                        .insert(cmd_idx, Command::Comment(format!("{}", id)));
-                }
-            } else if let Command::Execute(Execute {
-                run: Some(func_call),
-                ..
-            }) = &mut funcs[func_idx].cmds[cmd_idx]
-            {
-                if let Command::FuncCall(McFuncCall { id }) = &mut **func_call {
-                    if id.name.ends_with("%%fixup") {
-                        let mut id = std::mem::replace(id, McFuncId::new(""));
-                        id.name.truncate(id.name.len() - "%%fixup".len());
-
-                        let idx = funcs
-                            .iter()
-                            .enumerate()
-                            .find(|(_, f)| f.id == id)
-                            .map(|(i, _)| i)
-                            .unwrap_or_else(|| {
-                                funcs
-                                    .iter()
-                                    .enumerate()
-                                    .find(|(_, f)| f.id.name == id.name)
-                                    .map(|(i, _)| i)
-                                    .unwrap_or_else(|| panic!("could not find {:?}", id))
-                            });
-
-                        let (x, z) = func_idx_to_pos(idx);
-
-                        let pos = format!("{} 1 {}", x, z);
-                        let block = "minecraft:redstone_block".to_string();
-
-                        if let Command::Execute(Execute { run: Some(run), .. }) =
-                            &mut funcs[func_idx].cmds[cmd_idx]
-                        {
-                            *run = Box::new(
-                                SetBlock {
-                                    pos,
-                                    block,
-                                    kind: SetBlockKind::Replace,
-                                }
-                                .into(),
-                            );
-                        } else {
-                            unreachable!()
-                        }
-
-                        funcs[func_idx]
-                            .cmds
-                            .insert(cmd_idx, Command::Comment(format!("{}", id)));
-                    }
-                } else if let Command::ScoreGet(ScoreGet {
-                    target: Target::Uuid(target),
-                    ..
-                }) = &mut **func_call
-                {
-                    if target.as_ref() == "%%fixup" {
-                        // This is a return address
-                        let mut return_id = funcs[func_idx].id.clone();
-                        return_id.sub += 1;
-
-                        let idx = funcs
-                            .iter()
-                            .enumerate()
-                            .find(|(_, f)| f.id == return_id)
-                            .unwrap_or_else(|| panic!("could not find {:?}", return_id))
-                            .0;
-
-                        let mut cmd = Execute::new();
-                        cmd.with_at(Target::Selector(cir::Selector {
-                            var: cir::SelectorVariable::AllEntities,
-                            args: vec![cir::SelectorArg("tag=ptr".to_string())],
-                        }));
-                        cmd.with_run(Data {
-                            target: DataTarget::Block("~ ~ ~".to_string()),
-                            kind: DataKind::Modify {
-                                path: "RecordItem.tag.Memory".to_string(),
-                                kind: cir::DataModifyKind::Set,
-                                source: cir::DataModifySource::Value(idx as i32),
-                            },
-                        });
-                        funcs[func_idx].cmds[cmd_idx] = cmd.into();
-                    }
-                }
-            }
-
-            cmd_idx += 1;
-        }
-    }
-}
-
 
 pub fn save_regs<T>(regs: T) -> Vec<Command>
 where
@@ -465,7 +335,6 @@ where
             reg != &stackptr() &&
             reg != &ptr() &&
             //reg != &stackbaseptr() &&
-            reg != &ScoreHolder::new("%%fixup".into()).unwrap() &&
             reg != &ScoreHolder::new("%phi".into()).unwrap() &&
             !reg.as_ref().contains("%%fixup") &&
             !reg.as_ref().starts_with("%return%")
@@ -490,7 +359,6 @@ where
                 reg != &stackptr() &&
                 reg != &ptr() &&
                 //reg != &stackbaseptr() &&
-                reg != &ScoreHolder::new("%%fixup".into()).unwrap() &&
                 reg != &ScoreHolder::new("%phi".into()).unwrap() &&
                 !reg.as_ref().contains("%%fixup") &&
                 !reg.as_ref().starts_with("%return%")
@@ -503,13 +371,15 @@ where
 }
 
 pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
-    let (mut init_cmds, globals) = compile_global_var_init(&module.global_vars, &module.functions);
+    let mut alloc = StaticAllocator(4);
+    
+    let (mut init_cmds, globals) = compile_global_var_init(&module.global_vars, &module.functions, &mut alloc);
 
-    let main_return = get_alloc(4);
+    let main_return = alloc.reserve(4);
 
     init_cmds.push(set_memory(-1, main_return as i32));
 
-    init_cmds.push(assign_lit(stackptr(), get_alloc(4) as i32));
+    init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
 
     init_cmds.push(assign_lit(stackbaseptr(), 0));
 
@@ -518,6 +388,8 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     let mut funcs = Vec::new();
 
     let mut after_blocks = Vec::new();
+
+    let mut func_starts = HashMap::<String, McFuncId>::new();
 
     for (parent, (mc_funcs, clobbers)) in module
         .functions
@@ -530,6 +402,8 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
                 clobbers.clone().into_iter().map(|c| c.0).collect(),
             );
         }
+
+        func_starts.insert(parent.name.clone(), mc_funcs[0].body.id.clone());
 
         let mut f = mc_funcs.into_iter().zip(std::iter::repeat(parent));
         funcs.push(f.next().unwrap());
@@ -567,9 +441,314 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
     funcs.extend(crate::intrinsics::INTRINSICS.clone());
 
-    apply_fixups(&mut funcs);
+    let mut funcs = do_relocation(funcs, &func_starts);
 
-    let mut build_cmds = funcs
+    init_cmds.extend(make_build_cmds(&funcs));
+
+    let mut all_clobbers = BTreeSet::new();
+    for c in clobber_list.values() {
+        all_clobbers.extend(c);
+    }
+
+    #[allow(clippy::reversed_empty_ranges)]
+    init_cmds.splice(
+        0..0,
+        all_clobbers.iter().map(|c| assign_lit((*c).clone(), 1)),
+    );
+
+    funcs.push(McFunction {
+        id: McFuncId::new("init"),
+        cmds: init_cmds,
+    });
+
+    let main_id = func_starts.get("main").unwrap();
+    let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
+    let (main_x, main_z) = func_idx_to_pos(main_idx);
+    funcs.push(McFunction {
+        id: McFuncId::new("run"),
+        cmds: vec![
+            McFuncCall {
+                id: McFuncId::new("init"),
+            }
+            .into(),
+            SetBlock {
+                pos: format!("{} 1 {}", main_x, main_z),
+                block: "minecraft:redstone_block".to_string(),
+                kind: SetBlockKind::Replace,
+            }
+            .into(),
+        ],
+    });
+
+    funcs
+}
+
+/// Finalizes the locations of the generated functions
+/// and applies any necessary fixups
+fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>) -> Vec<McFunction>
+    where T: IntoIterator<Item=McFunction>
+{
+    let mut funcs = funcs.into_iter().collect::<Vec<_>>();
+
+    println!("func starts:");
+    for f in func_starts.iter() {
+        println!("{} -> {}", f.0, f.1)
+    }
+
+    apply_fixups(&mut funcs, &func_starts);
+
+    funcs
+}
+
+fn apply_branch_fixups(funcs: &mut [McFunction]) {
+    for func_idx in 0..funcs.len() {
+        let mut cmd_idx = 0;
+        while cmd_idx < funcs[func_idx].cmds.len() {
+            if let Command::FuncCall(McFuncCall { id }) = &mut funcs[func_idx].cmds[cmd_idx] {
+                if id.name.ends_with("%%fixup_branch") {
+                    // It doesn't matter what we replace it with
+                    // because the whole command gets removed
+                    let mut id = std::mem::replace(id, McFuncId::new(""));
+                    id.name.truncate(id.name.len() - "%%fixup_branch".len());
+
+                    let idx = funcs.iter().enumerate().find(|(_, f)| f.id == id).unwrap().0;
+                    let (x, z) = func_idx_to_pos(idx);
+
+                    let pos = format!("{} 1 {}", x, z);
+                    let block = "minecraft:redstone_block".to_string();
+
+                    funcs[func_idx].cmds[cmd_idx] = SetBlock {
+                        pos,
+                        block,
+                        kind: SetBlockKind::Destroy,
+                    }
+                    .into();
+                    funcs[func_idx]
+                        .cmds
+                        .insert(cmd_idx, Command::Comment(format!("{}", id)));
+
+                    cmd_idx += 1;
+                }
+            } else if let Command::Execute(Execute {
+                run: Some(func_call),
+                ..
+            }) = &mut funcs[func_idx].cmds[cmd_idx]
+            {
+                if let Command::FuncCall(McFuncCall { id }) = &mut **func_call {
+                    if id.name.ends_with("%%fixup_branch") {
+                        let mut id = std::mem::replace(id, McFuncId::new(""));
+                        id.name.truncate(id.name.len() - "%%fixup_branch".len());
+
+                        let idx = funcs.iter().enumerate().find(|(_, f)| f.id == id).unwrap().0;
+                        let (x, z) = func_idx_to_pos(idx);
+                        let pos = format!("{} 1 {}", x, z);
+                        let block = "minecraft:redstone_block".to_string();
+
+                        if let Command::Execute(Execute { run: Some(run), .. }) =
+                            &mut funcs[func_idx].cmds[cmd_idx]
+                        {
+                            *run = Box::new(
+                                SetBlock {
+                                    pos,
+                                    block,
+                                    kind: SetBlockKind::Replace,
+                                }
+                                .into(),
+                            );
+                        } else {
+                            unreachable!()
+                        }
+
+                        funcs[func_idx]
+                            .cmds
+                            .insert(cmd_idx, Command::Comment(format!("{}", id)));
+                    }
+                } /*else if target.as_ref().ends_with("%%fixup_func_ref") {
+                        // This is a reference to a function
+                        let func_name = target.as_ref()[..target.as_ref().len() - "%%fixup_func_ref".len()].to_owned();
+                        let func_id = func_starts.get(&func_name).unwrap();
+                        //let func_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0;
+                        todo!("{} {}", func_name, func_call)
+                }*/
+            }
+
+            cmd_idx += 1;
+        }
+    }
+}
+
+fn apply_func_ref_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
+    let get_value = |holder: &ScoreHolder, funcs: &[McFunction]| -> usize {
+        assert!(holder.as_ref().ends_with("%%fixup_func_ref"));
+        let func_name = &holder.as_ref()[..holder.as_ref().len() - "%%fixup_func_ref".len()];
+        let func_id = func_starts.get(func_name).unwrap();
+        funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0
+    };
+
+    for func_idx in 0..funcs.len() {
+        let mut cmd_idx = 0;
+        while cmd_idx < funcs[func_idx].cmds.len() {
+            if funcs[func_idx].cmds[cmd_idx].to_string().contains("%%fixup_func_ref") {
+                if funcs[func_idx].cmds[cmd_idx].to_string().starts_with("execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run") {
+                    if let Command::Execute(Execute { run: Some(run), .. }) = &funcs[func_idx].cmds[cmd_idx] {
+                        if let Command::ScoreGet(ScoreGet { target: Target::Uuid(target), target_obj }) = &**run {
+                            assert_eq!(target_obj, OBJECTIVE);
+
+                            let value = get_value(target, funcs);
+
+                            let mut cmd = Execute::new();
+                            cmd.with_at(Target::Selector(cir::Selector {
+                                var: cir::SelectorVariable::AllEntities,
+                                args: vec![cir::SelectorArg("tag=ptr".into())],
+                            }));
+                            cmd.with_run(Data {
+                                target: DataTarget::Block("~ ~ ~".into()),
+                                kind: DataKind::Modify {
+                                    kind: cir::DataModifyKind::Set,
+                                    path: "RecordItem.tag.Memory".into(),
+                                    source: cir::DataModifySource::Value(value as i32)
+                                }
+                            });
+
+                            funcs[func_idx].cmds[cmd_idx] = cmd.into();
+                        } else {
+                            todo!("{}", run)
+                        }
+                    } else {
+                        unreachable!()
+                    }
+                } else if let Command::ScoreOp(ScoreOp { target, target_obj, kind, source: Target::Uuid(source), source_obj }) = &funcs[func_idx].cmds[cmd_idx] {
+                    if source.as_ref().ends_with("%%fixup_func_ref") {
+                        assert_eq!(source_obj, OBJECTIVE);
+                        if *kind != ScoreOpKind::Assign {
+                            todo!("{:?}", kind)
+                        }
+
+                        let target = target.clone();
+                        let target_obj = target_obj.clone();
+
+                        let value = get_value(source, funcs);
+
+                        funcs[func_idx].cmds[cmd_idx] = ScoreSet {
+                            target,
+                            target_obj,
+                            score: value as i32,
+                        }.into();
+                    } else {
+                        todo!()
+                    }
+                } else {
+                    todo!("{}", funcs[func_idx].cmds[cmd_idx])
+                }
+            }
+
+            cmd_idx += 1;
+        }
+    }
+}
+
+fn apply_return_fixups(funcs: &mut [McFunction]) {
+    for func_idx in 0..funcs.len() {
+        let mut cmd_idx = 0;
+        while cmd_idx < funcs[func_idx].cmds.len() {
+            if let Command::Execute(Execute {
+                run: Some(func_call),
+                ..
+            }) = &mut funcs[func_idx].cmds[cmd_idx] {
+                if let Command::ScoreGet(ScoreGet {
+                    target: Target::Uuid(target),
+                    ..
+                }) = &mut **func_call
+                {
+                    if target.as_ref() == "%%fixup_return_addr" {
+                        // This is a return address
+                        let mut return_id = funcs[func_idx].id.clone();
+                        return_id.sub += 1;
+
+                        let idx = funcs
+                            .iter()
+                            .enumerate()
+                            .find(|(_, f)| f.id == return_id)
+                            .unwrap_or_else(|| panic!("could not find {:?}", return_id))
+                            .0;
+
+                        let mut cmd = Execute::new();
+                        cmd.with_at(Target::Selector(cir::Selector {
+                            var: cir::SelectorVariable::AllEntities,
+                            args: vec![cir::SelectorArg("tag=ptr".to_string())],
+                        }));
+                        cmd.with_run(Data {
+                            target: DataTarget::Block("~ ~ ~".to_string()),
+                            kind: DataKind::Modify {
+                                path: "RecordItem.tag.Memory".to_string(),
+                                kind: cir::DataModifyKind::Set,
+                                source: cir::DataModifySource::Value(idx as i32),
+                            },
+                        });
+                        funcs[func_idx].cmds[cmd_idx] = cmd.into();
+                    } 
+                }
+            }
+
+            cmd_idx += 1;
+        }
+    }
+}
+
+// This doesn't change what the function clobbers
+fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
+    apply_branch_fixups(funcs);
+    apply_return_fixups(funcs);
+    apply_func_ref_fixups(funcs, func_starts);
+
+    for func_idx in 0..funcs.len() {
+        let mut cmd_idx = 0;
+        while cmd_idx < funcs[func_idx].cmds.len() {
+            if let Command::Comment(c) = &mut funcs[func_idx].cmds[cmd_idx] {
+                // TODO: `strip_prefix` is nightly but it's exactly what I'm doing
+                if c.starts_with("!FIXUPCALL ") {
+                    let name = c["!FIXUPCALL ".len()..].to_owned();
+
+                    let call_id = func_starts.get(&name).unwrap();
+                    let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == call_id).unwrap().0;
+                    let (x, z) = func_idx_to_pos(idx);
+
+                    let pos = format!("{} 1 {}", x, z);
+                    let block = "minecraft:redstone_block".to_string();
+
+                    funcs[func_idx].cmds[cmd_idx] = SetBlock {
+                        pos,
+                        block,
+                        kind: SetBlockKind::Destroy,
+                    }
+                    .into();
+                    funcs[func_idx]
+                        .cmds
+                        .insert(cmd_idx, Command::Comment(name.to_string()));
+                }
+            }
+
+            let as_string = funcs[func_idx].cmds[cmd_idx].to_string();
+            if as_string.contains("%%fixup") || as_string.contains("!FIXUP") {
+                todo!("{}", funcs[func_idx].cmds[cmd_idx])
+            }
+
+            cmd_idx += 1;
+        }
+    }
+}
+
+fn make_build_cmds(funcs: &[McFunction]) -> Vec<Command> {
+    let mut build_cmds = vec![
+        cir::Fill {
+            start: "-2 0 0".to_string(),
+            end: "-15 0 64".to_string(),
+            block: "minecraft:air".to_string(),
+        }
+        .into(),
+    ];
+
+    build_cmds.extend(funcs
         .iter()
         .enumerate()
         .map(|(idx, func)| {
@@ -588,79 +767,12 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
                 kind: SetBlockKind::Destroy,
             }
             .into()
-        })
-        .collect::<Vec<Command>>();
+        }));
 
-    build_cmds.insert(
-        0,
-        cir::Fill {
-            start: "-2 0 0".to_string(),
-            end: "-15 0 64".to_string(),
-            block: "minecraft:air".to_string(),
-        }
-        .into(),
-    );
-
-    init_cmds.extend(build_cmds);
-
-    let main_idx = funcs
-        .iter()
-        .enumerate()
-        .find(|(_, f)| f.id == McFuncId::new("main"))
-        .map(|(i, _)| i)
-        .unwrap_or_else(|| {
-            funcs
-                .iter()
-                .enumerate()
-                .find(|(_, f)| f.id.name == "main")
-                .map(|(i, _)| i)
-                .unwrap_or_else(|| panic!("could not find main"))
-        });
-
-    if options.log_trace {
-        for func in &mut funcs[1..] {
-            func.cmds.insert(0, print_entry(&func.id));
-        }
-    }
-
-    let init_func = McFunction {
-        id: McFuncId::new("init"),
-        cmds: init_cmds,
-    };
-
-    let init_idx = funcs.len();
-    funcs.push(init_func);
-
-    let (main_x, main_z) = func_idx_to_pos(main_idx);
-    funcs.push(McFunction {
-        id: McFuncId::new("run"),
-        cmds: vec![
-            McFuncCall {
-                id: McFuncId::new("init"),
-            }
-            .into(),
-            SetBlock {
-                pos: format!("{} 1 {}", main_x, main_z),
-                block: "minecraft:redstone_block".to_string(),
-                kind: SetBlockKind::Replace,
-            }
-            .into(),
-        ],
-    });
-
-    let mut all_clobbers = BTreeSet::new();
-    for c in clobber_list.values() {
-        all_clobbers.extend(c);
-    }
-
-    #[allow(clippy::reversed_empty_ranges)]
-    funcs[init_idx].cmds.splice(
-        0..0,
-        all_clobbers.iter().map(|c| assign_lit((*c).clone(), 1)),
-    );
-
-    funcs
+    build_cmds
 }
+
+
 
 fn getelementptr_const(
     GetElementPtrConst {
@@ -746,11 +858,12 @@ type GlobalVarList<'a> = HashMap<&'a Name, (u32, Option<Constant>)>;
 fn compile_global_var_init<'a>(
     vars: &'a [GlobalVariable],
     funcs: &[Function],
+    alloc: &mut StaticAllocator,
 ) -> (Vec<Command>, GlobalVarList<'a>) {
-    let mut globals = global_var_layout(vars);
-    for (idx, func) in funcs.iter().enumerate() {
+    let mut globals = global_var_layout(vars, alloc);
+    for func in funcs.iter() {
         let name = Box::leak(Box::new(Name::Name(func.name.clone())));
-        globals.insert(name, (idx as u32, None));
+        globals.insert(name, (u32::MAX, None));
     }
 
     let mut cmds = Vec::new();
@@ -796,7 +909,7 @@ fn compile_global_var_init<'a>(
     (cmds, globals)
 }
 
-fn global_var_layout(v: &[GlobalVariable]) -> HashMap<&Name, (u32, Option<Constant>)> {
+fn global_var_layout<'a>(v: &'a [GlobalVariable], alloc: &mut StaticAllocator) -> GlobalVarList<'a> {
     let mut result = HashMap::new();
     for v in v.iter() {
         let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
@@ -805,7 +918,7 @@ fn global_var_layout(v: &[GlobalVariable]) -> HashMap<&Name, (u32, Option<Consta
             unreachable!()
         };
 
-        let start = get_alloc(type_layout(pointee_type).size() as u32);
+        let start = alloc.reserve(type_layout(pointee_type).size() as u32);
         result.insert(&v.name, (start, None));
     }
     result
@@ -917,10 +1030,9 @@ fn init_data(
             pointee_type: _,
             addr_space: _,
         } => {
-            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals) {
-                c
-            } else {
-                todo!("{:?}", value)
+            let val = match eval_constant(&value, globals) {
+                MaybeConst::Const(c) => c,
+                _ => todo!("{:?}", value)
             };
 
             val.to_le_bytes()
@@ -1217,12 +1329,7 @@ fn compile_memcpy(
                 cmds.push(assign(param(1, 0), src1));
                 cmds.push(assign_lit(param(2, 0), *value as i32));
                 cmds.push(assign_lit(param(4, 0), 1));
-                cmds.push(
-                    McFuncCall {
-                        id: McFuncId::new("intrinsic:memcpy%%fixup"),
-                    }
-                    .into(),
-                );
+                cmds.push(Command::Comment("!FIXUPCALL intrinsic:memcpy".into()));
 
                 return (cmds, Some(Vec::new()));
             }
@@ -2273,19 +2380,15 @@ fn compile_call(
                 (cmds, None)
             }
             _ => {
-                // TODO: Determine if we need %%fixup
-                let mut callee_id = McFuncId::new(name);
-                callee_id.name.push_str("%%fixup");
-
                 let mut before_cmds = Vec::new();
 
                 // Push return address
-                before_cmds.extend(push(ScoreHolder::new("%%fixup".to_string()).unwrap()));
+                before_cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
 
                 before_cmds.extend(setup_arguments(arguments, globals));
 
                 // Branch to function
-                before_cmds.push(McFuncCall { id: callee_id }.into());
+                before_cmds.push(Command::Comment(format!("!FIXUPCALL {}", name)));
 
                 let after_cmds = if let Some(dest) = dest {
                     dest.into_iter()
@@ -2324,7 +2427,7 @@ fn compile_call(
                 .map(|d| ScoreHolder::from_local_name(d, dest_size));
 
             // Push return address
-            before_cmds.extend(push(ScoreHolder::new("%%fixup".to_string()).unwrap()));
+            before_cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
 
             before_cmds.extend(setup_arguments(arguments, globals));
 
@@ -2487,7 +2590,7 @@ pub fn compile_terminator(
         Terminator::Br(Br { dest, .. }) => {
             let mut id = McFuncId::new_block(&parent.name, dest.clone());
 
-            id.name.push_str("%%fixup");
+            id.name.push_str("%%fixup_branch");
 
             cmds.push(McFuncCall { id }.into());
 
@@ -2508,8 +2611,8 @@ pub fn compile_terminator(
             let mut true_dest = McFuncId::new_block(&parent.name, true_dest.clone());
             let mut false_dest = McFuncId::new_block(&parent.name, false_dest.clone());
 
-            true_dest.name.push_str("%%fixup");
-            false_dest.name.push_str("%%fixup");
+            true_dest.name.push_str("%%fixup_branch");
+            false_dest.name.push_str("%%fixup_branch");
 
             let mut true_cmd = Execute::new();
             true_cmd
@@ -2562,7 +2665,7 @@ pub fn compile_terminator(
 
                 let mut dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
 
-                dest_id.name.push_str("%%fixup");
+                dest_id.name.push_str("%%fixup_branch");
 
                 let mut branch_cmd = Execute::new();
                 branch_cmd.with_if(ExecuteCondition::Score {
@@ -2582,7 +2685,7 @@ pub fn compile_terminator(
 
             let mut default_dest = McFuncId::new_block(&parent.name, default_dest.clone());
 
-            default_dest.name.push_str("%%fixup");
+            default_dest.name.push_str("%%fixup_branch");
 
             let mut default_cmd = Execute::new();
             default_cmd.with_if(ExecuteCondition::Score {
@@ -2667,7 +2770,7 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, pa
             todo!()
         }
         BlockEnd::StaticCall(id) => {
-            body.cmds.push(McFuncCall { id }.into())
+            body.cmds.push(Command::Comment(id))
         }
         BlockEnd::DynCall => {
             // FIXME: This is identical to the one at the end of `compile_call`
@@ -2719,9 +2822,17 @@ fn compile_function(
 
             let mut sub = 0;
 
-            let make_new_func = |sub| McFunction {
-                id: McFuncId::new_sub(func.name.clone(), block.name.clone(), sub),
-                cmds: vec![],
+            let make_new_func = |sub| {
+                let id = McFuncId::new_sub(func.name.clone(), block.name.clone(), sub);
+                let cmds = if options.log_trace {
+                    vec![print_entry(&id)]
+                } else {
+                    vec![]
+                };
+                McFunction {
+                    id,
+                    cmds,
+                }
             };
 
             let mut this = make_new_func(sub);
@@ -2735,8 +2846,8 @@ fn compile_function(
 
                 if let Some(after) = after {
                     let term = match before.pop().unwrap() {
-                        Command::FuncCall(McFuncCall { id }) if id.name.ends_with("%%fixup") => {
-                            BlockEnd::StaticCall(id)
+                        Command::Comment(c) if c.starts_with("!FIXUPCALL") => {
+                            BlockEnd::StaticCall(c)
                         }
                         cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~-2 1 ~ minecraft:redstone_block replace" => {
                             BlockEnd::DynCall
@@ -5157,7 +5268,7 @@ impl MaybeConst {
 
 pub fn eval_constant(
     con: &Constant,
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    globals: &GlobalVarList,
 ) -> MaybeConst {
     match con {
         Constant::GlobalReference { name, .. } => {
@@ -5165,7 +5276,19 @@ pub fn eval_constant(
                 .get(name)
                 .unwrap_or_else(|| panic!("failed to get {:?}", name))
                 .0;
-            MaybeConst::Const(addr as i32)
+
+            if addr == u32::MAX {
+                let mut name = if let Name::Name(name) = name {
+                    name.clone()
+                } else {
+                    todo!()
+                };
+                name.push_str("%%fixup_func_ref");
+                // FIXME: ew ew ew ew
+                MaybeConst::NonConst(vec![], vec![ScoreHolder::new_unchecked(name)])
+            } else {
+                MaybeConst::Const(addr as i32)
+            }
         }
         Constant::PtrToInt(tmp) => {
             if let llvm_ir::constant::PtrToInt {
@@ -5426,15 +5549,18 @@ lazy_static! {
     pub static ref FREE_PTR: Mutex<u32> = Mutex::new(4);
 }
 
-fn get_alloc(mut amount: u32) -> u32 {
-    if amount % 4 != 0 {
-        amount += 4 - (amount % 4);
-    }
+struct StaticAllocator(u32);
 
-    let mut lock = FREE_PTR.lock().unwrap();
-    let result = *lock;
-    *lock += amount;
-    result
+impl StaticAllocator {
+    pub fn reserve(&mut self, mut amount: u32) -> u32 {
+        if amount % 4 != 0 {
+            amount += 4 - (amount % 4);
+        }
+
+        let result = self.0;
+        self.0 += amount;
+        result
+    }
 }
 
 fn get_unique_num() -> u32 {
