@@ -1,4 +1,4 @@
-use crate::analysis::{AbstractBlock, BlockEnd};
+use crate::analysis::{AbstractBlock, BlockEnd, self};
 use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
 use crate::cir::FunctionId as McFuncId;
@@ -370,9 +370,9 @@ where
     ).collect()
 }
 
-type AbstractCompileOutput<'a> = (Vec<(AbstractBlock, &'a Function)>, HashMap<String, BTreeSet<ScoreHolder>>, HashMap<String, McFuncId>);
+type AbstractCompileOutput = (Vec<AbstractBlock>, HashMap<String, BTreeSet<ScoreHolder>>, HashMap<String, McFuncId>);
 
-fn compile_module_abstract<'a>(module: &'a Module, options: &BuildOptions, globals: &GlobalVarList) -> AbstractCompileOutput<'a> {
+fn compile_module_abstract(module: &Module, options: &BuildOptions, globals: &GlobalVarList) -> AbstractCompileOutput {
     let mut clobber_list = HashMap::<String, BTreeSet<ScoreHolder>>::new();
 
     let mut funcs = Vec::new();
@@ -395,14 +395,14 @@ fn compile_module_abstract<'a>(module: &'a Module, options: &BuildOptions, globa
 
         func_starts.insert(parent.name.clone(), mc_funcs[0].body.id.clone());
 
-        let mut f = mc_funcs.into_iter().zip(std::iter::repeat(parent));
+        let mut f = mc_funcs.into_iter();
         funcs.push(f.next().unwrap());
         after_blocks.extend(f);
     }
 
     funcs.extend(after_blocks);
 
-    println!("funcs:");
+    /*println!("funcs:");
     for func in funcs.iter() {
         println!("{}", func.0.body.id);
         match &func.0.term {
@@ -419,7 +419,7 @@ fn compile_module_abstract<'a>(module: &'a Module, options: &BuildOptions, globa
                 println!("\tnormal: {:?}", n)
             }
         }
-    }
+    }*/
 
     for intr in crate::intrinsics::INTRINSICS.iter() {
         assert_eq!(func_starts.insert(intr.id.to_string(), intr.id.clone()), None);
@@ -428,34 +428,92 @@ fn compile_module_abstract<'a>(module: &'a Module, options: &BuildOptions, globa
     (funcs, clobber_list, func_starts)
 }
 
+fn build_call_chains(funcs: &mut Vec<AbstractBlock>, func_starts: &HashMap<String, McFuncId>) {
+    let list = funcs.iter().map(|f| (f.body.id.clone(), f.clone())).collect();
+
+    let mut idx = 0;
+    while idx != funcs.len() {
+        if let Some(dest) = funcs[idx].get_dest(func_starts) {
+            if dest.name.contains("intrinsic") {
+                idx += 1;
+                // TODO:
+            } else {
+                let dest_idx = funcs.iter().enumerate().find(|(_, f)| f.body.id == dest).unwrap_or_else(|| panic!("{}", dest)).0;
+
+                let count1 = analysis::estimate_total_count(&list, func_starts, &funcs[dest_idx]);
+                let count2 = analysis::estimate_total_count(&list, func_starts, &funcs[idx]);
+                if let (Some(count1), Some(count2)) = (count1, count2) {
+                    if count1 + count2 < 60_000 {
+                        if funcs[idx].last().body.id != dest {
+                            println!("{} -> {}", funcs[idx].last().body.id, dest);
+                            println!("total: {}", count1 + count2);
+                            let dest = funcs[dest_idx].clone();
+                            funcs[idx].replace_term(dest);
+                        } else {
+                            idx += 1;
+                        }
+                    } else {
+                        idx += 1;
+                    }
+                } else {
+                    idx += 1;
+                }
+            }
+        } else {
+            idx += 1;
+        }
+
+        println!("idx: {}, funcs.len(): {}", idx, funcs.len());
+    }
+
+    println!("\nChains:");
+    for f in funcs.iter() {
+        f.print_chain();
+    }
+}
+
 pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
     // Steps in compiling a module:
     // 1. Lay out global variables
     // 2. Convert LLVM functions to abstract blocks
-    // 3. Create a call graph from the abstract blocks
-    // 4. Add "inlined" nodes to the call graph
+    // 3. Extend abstract blocks with "chains"
+    // 4. Reify call graph to MC functions
     // 5. Do relocations
     // 6. Add global variable init commands
     
+    // Step 1: Lay out global variables
     let mut alloc = StaticAllocator(4);
-    
     let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
 
     // Step 2: Convert LLVM functions to abstract blocks
-    let (funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
+    let (mut funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
 
+    for func in funcs.iter() {
+        if let Some(dest) = func.get_dest(&func_starts) {
+            println!("{} -> {}", func.body.id, dest);
+        }
+    }
+
+    // Step 3
+    build_call_chains(&mut funcs, &func_starts);
+
+    // Step 4: Reify call graph to MC functions
     let mut funcs = funcs
         .into_iter()
-        .map(|(block, parent)| {
-            let clobbers = clobber_list.get(&block.body.id.name).unwrap().clone();
-            reify_block(block, parent, clobbers, &globals)
-        })
+        .map(|block| reify_block(block, &clobber_list, &globals))
         .collect::<Vec<_>>();
 
     funcs.extend(crate::intrinsics::INTRINSICS.clone());
 
+    // Step 5: Do relocations
     let mut funcs = do_relocation(funcs, &func_starts, &mut globals);
 
+    println!("\nIndices:");
+    for (idx, f) in funcs.iter().enumerate() {
+        println!("{:>2}: {}", idx, f.id);
+    }
+
+    // Step 6: Add global variable init commands
     let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals);
     let main_return = alloc.reserve(4);
     init_cmds.push(set_memory(-1, main_return as i32));
@@ -520,11 +578,6 @@ fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: 
             let name = Box::leak(Box::new(name));
             globals.insert(name, (idx as u32, None));
         }
-    }
-
-    println!("func starts:");
-    for f in func_starts.iter() {
-        println!("{} -> {}", f.0, f.1)
     }
 
     apply_fixups(&mut funcs, &func_starts);
@@ -692,9 +745,9 @@ fn apply_return_fixups(funcs: &mut [McFunction]) {
                     ..
                 }) = &mut **func_call
                 {
-                    if target.as_ref() == "%%fixup_return_addr" {
-                        // This is a return address
-                        let mut return_id = funcs[func_idx].id.clone();
+                    if target.as_ref().ends_with("%%fixup_return_addr") {
+                        let return_id = &target.as_ref()[..target.as_ref().len() - "%%fixup_return_addr".len()];
+                        let mut return_id = return_id.parse::<McFuncId>().unwrap();
                         return_id.sub += 1;
 
                         let idx = funcs
@@ -2781,7 +2834,9 @@ pub fn compile_terminator(
 }
 
 #[allow(clippy::reversed_empty_ranges)]
-fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, parent: &Function, mut clobbers: BTreeSet<ScoreHolder>, globals: &GlobalVarList) -> McFunction {
+fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractBlock, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList) -> McFunction {
+    let mut clobbers = clobber_list.get(&body.id.name).unwrap().clone();
+
     if needs_prolog {
         let mut prolog = Vec::new();
 
@@ -2804,8 +2859,10 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term }: AbstractBlock, pa
     }
 
     match term {
-        BlockEnd::Inlined(_) => {
-            todo!()
+        BlockEnd::Inlined(ab) => {
+            body.cmds.push(Command::Comment(format!("===== Begin block {} =====", ab.body.id)));
+            let inner = reify_block(*ab, clobber_list, globals);
+            body.cmds.extend(inner.cmds);
         }
         BlockEnd::StaticCall(id) => {
             body.cmds.push(Command::Comment(id))
@@ -2851,7 +2908,7 @@ fn compile_function(
 
     println!("Function {}, {}", func.name, func.basic_blocks.len());
 
-    let funcs = func
+    let mut funcs = func
         .basic_blocks
         .iter()
         .enumerate()
@@ -2896,6 +2953,7 @@ fn compile_function(
                     this.cmds.extend(before);
 
                     result.push(AbstractBlock {
+                        parent: func.clone(),
                         needs_prolog: idx == 0 && sub == 1,
                         body: std::mem::replace(&mut this, make_new_func(sub)),
                         term,
@@ -2914,9 +2972,10 @@ fn compile_function(
             ));
 
             result.push(AbstractBlock {
+                parent: func.clone(),
                 needs_prolog: idx == 0 && sub == 1,
                 body: this,
-                term: BlockEnd::Normal(Box::new(block.term.clone())),
+                term: BlockEnd::Normal(block.term.clone()),
             });
 
             for sub_block in result.iter_mut() {
@@ -2938,6 +2997,26 @@ fn compile_function(
     /*for (idx, func) in funcs.iter().enumerate() {
         println!("Body command count for {}: {:?}", func.body.id, estimate_body_cmds(&funcs, idx));
     }*/
+
+    for func in funcs.iter_mut() {
+        for cmd in func.body.cmds.iter_mut() {
+            if let Command::Execute(Execute {
+                run: Some(func_call),
+                ..
+            }) = cmd {
+                if let Command::ScoreGet(ScoreGet {
+                    target: Target::Uuid(target),
+                    ..
+                }) = &mut **func_call
+                {
+                    if target.as_ref() == "%%fixup_return_addr" {
+                        // FIXME: Also ewwww aaaaaa help
+                        *target = ScoreHolder::new_unchecked(format!("{}%%fixup_return_addr", func.body.id));
+                    }
+                }
+            }
+        }
+    }
 
     let mut clobbers = HashMap::new();
     for f in funcs.iter() {

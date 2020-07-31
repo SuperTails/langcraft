@@ -1,5 +1,6 @@
-use crate::cir::{Function, FunctionId};
+use crate::cir::{Function, FunctionId, Command, Execute, FuncCall};
 use lazy_static::lazy_static;
+use std::collections::{HashSet, HashMap};
 
 static INTRINSIC_STRS: &[(&str, &str)] = &[
     ("intrinsic:lshr", include_str!("intrinsic/lshr.mcfunction")),
@@ -125,6 +126,52 @@ lazy_static! {
             .map(|(name, body)| Function::from_str(FunctionId::new(name.to_owned()), body).unwrap())
             .collect()
     };
+
+    pub static ref INTRINSIC_COUNTS: HashMap<FunctionId, Option<usize>> = {
+        let mut vals = HashMap::new();
+        for idx in 0..INTRINSICS.len() {
+            estimate_intr(idx, &mut vals);
+        }
+        vals
+    };
+}
+
+fn estimate_cmd(cmd: &Command, vals: &mut HashMap<FunctionId, Option<usize>>, visited: &mut HashSet<&FunctionId>) -> Option<usize> {
+    match cmd {
+        Command::Execute(Execute { run: Some(run), subcommands: _ }) => Some(1 + estimate_cmd(run, vals, visited)?),
+        Command::FuncCall(FuncCall { id }) => {
+            let idx = INTRINSICS.iter().enumerate().find(|(_, f)| &f.id == id).unwrap().0;
+            estimate_intr_inner(idx, vals, visited)
+        },
+        _ => Some(1),
+    }
+}
+
+fn estimate_intr(idx: usize, vals: &mut HashMap<FunctionId, Option<usize>>) -> Option<usize> {
+    let mut visited = HashSet::new();
+    estimate_intr_inner(idx, vals, &mut visited)
+}
+
+fn estimate_intr_inner(idx: usize, vals: &mut HashMap<FunctionId, Option<usize>>, visited: &mut HashSet<&FunctionId>) -> Option<usize> {
+    if let Some(result) = vals.get(&INTRINSICS[idx].id) {
+        *result
+    } else if visited.contains(&INTRINSICS[idx].id) {
+        vals.insert(INTRINSICS[idx].id.clone(), None);
+        None
+    } else {
+        visited.insert(&INTRINSICS[idx].id);
+
+        let count = || -> Option<usize> {
+            let mut result = 0;
+            for cmd in INTRINSICS[idx].cmds.iter() {
+                result += estimate_cmd(cmd, vals, visited)?;
+            }
+            Some(result)
+        }();
+
+        vals.insert(INTRINSICS[idx].id.clone(), count);
+        count
+    }
 }
 
 #[cfg(test)]

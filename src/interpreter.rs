@@ -50,6 +50,7 @@ pub struct Interpreter {
     letters: HashMap<(i32, i32, i32), char>,
     next_pos: Option<(usize, usize)>,
     pub output: Vec<String>,
+    pub tick: usize,
     commands_run: usize,
     memory_points: HashMap<usize, BreakKind>,
 }
@@ -75,6 +76,7 @@ impl Interpreter {
             turtle_pos: (0, 0, 0),
             next_pos: None,
             commands_run: 0,
+            tick: 0,
             output: Vec::new(),
             memory_points: HashMap::new(),
             letters,
@@ -109,6 +111,7 @@ impl Interpreter {
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
             next_pos: None,
+            tick: 0,
             commands_run: 0,
             output: Vec::new(),
             memory_points: HashMap::new(),
@@ -341,13 +344,13 @@ impl Interpreter {
     }
 
     fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
-        /*if !self
+        if !self
             .call_stack
             .iter()
             .any(|(i, _)| self.program[*i].id.name.contains("intrinsic"))
-        {*/
-        eprintln!("{}", cmd);
-        /*}*/
+        {
+            eprintln!("{}", cmd);
+        }
 
         match cmd {
             Command::ScoreAdd(ScoreAdd { target: Target::Uuid(target), target_obj, score }) => {
@@ -596,7 +599,7 @@ impl Interpreter {
 
                     if y == 1 {
                         let idx = pos_to_func_idx(x, z);
-                        println!("Return to {}", idx);
+                        println!("Dynamic branch to {}", idx);
                         assert_eq!(self.next_pos, None);
                         self.next_pos = Some((idx as usize, 0));
                     } else {
@@ -807,8 +810,9 @@ impl Interpreter {
 
         loop {
             if self.call_stack.is_empty() {
+                self.tick += 1;
                 if let Some(n) = self.next_pos.take() {
-                    eprintln!("Now about to execute {}", &self.program[n.0].id);
+                    eprintln!("\nNow about to execute {}", &self.program[n.0].id);
                     self.call_stack.push(n);
                 }
                 println!(

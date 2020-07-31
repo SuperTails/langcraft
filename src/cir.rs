@@ -412,7 +412,7 @@ impl fmt::Display for Predicate {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct FunctionId {
     pub name: String,
     pub block: Name,
@@ -471,6 +471,40 @@ impl FunctionId {
         };
 
         tail.split('/').map(|s| s.to_owned()).collect()
+    }
+}
+
+impl FromStr for FunctionId {
+    type Err = String;
+
+    fn from_str(mut s: &str) -> Result<Self, Self::Err> {
+        let sub = if let Some(idx) = s.find("-sub") {
+            let sub = s[idx + 4..].parse().map_err(|_| format!("failed to parse sub {}", &s[idx + 4..]))?;
+            s = &s[..idx];
+            sub
+        } else {
+            0
+        };
+
+        let block = if let Some(idx) = s.find("-block") {
+            let block = if let Ok(num) = s[idx + 6..].parse() {
+                Name::Number(num)
+            } else {
+                Name::Name(s[idx + 6..].to_owned())
+            };
+            s = &s[..idx];
+            block
+        } else {
+            Name::Number(0)
+        };
+
+        let name = s.to_owned();
+
+        Ok(FunctionId {
+            name,
+            block,
+            sub,
+        })
     }
 }
 

@@ -244,11 +244,12 @@ fn main() {
 
         match run_interpreter(&mut interp) {
             Ok(()) => {
+                eprintln!("=== Begin output ===");
                 for i in interp.output.iter() {
                     eprintln!("{}", i);
                 }
-                eprintln!("=== End output ===");
-                eprintln!("Program finished normally");
+                eprintln!("==== End output ====");
+                eprintln!("Program finished normally in {} ticks", interp.tick);
 
                 if options.compare {
                     compare_output(&interp);
