@@ -140,15 +140,15 @@ pub struct Options {
     pub interpret: bool,
     /// Compare output
     pub compare: bool,
-    /// The path to the bitcode file to compile
-    pub bc_path: PathBuf,
+    /// The paths to the bitcode files to compile
+    pub bc_path: std::collections::LinkedList::<PathBuf>,
     pub output_folder: PathBuf,
 }
 
 fn parse_arguments() -> Result<Options, String> {
     let mut interpret = false;
     let mut compare = false;
-    let mut bc_path = PathBuf::new();
+    let mut bc_path = std::collections::LinkedList::<PathBuf>::new();
     let mut output_folder = None;
 
     let mut args = std::env::args().skip(1);
@@ -175,7 +175,7 @@ fn parse_arguments() -> Result<Options, String> {
             }
         } else {
             // The non-option argument is a path
-            bc_path = PathBuf::from(arg);
+            bc_path.push_back(PathBuf::from(arg));
         }
     }
 

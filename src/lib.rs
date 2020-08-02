@@ -28,8 +28,14 @@ impl Datapack {
             .map(|(i, _)| i)
     }
 
-    pub fn from_bc(path: &Path) -> Result<Self, String> {
-        let mut functions = compile_bc(path)?;
+    pub fn from_bc(path: &std::collections::LinkedList::<std::path::PathBuf>) -> Result<Self, String> {
+        let mut functions = std::vec::Vec::new();
+
+        for current_file in path.iter() {
+            let file_functions = compile_bc(current_file)?;
+            functions.extend(file_functions);
+        }
+
         functions.extend(intrinsics::INTRINSICS.iter().cloned());
         Ok(Datapack {
             functions,
