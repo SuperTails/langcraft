@@ -537,24 +537,31 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
         cmds: init_cmds,
     });
 
-    let main_id = func_starts.get("main").unwrap();
-    let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
-    let (main_x, main_z) = func_idx_to_pos(main_idx);
-    funcs.push(McFunction {
-        id: McFuncId::new("run"),
-        cmds: vec![
-            McFuncCall {
-                id: McFuncId::new("init"),
-            }
-            .into(),
-            SetBlock {
-                pos: format!("{} 1 {}", main_x, main_z),
-                block: "minecraft:redstone_block".to_string(),
-                kind: SetBlockKind::Replace,
-            }
-            .into(),
-        ],
-    });
+    // check if main is defined in this file; if not, then don't make a function call to it
+    let __________main_func = func_starts.get("main");
+    
+    if __________main_func == None {
+        std::println!("[WARN] The entry point has not been defined.")
+    } else {
+        let main_id = func_starts.get("main").unwrap();
+        let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
+        let (main_x, main_z) = func_idx_to_pos(main_idx);
+        funcs.push(McFunction {
+            id: McFuncId::new("run"),
+            cmds: vec![
+                McFuncCall {
+                    id: McFuncId::new("init"),
+                }
+                .into(),
+                SetBlock {
+                    pos: format!("{} 1 {}", main_x, main_z),
+                    block: "minecraft:redstone_block".to_string(),
+                    kind: SetBlockKind::Replace,
+                }
+                .into(),
+            ],
+        });
+    }
 
     funcs
 }
@@ -4543,6 +4550,7 @@ pub fn compile_instr(
                         .unwrap();
 
                     if target.len() != 1 || source.len() != 1 {
+                        std::println!("Target len is {}, source len is {}",target.len(),source.len());
                         todo!()
                     }
 
