@@ -154,22 +154,28 @@ fn parse_arguments() -> Result<Options, String> {
     let mut args = std::env::args().skip(1);
 
     while let Some(arg) = args.next() {
-        if args.len() == 0 {
-            // The last argument is the path
-            bc_path = PathBuf::from(arg);
-        } else if arg == "--run" {
-            interpret = true
-        } else if arg == "--compare" {
-            compare = true;
-        } else if arg.starts_with("--out=") {
-            if output_folder.is_none() {
-                let tail = &arg["--out=".len()..];
-                output_folder = Some(PathBuf::from(tail));
+        if arg.starts_with("-") {
+            if arg == "--run" {
+                interpret = true
+            } else if arg == "--compare" {
+                compare = true;
+            } else if arg.starts_with("--out=") {
+                if output_folder.is_none() {
+                    let tail = &arg["--out=".len()..];
+                    output_folder = Some(PathBuf::from(tail));
+                } else {
+                    return Err(String::from("more than one `--out` argument"));
+                }
+            } else if arg == "--help" {
+                // give help text then exit
+                std::print!("This is a placeholder. Check [src/bin/main.rs:157-180] for help details.\n");
+                std::process::exit(0);
             } else {
-                return Err(String::from("more than one `--out` argument"));
+                return Err(format!("invalid option `{}`",arg));
             }
         } else {
-            return Err(format!("invalid argument `{}`", arg));
+            // The non-option argument is a path
+            bc_path = PathBuf::from(arg);
         }
     }
 
