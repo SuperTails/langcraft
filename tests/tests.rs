@@ -64,6 +64,12 @@ pub fn run_c_tests() {
 }
 
 #[test]
+pub fn add_overflow() {
+    let interp = compile_and_run(Path::new("./tests/add_overflow.bc"));
+    assert_eq!(interp.output, vec!["42"]);
+}
+
+#[test]
 pub fn func_ptr_cast() {
     let interp = compile_and_run(Path::new("./tests/func_ptr_cast.bc"));
     assert_eq!(interp.output, vec!["42", "42"]);

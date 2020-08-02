@@ -2,7 +2,8 @@
 # %ptr - The location to write to
 # %param2%0 - The halfword to write
 
-# !INTERPRETER: ASSERT if score %param2%0 rust matches 0..
+scoreboard players operation %tempsave_store_word rust = %param2%0 rust
+scoreboard players operation %param2%0 rust %= %%65536 rust
 
 scoreboard players operation %%temp0_store_byte rust = %ptr rust
 scoreboard players operation %%temp0_store_byte rust %= %%2 rust
@@ -30,3 +31,5 @@ execute if score %%temp0_store_byte rust matches 2..2 run scoreboard players ope
 scoreboard players operation %return%0 rust += %param2%0 rust
 
 execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %return%0 rust
+
+scoreboard players operation %param2%0 rust = %tempsave_store_word rust

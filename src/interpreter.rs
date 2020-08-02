@@ -3,6 +3,7 @@ use crate::compile_ir::{get_index, pos_to_func_idx, OBJECTIVE};
 use crate::Datapack;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::convert::TryFrom;
 
 // FIXME: Multiple conditions and a `store success` does not work like I think it does!!!
 
@@ -14,6 +15,8 @@ pub enum InterpError {
     EnteredTodo,
     AssertionFailed,
     BreakpointHit,
+    InvalidBranch(usize),
+    MultiBranch,
 }
 
 impl std::fmt::Display for InterpError {
@@ -27,6 +30,8 @@ impl std::fmt::Display for InterpError {
             InterpError::EnteredTodo => write!(f, "entered code not yet implemented"),
             InterpError::AssertionFailed => write!(f, "assertion failed"),
             InterpError::BreakpointHit => write!(f, "breakpoint hit"),
+            InterpError::InvalidBranch(b) => write!(f, "invalid branch to {}", b),
+            InterpError::MultiBranch => write!(f, "branch to more than one block"),
         }
     }
 }
@@ -44,7 +49,7 @@ pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
     pub(crate) call_stack: Vec<(usize, usize)>,
     program: Vec<Function>,
-    pub memory: [i32; 64 * 16 * 16],
+    pub memory: [i32; 128 * 16 * 16],
     ptr_pos: (i32, i32, i32),
     turtle_pos: (i32, i32, i32),
     letters: HashMap<(i32, i32, i32), char>,
@@ -53,6 +58,8 @@ pub struct Interpreter {
     pub tick: usize,
     commands_run: usize,
     memory_points: HashMap<usize, BreakKind>,
+    /// FIXME: Add support for the *real* commands
+    stdout_buffer: String,
 }
 
 impl Interpreter {
@@ -70,7 +77,7 @@ impl Interpreter {
         Interpreter {
             program,
             call_stack: vec![(func_idx, 0)],
-            memory: [0; 64 * 16 * 16],
+            memory: [0; 128 * 16 * 16],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
@@ -80,6 +87,7 @@ impl Interpreter {
             output: Vec::new(),
             memory_points: HashMap::new(),
             letters,
+            stdout_buffer: String::new(),
         }
     }
 
@@ -106,7 +114,7 @@ impl Interpreter {
         Interpreter {
             program: datapack.functions,
             call_stack: vec![(start_idx, 0)],
-            memory: [0x55_55_55_55; 64 * 16 * 16],
+            memory: [0x55_55_55_55; 128 * 16 * 16],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
@@ -116,6 +124,7 @@ impl Interpreter {
             output: Vec::new(),
             memory_points: HashMap::new(),
             letters,
+            stdout_buffer: String::new(),
         }
     }
 
@@ -136,6 +145,17 @@ impl Interpreter {
         assert_eq!(word_start % 4, 0);
 
         self.memory_points.insert(word_start / 4, kind);
+    }
+
+    pub fn set_next_pos(&mut self, func_idx: usize) -> Result<(), InterpError> {
+        if self.next_pos.is_some() {
+            Err(InterpError::MultiBranch)
+        } else if func_idx >= self.program.len() {
+            Err(InterpError::InvalidBranch(func_idx))
+        } else {
+            self.next_pos = Some((func_idx, 0));
+            Ok(())
+        }
     }
 
     pub fn get_word(&self, addr: usize) -> Result<i32, InterpError> {
@@ -423,8 +443,22 @@ impl Interpreter {
                 }
             }
             Command::FuncCall(FuncCall { id }) => {
-                let called_idx = self.program.iter().enumerate().find(|(_, f)| &f.id == id).unwrap_or_else(|| todo!("{:?}", id)).0;
-                self.call_stack.push((called_idx, 0));
+                if id.name == "stdout:putc" {
+                    let c = self.get_rust_score(&ScoreHolder::new("%%temp0_putc".into()).unwrap()).unwrap();
+                    let c = char::from(u8::try_from(c).unwrap_or_else(|_| panic!("invalid argument to stdout:putc {}", c)));
+
+                    if c == '\n' {
+                        let out = std::mem::take(&mut self.stdout_buffer);
+                        self.output.push(out);
+                    } else if c.is_ascii() && !c.is_control() {
+                        self.stdout_buffer.push(c);
+                    } else {
+                        panic!("invalid argument to stdout:putc `{}`", c)
+                    }
+                } else {
+                    let called_idx = self.program.iter().enumerate().find(|(_, f)| &f.id == id).unwrap_or_else(|| todo!("{:?}", id)).0;
+                    self.call_stack.push((called_idx, 0));
+                }
             }
             Command::Fill(Fill { start, end, block }) => {
                 if !(start == "-2 0 0" && end == "-15 0 64" && block == "minecraft:air") {
@@ -493,8 +527,8 @@ impl Interpreter {
                         println!("Branching to self");
 
                         if let [(func_idx, _)] = &self.call_stack[..] {
-                            assert_eq!(self.next_pos, None);
-                            self.next_pos = Some((*func_idx as usize, 0));
+                            let func_idx = *func_idx;
+                            self.set_next_pos(func_idx)?;
                         } else {
                             todo!()
                         }
@@ -519,8 +553,7 @@ impl Interpreter {
 
                         println!("Branching to {}", self.program[idx as usize].id);
 
-                        assert_eq!(self.next_pos, None);
-                        self.next_pos = Some((idx as usize, 0));
+                        self.set_next_pos(idx as usize)?;
                     }
                 }
             }
@@ -600,8 +633,7 @@ impl Interpreter {
                     if y == 1 {
                         let idx = pos_to_func_idx(x, z);
                         println!("Dynamic branch to {}", idx);
-                        assert_eq!(self.next_pos, None);
-                        self.next_pos = Some((idx as usize, 0));
+                        self.set_next_pos(idx as usize)?;
                     } else {
                         panic!("attempt to branch improperly")
                     }
@@ -811,15 +843,15 @@ impl Interpreter {
         loop {
             if self.call_stack.is_empty() {
                 self.tick += 1;
-                if let Some(n) = self.next_pos.take() {
-                    eprintln!("\nNow about to execute {}", &self.program[n.0].id);
-                    self.call_stack.push(n);
-                }
                 println!(
                     "Executed {} commands from function '{}'",
                     self.commands_run, top_func,
                 );
                 self.commands_run = 0;
+                if let Some(n) = self.next_pos.take() {
+                    eprintln!("\nNow about to execute {}", &self.program[n.0].id);
+                    self.call_stack.push(n);
+                }
                 break;
             }
 

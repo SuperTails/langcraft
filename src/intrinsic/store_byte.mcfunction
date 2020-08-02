@@ -2,7 +2,8 @@
 # %ptr - The location to write to
 # %param2%0 - The byte to write
 
-# !INTERPRETER: ASSERT if score %param2%0 rust matches 0..255
+scoreboard players operation %tempsave_store_byte rust = %param2%0 rust
+scoreboard players operation %param2%0 rust %= %%256 rust
 
 function intrinsic:setptr
 
@@ -34,3 +35,5 @@ execute if score %%temp0_store_byte rust matches 3..3 run scoreboard players ope
 scoreboard players operation %return%0 rust += %param2%0 rust
 
 execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %return%0 rust
+
+scoreboard players operation %param2%0 rust = %tempsave_store_byte rust
