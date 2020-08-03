@@ -3,7 +3,16 @@ use langcraft::cir::ScoreHolder;
 use std::path::Path;
 
 pub fn compile_and_run(path: &Path) -> Interpreter {
-    let datapack = Datapack::from_bc(path).unwrap();
+    compile_and_run_multi(std::iter::once(path))
+}
+
+pub fn compile_and_run_multi<T, U>(paths: T) -> Interpreter
+    where
+        T: IntoIterator<Item=U>,
+        U: Into<std::path::PathBuf>,
+{
+    let paths = paths.into_iter().map(|p| p.into()).collect();
+    let datapack = Datapack::from_bc(&paths).unwrap();
 
     let idx = datapack.functions.iter().enumerate().find(|(_, f)| f.id.name == "run").unwrap().0;
 
@@ -67,4 +76,10 @@ pub fn run_c_tests() {
 pub fn func_ptr_cast() {
     let interp = compile_and_run(Path::new("./tests/func_ptr_cast.bc"));
     assert_eq!(interp.output, vec!["42", "42"]);
+}
+
+#[test]
+pub fn static_link() {
+    let interp = compile_and_run_multi(vec!["./tests/static_link_p1.bc", "./tests/static_link_p2.bc"]);
+    assert_eq!(interp.output, vec!["42"]);
 }

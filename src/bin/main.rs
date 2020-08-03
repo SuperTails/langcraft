@@ -148,14 +148,14 @@ pub struct Options {
 fn parse_arguments() -> Result<Options, String> {
     let mut interpret = false;
     let mut compare = false;
-    let mut __________force_input = false;
+    let mut force_input = false;
     let mut bc_path = std::collections::LinkedList::<PathBuf>::new();
     let mut output_folder = None;
 
-    let mut args = std::env::args().skip(1);
+    let args = std::env::args().skip(1);
 
-    while let Some(arg) = args.next() {
-        if !__________force_input && arg.starts_with("-") {
+    for arg in args {
+        if !force_input && arg.starts_with('-') {
             if arg == "--run" {
                 interpret = true
             } else if arg == "--compare" {
@@ -181,7 +181,7 @@ fn parse_arguments() -> Result<Options, String> {
                 std::process::exit(2);
             } else if arg == "--" {
                 // force potential options to be arguments
-                __________force_input = true;
+                force_input = true;
             } else {
                 return Err(format!("invalid option `{}`",arg));
             }
