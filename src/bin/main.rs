@@ -141,7 +141,7 @@ pub struct Options {
     /// Compare output
     pub compare: bool,
     /// The paths to the bitcode files to compile
-    pub bc_path: std::collections::LinkedList::<PathBuf>,
+    pub bc_path: Vec::<PathBuf>,
     pub output_folder: PathBuf,
 }
 
@@ -149,7 +149,7 @@ fn parse_arguments() -> Result<Options, String> {
     let mut interpret = false;
     let mut compare = false;
     let mut force_input = false;
-    let mut bc_path = std::collections::LinkedList::<PathBuf>::new();
+    let mut bc_path = Vec::new();
     let mut output_folder = None;
 
     let args = std::env::args().skip(1);
@@ -169,7 +169,7 @@ fn parse_arguments() -> Result<Options, String> {
                 }
             } else if arg == "--help" {
                 // give help text then exit
-                std::print!("{}{}{}{}{}{}{}",
+                print!("{}{}{}{}{}{}{}",
                 "Usage: langcraft [OPTIONS...] INPUT_FILES...\n",
                 "\n",
                 "Options:\n",
@@ -187,7 +187,7 @@ fn parse_arguments() -> Result<Options, String> {
             }
         } else {
             // The non-option argument is a path
-            bc_path.push_back(PathBuf::from(arg));
+            bc_path.push(PathBuf::from(arg));
         }
     }
 

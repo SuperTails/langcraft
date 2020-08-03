@@ -3,6 +3,7 @@ use compile_ir::BuildOptions;
 pub use interpreter::Interpreter;
 use serde_json::json;
 use std::path::Path;
+use std::path::PathBuf;
 
 pub mod cir;
 pub mod compile_ir;
@@ -28,7 +29,7 @@ impl Datapack {
             .map(|(i, _)| i)
     }
 
-    pub fn from_bc(path: &std::collections::LinkedList::<std::path::PathBuf>) -> Result<Self, String> {
+    pub fn from_bc(path: &Vec::<PathBuf>) -> Result<Self, String> {
         let mut functions = compile_bc(path)?;
 
         functions.extend(intrinsics::INTRINSICS.iter().cloned());
@@ -108,7 +109,7 @@ impl Datapack {
     }
 }
 
-pub fn compile_bc(paths: &std::collections::LinkedList<std::path::PathBuf>) -> Result<Vec<Function>, String> {
+pub fn compile_bc(paths: &Vec<PathBuf>) -> Result<Vec<Function>, String> {
     let mut res = Vec::new();
     let mut modules = Vec::new();
 
