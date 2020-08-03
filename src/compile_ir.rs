@@ -402,10 +402,6 @@ fn compile_module_abstract(module: &Module, options: &BuildOptions, globals: &Gl
 
     funcs.extend(after_blocks);
 
-    for func_start in func_starts.keys() {
-        println!("{:?}: {:?}\n",func_start,func_starts.get(func_start));
-    }
-
     /*println!("funcs:");
     for func in funcs.iter() {
         println!("{}", func.0.body.id);
