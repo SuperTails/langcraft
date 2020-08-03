@@ -402,6 +402,10 @@ fn compile_module_abstract(module: &Module, options: &BuildOptions, globals: &Gl
 
     funcs.extend(after_blocks);
 
+    for func_start in func_starts.keys() {
+        println!("{:?}: {:?}\n",func_start,func_starts.get(func_start));
+    }
+
     /*println!("funcs:");
     for func in funcs.iter() {
         println!("{}", func.0.body.id);
@@ -472,7 +476,7 @@ fn build_call_chains(funcs: &mut Vec<AbstractBlock>, func_starts: &HashMap<Strin
     }
 }
 
-pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
+pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFunction> {
     // Steps in compiling a module:
     // 1. Lay out global variables
     // 2. Convert LLVM functions to abstract blocks
@@ -481,12 +485,25 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     // 5. Do relocations
     // 6. Add global variable init commands
     
-    // Step 1: Lay out global variables
+    let (mut funcs, mut clobber_list, mut func_starts) = (Vec::new(), HashMap::new(), HashMap::new());
+    let mut globals = GlobalVarList::new();
+    let mut global_vars = Vec::new();
     let mut alloc = StaticAllocator(4);
-    let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
 
-    // Step 2: Convert LLVM functions to abstract blocks
-    let (mut funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
+    for module in modules.iter() {
+        // Step 1: Lay out global variables
+        let file_globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
+
+        // Step 2: Convert LLVM functions to abstract blocks
+        let (file_funcs, file_clobber_list, file_func_starts) = compile_module_abstract(module, options, &file_globals);
+        
+        funcs.extend(file_funcs);
+        clobber_list.extend(file_clobber_list);
+        func_starts.extend(file_func_starts);
+        globals.extend(file_globals);
+        
+        global_vars.extend(Vec::from(module.global_vars.as_slice()));
+    }
 
     for func in funcs.iter() {
         if let Some(dest) = func.get_dest(&func_starts) {
@@ -514,7 +531,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     }
 
     // Step 6: Add global variable init commands
-    let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals);
+    let mut init_cmds = compile_global_var_init(global_vars.as_slice(), &mut globals);
     let main_return = alloc.reserve(4);
     init_cmds.push(set_memory(-1, main_return as i32));
     init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
