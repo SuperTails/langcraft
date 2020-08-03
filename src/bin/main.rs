@@ -172,8 +172,8 @@ fn parse_arguments() -> Result<Options, String> {
                 "Usage: langcraft [OPTIONS...] INPUT_FILES...\n",
                 "\n",
                 "Options:\n",
-                "\t--help\tDisplay this help message\n",
-                "\t--run\tRun the command interpreter on the generated code\n",
+                "\t--help\t\tDisplay this help message\n",
+                "\t--run\t\tRun the command interpreter on the generated code\n",
                 "\t--out=PATH\tSpecify the directory the datapack files should be placed in (default is `./out`)\n",
                 "\t--compare\tCompare the output to latest.log\n"
                 );
