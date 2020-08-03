@@ -32,6 +32,12 @@ use std::sync::Mutex;
 
 // FIXME: Alignment for Alloca, functions, and global variables
 
+// FIXME:
+// Doing it twice just so that it's ***really*** visible FIXME:
+// VALUES THAT ARE NOT A MULTIPLE OF WORD SIZE STORED IN REGISTERS
+// ARE NOT GUARANTEED TO HAVE THEIR HIGH BITS ZEROED OR SIGN-EXTENDED
+// SO YOU CANNOT JUST ADD A "u8" INTO A "u32" AND EXPECT IT TO WORK
+
 pub const OBJECTIVE: &str = "rust";
 
 pub const ROW_SIZE: usize = 32;
@@ -227,7 +233,7 @@ pub fn assign_lit(target: ScoreHolder, score: i32) -> Command {
 }
 
 pub fn get_index(x: i32, y: i32, z: i32) -> Result<i32, InterpError> {
-    if 0 <= x && x < 64 && 0 <= y && y < 16 && 0 <= z && z < 16 {
+    if 0 <= x && x < 128 && 0 <= y && y < 16 && 0 <= z && z < 16 {
         Ok((x * 16 * 16 + y * 16 + z) * 4)
     } else {
         Err(InterpError::OutOfBoundsAccess(x, y, z))
@@ -242,12 +248,12 @@ pub fn get_address(mut address: i32) -> (i32, i32, i32) {
     address /= 4;
 
     assert!(0 < address);
-    assert!(address < 64 * 16 * 16);
+    assert!(address < 128 * 16 * 16);
     let z = address % 16;
     address /= 16;
     let y = address % 16;
     address /= 16;
-    let x = address % 32;
+    let x = address % 128;
     (x, y, z)
 }
 
@@ -979,16 +985,6 @@ fn compile_global_var_init<'a>(
         cmds.extend(one_global_var_init(var, &globals));
     }
 
-    // Currently used constants:
-    // %%31BITSHIFT
-    // %%4
-    // %%SIXTEEN
-    // %%256
-    // %%2
-    // %%1
-    // %%65536
-    // %%1024
-
     // TODO: This needs a better system
     static CONSTANTS: &[(&str, i32)] = &[
         ("%%31BITSHIFT", 1 << 31),
@@ -1584,17 +1580,16 @@ fn compile_xor(
 ) -> Vec<Command> {
     assert_eq!(operand0.get_type(), operand1.get_type());
 
-    let (mut cmds, op0) = eval_operand(operand0, globals);
-
-    let (tmp, op1) = eval_operand(operand1, globals);
-
-    cmds.extend(tmp);
-
     let layout = type_layout(&operand0.get_type());
 
-    let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
-
     if matches!(operand0.get_type(), Type::IntegerType { bits: 1 }) {
+        let (mut cmds, op0) = eval_operand(operand0, globals);
+
+        let (tmp, op1) = eval_operand(operand1, globals);
+
+        cmds.extend(tmp);
+
+        let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
         let dest = dest.into_iter().next().unwrap();
 
         let op0 = op0.into_iter().next().unwrap();
@@ -1633,21 +1628,7 @@ fn compile_xor(
 
         cmds
     } else {
-        for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
-            cmds.push(assign(param(0, 0), op0));
-            cmds.push(assign(param(1, 0), op1));
-
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("intrinsic:xor"),
-                }
-                .into(),
-            );
-
-            cmds.push(assign(dest, return_holder(0)));
-        }
-
-        cmds
+        compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::Xor, globals)
     }
 }
 
@@ -2857,6 +2838,11 @@ pub fn compile_terminator(
 fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractBlock, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList) -> McFunction {
     let mut clobbers = clobber_list.get(&body.id.name).unwrap().clone();
 
+    for arg in parent.parameters.iter() {
+        let arg_size = type_layout(&arg.ty).size();
+        clobbers.extend(ScoreHolder::from_local_name(arg.name.clone(), arg_size).iter().cloned());
+    }
+
     if needs_prolog {
         let mut prolog = Vec::new();
 
@@ -2868,7 +2854,6 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractB
                     .into_iter()
                     .enumerate()
             {
-                clobbers.insert(arg_holder.clone());
                 prolog.push(assign(arg_holder, param(idx, arg_word)));
             }
         }
@@ -3917,6 +3902,43 @@ pub fn compile_normal_icmp(
     cmds
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+enum BitOp {
+    And,
+    Or,
+    Xor,
+}
+
+fn compile_bitwise_word(operand0: &Operand, operand1: &Operand, dest: Name, op: BitOp, globals: &GlobalVarList) -> Vec<Command> {
+    let ty = operand0.get_type();
+    let layout = type_layout(&ty);
+
+    let dest = ScoreHolder::from_local_name(dest, layout.size());
+
+    let (mut cmds, op0) = eval_operand(operand0, globals);
+    let (tmp, op1) = eval_operand(operand1, globals);
+    cmds.extend(tmp);
+
+    for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
+        cmds.push(assign(param(0, 0), op0));
+        cmds.push(assign(param(1, 0), op1));
+
+        let id = match op {
+            BitOp::And => "intrinsic:and",
+            BitOp::Or => "intrinsic:or",
+            BitOp::Xor => "intrinsic:xor",
+        };
+
+        cmds.push(McFuncCall {
+            id: McFuncId::new(id)
+        }.into());
+
+        cmds.push(assign(dest, return_holder(0)));
+    }
+
+    cmds
+}
+
 pub fn compile_instr(
     instr: &Instruction,
     parent: &Function,
@@ -4895,16 +4917,17 @@ pub fn compile_instr(
 
                     cmds
                 } else {
-                    let (range, to_add) =
+                    let (range, to_add, modu) =
                         if matches!(operand.get_type(), Type::IntegerType { bits: 8 }) {
-                            (128..=255, -256)
+                            (128..=255, -256, 256)
                         } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
-                            (32768..=65535, -65536)
+                            (32768..=65535, -65536, 65536)
                         } else {
                             todo!("{:?}", operand.get_type());
                         };
 
                     cmds.push(assign(dest.clone(), op));
+                    cmds.push(make_op_lit(dest.clone(), "%=", modu));
                     let mut exec = Execute::new();
                     exec.with_if(ExecuteCondition::Score {
                         target: dest.clone().into(),
@@ -4959,12 +4982,53 @@ pub fn compile_instr(
 
             if op.len() == 1 {
                 cmds.push(assign(dst[0].clone(), op[0].clone()));
+
+                match operand.get_type() {
+                    Type::IntegerType { bits } => {
+                        if bits < 32 {
+                            cmds.push(make_op_lit(dst[0].clone(), "%=", 1 << bits));
+                        }
+                    }
+                    Type::VectorType { element_type, num_elements: 4 } if matches!(&*element_type, Type::IntegerType { bits: 1 }) => {
+                        let elem_ty = if let Type::VectorType { element_type, num_elements: 4 } = to_type {
+                            element_type
+                        } else {
+                            panic!("{:?}", to_type)
+                        };
+
+                        if matches!(&**elem_ty, Type::IntegerType { bits: 32 }) {
+                            let tmp = get_unique_holder();
+                            cmds.push(assign(tmp.clone(), op[0].clone()));
+                            for dst_word in dst {
+                                cmds.push(assign(dst_word.clone(), tmp.clone()));
+                                cmds.push(make_op_lit(dst_word, "%=", 2));
+                                cmds.push(make_op_lit(tmp.clone(), "/=", 256));
+                            }
+
+                            return (cmds, None);
+                        } else {
+                            todo!("{:?}", elem_ty)
+                        }
+                    }
+                    _ => todo!("{:?} -> {:?}", operand, to_type)
+                }
+
                 for dst in dst[1..].iter().cloned() {
                     cmds.push(assign_lit(dst, 0));
                 }
             } else if op.len() == 2 {
                 cmds.push(assign(dst[0].clone(), op[0].clone()));
                 cmds.push(assign(dst[1].clone(), op[1].clone()));
+
+                if let Type::IntegerType { bits } = operand.get_type() {
+                    if bits < 64 {
+                        assert!(bits > 32);
+                        cmds.push(make_op_lit(dst[1].clone(), "%=", 1 << (bits - 32)));
+                    }
+                } else {
+                    todo!("{:?}", operand)
+                };
+
                 for dst in dst[2..].iter().cloned() {
                     cmds.push(assign_lit(dst, 0));
                 }
@@ -4989,29 +5053,6 @@ pub fn compile_instr(
             cmds.extend(tmp);
 
             match operand0.get_type() {
-                ty if type_layout(&ty).size() <= 4 => {
-                    let op0 = op0.into_iter().next().unwrap();
-                    let op1 = op1.into_iter().next().unwrap();
-
-                    cmds.push(assign(param(0, 0), op0));
-                    cmds.push(assign(param(1, 0), op1));
-
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:or"),
-                        }
-                        .into(),
-                    );
-
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 4)
-                        .into_iter()
-                        .next()
-                        .unwrap();
-
-                    cmds.push(assign(dest, return_holder(0)));
-
-                    cmds
-                }
                 Type::IntegerType { bits: 1 } => {
                     let op0 = op0.into_iter().next().unwrap();
                     let op1 = op1.into_iter().next().unwrap();
@@ -5039,28 +5080,9 @@ pub fn compile_instr(
 
                     cmds
                 }
-                Type::IntegerType { bits: 64 } | Type::IntegerType { bits: 48 } => {
-                    let dest = ScoreHolder::from_local_name(dest.clone(), 6);
-
-                    for (dest_word, (op0, op1)) in
-                        dest.into_iter().zip(op0.into_iter().zip(op1.into_iter()))
-                    {
-                        cmds.push(assign(param(0, 0), op0));
-                        cmds.push(assign(param(1, 0), op1));
-
-                        cmds.push(
-                            McFuncCall {
-                                id: McFuncId::new("intrinsic:or"),
-                            }
-                            .into(),
-                        );
-
-                        cmds.push(assign(dest_word, return_holder(0)));
-                    }
-
-                    cmds
+                _ => {
+                    compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::Or, globals)
                 }
-                ty => todo!("{:?}", ty),
             }
         }
         Instruction::And(And {
@@ -5077,45 +5099,9 @@ pub fn compile_instr(
 
             let layout = type_layout(&operand0.get_type());
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
-
             match operand0.get_type() {
-                _ if layout.size() % 4 == 0 => {
-                    for (dest, (op0, op1)) in
-                        dest.into_iter().zip(op0.into_iter().zip(op1.into_iter()))
-                    {
-                        cmds.push(assign(param(0, 0), op0));
-                        cmds.push(assign(param(1, 0), op1));
-                        cmds.push(
-                            McFuncCall {
-                                id: McFuncId::new("intrinsic:and"),
-                            }
-                            .into(),
-                        );
-                        cmds.push(assign(dest, return_holder(0)));
-                    }
-
-                    cmds
-                }
-                // TODO: This is exactly the same as the above
-                Type::IntegerType { bits: 8 } | Type::IntegerType { bits: 16 } => {
-                    cmds.push(assign(param(0, 0), op0[0].clone()));
-                    cmds.push(assign(param(1, 0), op1[0].clone()));
-
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:and"),
-                        }
-                        .into(),
-                    );
-
-                    let dest = dest.into_iter().next().unwrap();
-
-                    cmds.push(assign(dest, return_holder(0)));
-
-                    cmds
-                }
                 Type::IntegerType { bits: 1 } => {
+                    let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
                     let dest = dest.into_iter().next().unwrap();
 
                     cmds.push(assign_lit(dest.clone(), 0));
@@ -5137,7 +5123,9 @@ pub fn compile_instr(
 
                     cmds
                 }
-                _ => todo!("{:?}", operand0),
+                _ => {
+                    compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::And, globals)
+                }
             }
         }
         Instruction::Xor(xor) => compile_xor(xor, globals),

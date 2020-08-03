@@ -2,6 +2,9 @@
 # %ptr      - Address to store at
 # %param0%0 - Word to be stored
 
+scoreboard players operation %tempsave_swu rust = %param0%0 rust
+scoreboard players operation %param0%0 rust %= %%65536 rust
+
 scoreboard players operation %%temp0_swu rust = %param0%0 rust
 
 # FIXME: This may not actually work like an `and`
@@ -16,3 +19,5 @@ function intrinsic:lshr
 scoreboard players operation %param2%0 rust = %param0%0 rust
 scoreboard players operation %param2%0 rust %= %%256 rust
 function intrinsic:store_byte
+
+scoreboard players operation %param0%0 rust = %tempsave_swu rust
