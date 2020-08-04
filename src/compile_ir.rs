@@ -492,19 +492,25 @@ pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFun
     let mut global_vars = Vec::new();
     let mut alloc = StaticAllocator(4);
 
+    // Step 1: Lay out global variables
     for module in modules.iter() {
-        // Step 1: Lay out global variables
         let file_globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
+        globals.extend(file_globals);
+    }
 
-        // Step 2: Convert LLVM functions to abstract blocks
-        let (file_funcs, file_clobber_list, file_func_starts) = compile_module_abstract(module, options, &file_globals);
+    // Step 2: Convert LLVM functions to abstract blocks
+    for module in modules.iter() {
+        let (file_funcs, file_clobber_list, file_func_starts) = compile_module_abstract(module, options, &globals);
         
         funcs.extend(file_funcs);
         clobber_list.extend(file_clobber_list);
         func_starts.extend(file_func_starts);
-        globals.extend(file_globals);
         
-        global_vars.extend(Vec::from(module.global_vars.as_slice()));
+        for global_var in module.global_vars.iter() {
+            if global_var.initializer != None {
+                global_vars.push(global_var);
+            }
+        }
     }
 
     for func in funcs.iter() {
@@ -976,7 +982,7 @@ fn getelementptr_const(
 type GlobalVarList<'a> = HashMap<&'a Name, (u32, Option<Constant>)>;
 
 fn compile_global_var_init<'a>(
-    vars: &'a [GlobalVariable],
+    vars: &'a [&GlobalVariable],
     globals: &mut GlobalVarList,
 ) -> Vec<Command> {
     let mut cmds = Vec::new();
@@ -1013,14 +1019,16 @@ fn compile_global_var_init<'a>(
 fn global_var_layout<'a>(v: &'a [GlobalVariable], funcs: &[Function], alloc: &mut StaticAllocator) -> GlobalVarList<'a> {
     let mut result = HashMap::new();
     for v in v.iter() {
-        let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
-            pointee_type
-        } else {
-            unreachable!()
-        };
+        if v.initializer != None {
+            let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
+                pointee_type
+            } else {
+                unreachable!()
+            };
 
-        let start = alloc.reserve(type_layout(pointee_type).size() as u32);
-        result.insert(&v.name, (start, Some(v.initializer.clone().unwrap())));
+            let start = alloc.reserve(type_layout(pointee_type).size() as u32);
+            result.insert(&v.name, (start, Some(v.initializer.clone().unwrap())));
+        }
     }
 
     for func in funcs.iter() {
