@@ -29,7 +29,7 @@ impl Datapack {
             .map(|(i, _)| i)
     }
 
-    pub fn from_bc(path: &Vec::<PathBuf>) -> Result<Self, String> {
+    pub fn from_bc(path: &[PathBuf]) -> Result<Self, String> {
         let mut functions = compile_bc(path)?;
 
         functions.extend(intrinsics::INTRINSICS.iter().cloned());
@@ -109,7 +109,7 @@ impl Datapack {
     }
 }
 
-pub fn compile_bc(paths: &Vec<PathBuf>) -> Result<Vec<Function>, String> {
+pub fn compile_bc(paths: &[PathBuf]) -> Result<Vec<Function>, String> {
     let mut res = Vec::new();
     let mut modules = Vec::new();
 

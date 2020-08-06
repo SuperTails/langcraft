@@ -11,7 +11,7 @@ pub fn compile_and_run_multi<T, U>(paths: T) -> Interpreter
         T: IntoIterator<Item=U>,
         U: Into<std::path::PathBuf>,
 {
-    let paths = paths.into_iter().map(|p| p.into()).collect();
+    let paths = paths.into_iter().map(|p| p.into()).collect::<Vec<_>>();
     let datapack = Datapack::from_bc(&paths).unwrap();
 
     let idx = datapack.functions.iter().enumerate().find(|(_, f)| f.id.name == "run").unwrap().0;

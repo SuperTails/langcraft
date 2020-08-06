@@ -169,16 +169,15 @@ fn parse_arguments() -> Result<Options, String> {
                 }
             } else if arg == "--help" {
                 // give help text then exit
-                print!("{}{}{}{}{}{}{}",
-                "Usage: langcraft [OPTIONS...] INPUT_FILES...\n",
-                "\n",
-                "Options:\n",
-                "\t--help\t\tDisplay this help message\n",
-                "\t--run\t\tRun the command interpreter on the generated code\n",
-                "\t--out=PATH\tSpecify the directory the datapack files should be placed in (default is `./out`)\n",
-                "\t--compare\tCompare the output to latest.log\n"
-                );
-                std::process::exit(2);
+                println!("Usage: langcraft [OPTION]... [FILE]...");
+                println!("Convert an LLVM bitcode file to a Minecraft datapack");
+                println!();
+                println!("Options:");
+                println!("\t--help          display this help message");
+                println!("\t--run           run the command interpreter on the generated code");
+                println!("\t--out=PATH      specify the directory the datapack files should be placed in (default is `./out`)");
+                println!("\t--compare       compare the output to latest.log");
+                std::process::exit(0);
             } else if arg == "--" {
                 // force potential options to be arguments
                 force_input = true;
