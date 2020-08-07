@@ -7,9 +7,11 @@ Langcraft is a code generator targeting [Minecraft Data Packs](https://minecraft
 ```
 cargo run -- --arg1 --arg2 ./path/to/llvm/bitcode.bc
 ```
-All arguments must come before the path. Valid arguments are:
+Valid arguments are:
+ - `--help`: Display usage and available options
  - `--out=path/to/dir/`: Specify the directory the datapack files should be placed in (default is `./out`)
  - `--run`: Run the command interpreter on the generated code
+ - `--trace-bbs`: Insert a print command at the beginning of each LLVM basic block
 
 To use the generated datapack in Minecraft:
  1. Copy the entire output folder (`./out` by default) to the `datapacks/` directory of a Minecraft world (using a superflat void world is recommended)

@@ -1,5 +1,5 @@
 use cir::{Function, FunctionId};
-use compile_ir::BuildOptions;
+pub use compile_ir::BuildOptions;
 pub use interpreter::Interpreter;
 use serde_json::json;
 use std::path::Path;
@@ -28,8 +28,9 @@ impl Datapack {
             .map(|(i, _)| i)
     }
 
-    pub fn from_bc(path: &Path) -> Result<Self, String> {
-        let mut functions = compile_bc(path)?;
+    pub fn from_bc(path: &Path, build_opts: &BuildOptions) -> Result<Self, String> {
+        let mut functions = compile_bc(path, build_opts)?;
+
         functions.extend(intrinsics::INTRINSICS.iter().cloned());
         Ok(Datapack {
             functions,
@@ -107,9 +108,9 @@ impl Datapack {
     }
 }
 
-pub fn compile_bc(path: &Path) -> Result<Vec<Function>, String> {
+pub fn compile_bc(path: &Path, build_opts: &BuildOptions) -> Result<Vec<Function>, String> {
     Ok(compile_ir::compile_module(
         &llvm_ir::Module::from_bc_path(path)?,
-        &BuildOptions { log_trace: false },
+        build_opts,
     ))
 }

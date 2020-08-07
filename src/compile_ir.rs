@@ -324,7 +324,8 @@ pub fn write_ptr(target: ScoreHolder) -> Command {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BuildOptions {
-    pub log_trace: bool,
+    /// Insert a print command at the beginning of each LLVM basic block 
+    pub trace_bbs: bool,
 }
 
 
@@ -543,24 +544,27 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
         cmds: init_cmds,
     });
 
-    let main_id = func_starts.get("main").unwrap();
-    let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
-    let (main_x, main_z) = func_idx_to_pos(main_idx);
-    funcs.push(McFunction {
-        id: McFuncId::new("run"),
-        cmds: vec![
-            McFuncCall {
-                id: McFuncId::new("init"),
-            }
-            .into(),
-            SetBlock {
-                pos: format!("{} 1 {}", main_x, main_z),
-                block: "minecraft:redstone_block".to_string(),
-                kind: SetBlockKind::Replace,
-            }
-            .into(),
-        ],
-    });
+    if let Some(main_id) = func_starts.get("main") {
+        let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
+        let (main_x, main_z) = func_idx_to_pos(main_idx);
+        funcs.push(McFunction {
+            id: McFuncId::new("run"),
+            cmds: vec![
+                McFuncCall {
+                    id: McFuncId::new("init"),
+                }
+                .into(),
+                SetBlock {
+                    pos: format!("{} 1 {}", main_x, main_z),
+                    block: "minecraft:redstone_block".to_string(),
+                    kind: SetBlockKind::Replace,
+                }
+                .into(),
+            ],
+        });
+    } else {
+        todo!("support programs without an entry point")
+    }
 
     funcs
 }
@@ -2904,7 +2908,7 @@ fn compile_function(
 
             let make_new_func = |sub| {
                 let id = McFuncId::new_sub(func.name.clone(), block.name.clone(), sub);
-                let cmds = if options.log_trace {
+                let cmds = if options.trace_bbs {
                     vec![print_entry(&id)]
                 } else {
                     vec![]
@@ -4565,6 +4569,7 @@ pub fn compile_instr(
                         .unwrap();
 
                     if target.len() != 1 || source.len() != 1 {
+                        println!("Target len is {}, source len is {}",target.len(),source.len());
                         todo!()
                     }
 
