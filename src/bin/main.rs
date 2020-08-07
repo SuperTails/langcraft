@@ -1,6 +1,5 @@
 use langcraft::interpreter::InterpError;
-use langcraft::Datapack;
-use langcraft::Interpreter;
+use langcraft::{Datapack, Interpreter, BuildOptions};
 use std::path::PathBuf;
 
 // TODO: Allow specifying breakpoints somehow
@@ -143,11 +142,13 @@ pub struct Options {
     /// The path to the bitcode file to compile
     pub bc_path: PathBuf,
     pub output_folder: PathBuf,
+    pub build_opts: BuildOptions,
 }
 
 fn parse_arguments() -> Result<Options, String> {
     let mut interpret = false;
     let mut compare = false;
+    let mut trace_bbs = false;
     let mut force_input = false;
     let mut bc_path = None;
     let mut output_folder = None;
@@ -158,6 +159,8 @@ fn parse_arguments() -> Result<Options, String> {
         if !force_input && arg.starts_with('-') {
             if arg == "--run" {
                 interpret = true
+            } else if arg == "--trace-bbs" {
+                trace_bbs = true;
             } else if arg == "--compare" {
                 compare = true;
             } else if arg.starts_with("--out=") {
@@ -174,9 +177,10 @@ fn parse_arguments() -> Result<Options, String> {
                 println!();
                 println!("Options:");
                 println!("\t--help          display this help message");
-                println!("\t--run           run the command interpreter on the generated code");
                 println!("\t--out=PATH      specify the directory the datapack files should be placed in (default is `./out`)");
-                println!("\t--compare       compare the output to latest.log");
+                println!("\t--run           run the command interpreter on the generated code");
+                println!("\t--compare       compare the interpreter output to latest.log");
+                println!("\t--trace-bbs     insert a print command at the beginning of each LLVM basic block");
                 std::process::exit(0);
             } else if arg == "--" {
                 // force potential options to be arguments
@@ -207,6 +211,9 @@ fn parse_arguments() -> Result<Options, String> {
         compare,
         bc_path,
         output_folder,
+        build_opts: BuildOptions {
+            trace_bbs,
+        }
     })
 }
 
@@ -241,7 +248,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    let datapack = Datapack::from_bc(&options.bc_path).unwrap_or_else(|err| {
+    let datapack = Datapack::from_bc(&options.bc_path, &options.build_opts).unwrap_or_else(|err| {
         eprintln!("error when compiling: {}", err);
         std::process::exit(1);
     });

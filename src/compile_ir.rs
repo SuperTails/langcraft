@@ -324,7 +324,8 @@ pub fn write_ptr(target: ScoreHolder) -> Command {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BuildOptions {
-    pub log_trace: bool,
+    /// Insert a print command at the beginning of each LLVM basic block 
+    pub trace_bbs: bool,
 }
 
 
@@ -2907,7 +2908,7 @@ fn compile_function(
 
             let make_new_func = |sub| {
                 let id = McFuncId::new_sub(func.name.clone(), block.name.clone(), sub);
-                let cmds = if options.log_trace {
+                let cmds = if options.trace_bbs {
                     vec![print_entry(&id)]
                 } else {
                     vec![]
