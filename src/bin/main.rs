@@ -140,8 +140,8 @@ pub struct Options {
     pub interpret: bool,
     /// Compare output
     pub compare: bool,
-    /// The paths to the bitcode files to compile
-    pub bc_path: Vec::<PathBuf>,
+    /// The path to the bitcode file to compile
+    pub bc_path: PathBuf,
     pub output_folder: PathBuf,
 }
 
@@ -149,7 +149,7 @@ fn parse_arguments() -> Result<Options, String> {
     let mut interpret = false;
     let mut compare = false;
     let mut force_input = false;
-    let mut bc_path = Vec::new();
+    let mut bc_path = None;
     let mut output_folder = None;
 
     let args = std::env::args().skip(1);
@@ -165,7 +165,7 @@ fn parse_arguments() -> Result<Options, String> {
                     let tail = &arg["--out=".len()..];
                     output_folder = Some(PathBuf::from(tail));
                 } else {
-                    return Err(String::from("more than one `--out` argument"));
+                    return Err(String::from("at most one `--out` argument may be specified"));
                 }
             } else if arg == "--help" {
                 // give help text then exit
@@ -186,11 +186,17 @@ fn parse_arguments() -> Result<Options, String> {
             }
         } else {
             // The non-option argument is a path
-            bc_path.push(PathBuf::from(arg));
+            if bc_path.is_none() {
+                bc_path = Some(PathBuf::from(arg));
+            } else {
+                return Err("only one input file may be specified".into());
+            }
         }
     }
 
     let output_folder = output_folder.unwrap_or_else(|| PathBuf::from("out/"));
+
+    let bc_path = bc_path.ok_or("no input file was specified")?;
 
     if compare && !interpret {
         return Err(String::from("the `--compare` option requires `--run`"));

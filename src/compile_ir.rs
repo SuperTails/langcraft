@@ -478,7 +478,7 @@ fn build_call_chains(funcs: &mut Vec<AbstractBlock>, func_starts: &HashMap<Strin
     }
 }
 
-pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFunction> {
+pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
     // Steps in compiling a module:
     // 1. Lay out global variables
     // 2. Convert LLVM functions to abstract blocks
@@ -487,31 +487,12 @@ pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFun
     // 5. Do relocations
     // 6. Add global variable init commands
     
-    let (mut funcs, mut clobber_list, mut func_starts) = (Vec::new(), HashMap::new(), HashMap::new());
-    let mut globals = GlobalVarList::new();
-    let mut global_vars = Vec::new();
-    let mut alloc = StaticAllocator(4);
-
     // Step 1: Lay out global variables
-    for module in modules.iter() {
-        let file_globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
-        globals.extend(file_globals);
-    }
+    let mut alloc = StaticAllocator(4);
+    let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
 
     // Step 2: Convert LLVM functions to abstract blocks
-    for module in modules.iter() {
-        let (file_funcs, file_clobber_list, file_func_starts) = compile_module_abstract(module, options, &globals);
-        
-        funcs.extend(file_funcs);
-        clobber_list.extend(file_clobber_list);
-        func_starts.extend(file_func_starts);
-        
-        for global_var in module.global_vars.iter() {
-            if global_var.initializer != None {
-                global_vars.push(global_var);
-            }
-        }
-    }
+    let (mut funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
 
     for func in funcs.iter() {
         if let Some(dest) = func.get_dest(&func_starts) {
@@ -539,7 +520,7 @@ pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFun
     }
 
     // Step 6: Add global variable init commands
-    let mut init_cmds = compile_global_var_init(global_vars.as_slice(), &mut globals);
+    let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals);
     let main_return = alloc.reserve(4);
     init_cmds.push(set_memory(-1, main_return as i32));
     init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
@@ -562,13 +543,7 @@ pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFun
         cmds: init_cmds,
     });
 
-    // check if main is defined in this file; if not, then don't make a function call to it
-    let __________main_func = func_starts.get("main");
-    
-    if __________main_func == None {
-        std::println!("[WARN] The entry point has not been defined.")
-    } else {
-        let main_id = func_starts.get("main").unwrap();
+    if let Some(main_id) = func_starts.get("main") {
         let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
         let (main_x, main_z) = func_idx_to_pos(main_idx);
         funcs.push(McFunction {
@@ -586,6 +561,8 @@ pub fn compile_module(modules: Vec<Module>, options: &BuildOptions) -> Vec<McFun
                 .into(),
             ],
         });
+    } else {
+        todo!("support programs without an entry point")
     }
 
     funcs
@@ -982,7 +959,7 @@ fn getelementptr_const(
 type GlobalVarList<'a> = HashMap<&'a Name, (u32, Option<Constant>)>;
 
 fn compile_global_var_init<'a>(
-    vars: &'a [&GlobalVariable],
+    vars: &'a [GlobalVariable],
     globals: &mut GlobalVarList,
 ) -> Vec<Command> {
     let mut cmds = Vec::new();
@@ -1019,16 +996,14 @@ fn compile_global_var_init<'a>(
 fn global_var_layout<'a>(v: &'a [GlobalVariable], funcs: &[Function], alloc: &mut StaticAllocator) -> GlobalVarList<'a> {
     let mut result = HashMap::new();
     for v in v.iter() {
-        if v.initializer != None {
-            let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
-                pointee_type
-            } else {
-                unreachable!()
-            };
+        let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
+            pointee_type
+        } else {
+            unreachable!()
+        };
 
-            let start = alloc.reserve(type_layout(pointee_type).size() as u32);
-            result.insert(&v.name, (start, Some(v.initializer.clone().unwrap())));
-        }
+        let start = alloc.reserve(type_layout(pointee_type).size() as u32);
+        result.insert(&v.name, (start, Some(v.initializer.clone().unwrap())));
     }
 
     for func in funcs.iter() {
@@ -4593,7 +4568,7 @@ pub fn compile_instr(
                         .unwrap();
 
                     if target.len() != 1 || source.len() != 1 {
-                        std::println!("Target len is {}, source len is {}",target.len(),source.len());
+                        println!("Target len is {}, source len is {}",target.len(),source.len());
                         todo!()
                     }
 
