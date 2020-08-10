@@ -116,7 +116,14 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         "intrinsic:llvm_ctlz_i32_inner",
         include_str!("intrinsic/llvm_ctlz_i32_inner.mcfunction"),
     ),
-    ("intrinsic:shl", include_str!("intrinsic/shl.mcfunction")),
+    (
+        "intrinsic:shl",
+        include_str!("intrinsic/shl.mcfunction")
+    ),
+    (
+        "intrinsic:shl64",
+        include_str!("intrinsic/shl64.mcfunction")
+    ),
 ];
 
 lazy_static! {
