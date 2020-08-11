@@ -29,6 +29,7 @@ use std::alloc::Layout;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Mutex;
+use petgraph::prelude::{DiGraph, NodeIndex};
 
 // FIXME: Alignment for Alloca, functions, and global variables
 
@@ -435,50 +436,6 @@ fn compile_module_abstract(module: &Module, options: &BuildOptions, globals: &Gl
     (funcs, clobber_list, func_starts)
 }
 
-fn build_call_chains(funcs: &mut Vec<AbstractBlock>, func_starts: &HashMap<String, McFuncId>) {
-    let list = funcs.iter().map(|f| (f.body.id.clone(), f.clone())).collect();
-
-    let mut idx = 0;
-    while idx != funcs.len() {
-        if let Some(dest) = funcs[idx].get_dest(func_starts) {
-            if dest.name.contains("intrinsic") {
-                idx += 1;
-                // TODO:
-            } else {
-                let dest_idx = funcs.iter().enumerate().find(|(_, f)| f.body.id == dest).unwrap_or_else(|| panic!("{}", dest)).0;
-
-                let count1 = analysis::estimate_total_count(&list, func_starts, &funcs[dest_idx]);
-                let count2 = analysis::estimate_total_count(&list, func_starts, &funcs[idx]);
-                if let (Some(count1), Some(count2)) = (count1, count2) {
-                    if count1 + count2 < 60_000 {
-                        if funcs[idx].last().body.id != dest {
-                            println!("{} -> {}", funcs[idx].last().body.id, dest);
-                            println!("total: {}", count1 + count2);
-                            let dest = funcs[dest_idx].clone();
-                            funcs[idx].replace_term(dest);
-                        } else {
-                            idx += 1;
-                        }
-                    } else {
-                        idx += 1;
-                    }
-                } else {
-                    idx += 1;
-                }
-            }
-        } else {
-            idx += 1;
-        }
-
-        println!("idx: {}, funcs.len(): {}", idx, funcs.len());
-    }
-
-    println!("\nChains:");
-    for f in funcs.iter() {
-        f.print_chain();
-    }
-}
-
 pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
     // Steps in compiling a module:
     // 1. Lay out global variables
@@ -493,7 +450,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
 
     // Step 2: Convert LLVM functions to abstract blocks
-    let (mut funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
+    let (funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
 
     for func in funcs.iter() {
         if let Some(dest) = func.get_dest(&func_starts) {
@@ -502,12 +459,12 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     }
 
     // Step 3
-    build_call_chains(&mut funcs, &func_starts);
+    let funcs = analysis::build_call_chains(&funcs, &func_starts);
 
     // Step 4: Reify call graph to MC functions
     let mut funcs = funcs
         .into_iter()
-        .map(|block| reify_block(block, &clobber_list, &globals))
+        .map(|(block, root)| reify_block(block, root, &clobber_list, &globals))
         .collect::<Vec<_>>();
 
     funcs.extend(crate::intrinsics::INTRINSICS.clone());
@@ -580,6 +537,7 @@ fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: 
         let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0;
 
         let name = Name::Name(func.clone());
+
         #[allow(clippy::map_entry)]
         if globals.contains_key(&name) {
             globals.get_mut(&name).unwrap().0 = idx as u32;
@@ -2819,7 +2777,9 @@ pub fn compile_terminator(
 }
 
 #[allow(clippy::reversed_empty_ranges)]
-fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractBlock, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList) -> McFunction {
+fn reify_block(graph: DiGraph<(AbstractBlock, Option<usize>), ()>, root: NodeIndex<u32>, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList) -> McFunction {
+    let (AbstractBlock { needs_prolog, mut body, term, parent }, _) = graph[root].clone();
+
     let mut clobbers = clobber_list.get(&body.id.name).unwrap().clone();
 
     for arg in parent.parameters.iter() {
@@ -2847,36 +2807,45 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractB
         body.cmds.splice(1..1, prolog);
     }
 
-    match term {
-        BlockEnd::Inlined(ab) => {
-            body.cmds.push(Command::Comment(format!("===== Begin block {} =====", ab.body.id)));
-            let inner = reify_block(*ab, clobber_list, globals);
+    let children = graph.neighbors_directed(root, petgraph::Outgoing).collect::<Vec<_>>();
+
+    match children[..] {
+        [ab] => {
+            assert_eq!(term, None);
+
+            body.cmds.push(Command::Comment(format!("===== Begin block {} =====", graph[ab].0.body.id)));
+            let inner = reify_block(graph, ab, clobber_list, globals);
             body.cmds.extend(inner.cmds);
         }
-        BlockEnd::StaticCall(id) => {
-            body.cmds.push(Command::Comment(id))
-        }
-        BlockEnd::DynCall => {
-            // FIXME: This is identical to the one at the end of `compile_call`
-            let mut set_block = Execute::new();
-            set_block.with_at(
-                cir::Selector {
-                    var: cir::SelectorVariable::AllEntities,
-                    args: vec![cir::SelectorArg("tag=ptr".into())],
+        [] => {
+            match term.unwrap() {
+                BlockEnd::StaticCall(id) => {
+                    body.cmds.push(Command::Comment(id))
                 }
-                .into(),
-            );
-            set_block.with_run(SetBlock {
-                pos: "~-2 1 ~".into(),
-                block: "minecraft:redstone_block".into(),
-                kind: SetBlockKind::Replace,
-            });
+                BlockEnd::DynCall => {
+                    // FIXME: This is identical to the one at the end of `compile_call`
+                    let mut set_block = Execute::new();
+                    set_block.with_at(
+                        cir::Selector {
+                            var: cir::SelectorVariable::AllEntities,
+                            args: vec![cir::SelectorArg("tag=ptr".into())],
+                        }
+                        .into(),
+                    );
+                    set_block.with_run(SetBlock {
+                        pos: "~-2 1 ~".into(),
+                        block: "minecraft:redstone_block".into(),
+                        kind: SetBlockKind::Replace,
+                    });
 
-            body.cmds.push(set_block.into());
+                    body.cmds.push(set_block.into());
+                }
+                BlockEnd::Normal(t) => {
+                    body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals));
+                }
+            }
         }
-        BlockEnd::Normal(t) => {
-            body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals));
-        }
+        _ => todo!()
     }
 
     body
@@ -2945,7 +2914,7 @@ fn compile_function(
                         parent: func.clone(),
                         needs_prolog: idx == 0 && sub == 1,
                         body: std::mem::replace(&mut this, make_new_func(sub)),
-                        term,
+                        term: Some(term),
                     });
                     sub += 1;
 
@@ -2964,7 +2933,7 @@ fn compile_function(
                 parent: func.clone(),
                 needs_prolog: idx == 0 && sub == 1,
                 body: this,
-                term: BlockEnd::Normal(block.term.clone()),
+                term: Some(BlockEnd::Normal(block.term.clone())),
             });
 
             for sub_block in result.iter_mut() {
@@ -5435,6 +5404,23 @@ pub fn eval_constant(
             ];
 
             MaybeConst::NonConst(cmds, vec![lo_word, hi_word])
+        }
+        Constant::Struct { values, is_packed: _, name: _ } => {
+            if values.iter().all(|v| matches!(v.get_type(), Type::IntegerType { bits: 32 })) {
+                let (cmds, words) = values
+                    .iter()
+                    .map(|v| eval_constant(v, globals).force_eval())
+                    .map(|(c, w)| {
+                        assert_eq!(c.len(), 1);
+                        assert_eq!(w.len(), 1);
+                        (c.into_iter().next().unwrap(), w.into_iter().next().unwrap())
+                    })
+                    .unzip();
+
+                MaybeConst::NonConst(cmds, words)
+            } else {
+                todo!("{:?}", values);
+            }
         }
         Constant::BitCast(bitcast) => eval_constant(&bitcast.operand, globals),
         Constant::Undef(ty) => {
