@@ -16,7 +16,7 @@ pub enum InterpError {
     AssertionFailed,
     BreakpointHit,
     InvalidBranch(usize),
-    MultiBranch,
+    MultiBranch(FunctionId, Option<FunctionId>),
 }
 
 impl std::fmt::Display for InterpError {
@@ -31,7 +31,15 @@ impl std::fmt::Display for InterpError {
             InterpError::AssertionFailed => write!(f, "assertion failed"),
             InterpError::BreakpointHit => write!(f, "breakpoint hit"),
             InterpError::InvalidBranch(b) => write!(f, "invalid branch to {}", b),
-            InterpError::MultiBranch => write!(f, "branch to more than one block"),
+            InterpError::MultiBranch(prev, att) => {
+                write!(f, "branch to more than one block (previous was {}, attempted was ", prev)?;
+                if let Some(att) = att {
+                    write!(f, "{}", att)?;
+                } else {
+                    write!(f, "invalid")?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
@@ -148,8 +156,9 @@ impl Interpreter {
     }
 
     pub fn set_next_pos(&mut self, func_idx: usize) -> Result<(), InterpError> {
-        if self.next_pos.is_some() {
-            Err(InterpError::MultiBranch)
+        if let Some((f, _)) = self.next_pos {
+            let att = self.program.get(func_idx).map(|f| f.id.clone());
+           Err(InterpError::MultiBranch(self.program[f].id.clone(), att))
         } else if func_idx >= self.program.len() {
             Err(InterpError::InvalidBranch(func_idx))
         } else {
@@ -364,13 +373,13 @@ impl Interpreter {
     }
 
     fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
-        if !self
+        /*if !self
             .call_stack
             .iter()
             .any(|(i, _)| self.program[*i].id.name.contains("intrinsic"))
         {
             eprintln!("{}", cmd);
-        }
+        }*/
 
         match cmd {
             Command::ScoreAdd(ScoreAdd { target: Target::Uuid(target), target_obj, score }) => {
@@ -632,8 +641,8 @@ impl Interpreter {
 
                     if y == 1 {
                         let idx = pos_to_func_idx(x, z);
-                        println!("Dynamic branch to {}", idx);
                         self.set_next_pos(idx as usize)?;
+                        println!("Dynamic branch to {}", self.program[idx].id);
                     } else {
                         panic!("attempt to branch improperly")
                     }

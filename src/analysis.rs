@@ -1,7 +1,7 @@
-use crate::cir::{Command, Execute, FuncCall, Function, FunctionId};
+use crate::cir::{Command, Execute, FuncCall, Function, FunctionId, ScoreHolder};
 use std::collections::{HashSet, HashMap};
 use llvm_ir::Terminator;
-use llvm_ir::terminator::Br;
+use llvm_ir::terminator::{Br, CondBr};
 use petgraph::prelude::{DiGraph, Graph, NodeIndex};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -31,6 +31,34 @@ impl AbstractBlock {
             },
             BlockEnd::Normal(Terminator::Br(Br { dest, debugloc: _ })) => Some(FunctionId::new_block(&self.parent.name, dest.clone())),
             BlockEnd::DynCall => None,
+            _ => None,
+        }
+    }
+
+    pub fn all_dests(&self, func_starts: &HashMap<String, FunctionId>) -> Option<Vec<FunctionId>> {
+        if let Some(d) = self.get_dest(func_starts) {
+            Some(vec![d])
+        } else if let Some((_, d1, d2)) = self.get_cond_dest() {
+            Some(vec![d1, d2])
+        } else {
+            None
+        }
+    }
+
+    /// If this block ends in a CondBr, returns the condition, the true branch,
+    /// and then the false branch
+    pub fn get_cond_dest(&self) -> Option<(ScoreHolder, FunctionId, FunctionId)> {
+        match self.term.as_ref()? {
+            BlockEnd::Normal(Terminator::CondBr(CondBr { condition, true_dest, false_dest, debugloc: _ })) => {
+                if let llvm_ir::Operand::LocalOperand { name, ty: llvm_ir::Type::IntegerType { bits: 1 } } = condition {
+                    let cond = ScoreHolder::from_local_name(name.clone(), 1).into_iter().next().unwrap();
+                    let true_dest = FunctionId::new_block(&self.parent.name, true_dest.clone());
+                    let false_dest = FunctionId::new_block(&self.parent.name, false_dest.clone());
+                    Some((cond, true_dest, false_dest))
+                } else {
+                    None
+                }
+            }
             _ => None,
         }
     }
@@ -211,45 +239,116 @@ impl CountList {
     }
 }
 
-pub(crate) type BlockTree = (DiGraph<(AbstractBlock, Option<usize>), ()>, NodeIndex<u32>);
+pub(crate) type BlockTree<'a> = (DiGraph<ChainNode<'a>, BlockEdge>, NodeIndex<u32>);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BlockEdge {
+    None,
+    Cond {
+        value: ScoreHolder,
+        inverted: bool,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ChainNode<'a> {
+    pub block: &'a AbstractBlock,
+    pub cmd_count: Option<usize>,
+    pub depth: usize,
+}
+
+static MAX_INLINE_COMMANDS: usize = 10_000;
+
+static MAX_TREE_DEPTH: usize = 10;
 
 // this returns a tree, but petgraph is really nice
-fn build_call_chain(funcs: &[AbstractBlock], block: AbstractBlock, func_starts: &HashMap<String, FunctionId>, counts: &CountList) -> BlockTree {
+fn build_call_chain<'a>(funcs: &HashMap<&FunctionId, &'a AbstractBlock>, block: &'a AbstractBlock, func_starts: &HashMap<String, FunctionId>, counts: &CountList) -> BlockTree<'a> {
     let mut result = Graph::new();
 
     let root_cmds = counts.get(&block.body.id);
-    let head = result.add_node((block, root_cmds));
+    let head = result.add_node(ChainNode {
+        block,
+        cmd_count: root_cmds,
+        depth: 0,
+    });
     let mut externals = HashSet::new();
     if root_cmds.is_some() {
         externals.insert(head);
     }
 
+
     let mut changed = true;
     while changed {
         changed = false;
 
+        println!("External count: {}", externals.len());
         let ext = externals.iter().copied().collect::<Vec<_>>();
         for leaf in ext {
-            let parent_cmds = result[leaf].1.unwrap();
+            let parent_cmds = result[leaf].cmd_count.unwrap();
 
-            if let Some(dest) = result[leaf].0.get_dest(func_starts) {
+            let new_depth = result[leaf].depth + 1;
+
+            if new_depth > MAX_TREE_DEPTH {
+                externals.remove(&leaf);
+                continue;
+            }
+
+            if let Some(dest) = result[leaf].block.get_dest(func_starts) {
                 if dest.name.contains("intrinsic") {
                     // TODO:
                 } else {
-                    let dest = funcs.iter().find(|f| f.body.id == dest).unwrap_or_else(|| panic!("{}", dest));
+                    let dest = funcs.get(&dest).unwrap_or_else(|| panic!("{}", dest));
 
                     if let Some(new_cmds) = counts.get(&dest.body.id) {
-                        if parent_cmds + new_cmds < 60_000 && dest.body.id != result[leaf].0.body.id {
-                            println!("{} -> {}", result[leaf].0.body.id, dest.body.id);
-                            println!("count is now {}", parent_cmds + new_cmds);
+                        let inline_ok =
+                            parent_cmds + new_cmds < MAX_INLINE_COMMANDS &&
+                            dest.body.id != result[leaf].block.body.id;
+                            // && !would_cause_duplicate(&result, head, dest, func_starts);
 
-                            result[leaf].0.term = None;
-                            let dest_node_idx = result.add_node((dest.clone(), Some(parent_cmds + new_cmds)));
-                            result.add_edge(leaf, dest_node_idx, ());
+                        if inline_ok {
                             assert!(externals.remove(&leaf));
+
+                            //println!("{} -> {}", result[leaf].block.body.id, dest.body.id);
+                            //println!("count is now {}", parent_cmds + new_cmds);
+
+                            //result[leaf].block.term = None;
+                            let dest_node_idx = result.add_node(ChainNode { block: dest, cmd_count: Some(parent_cmds + new_cmds), depth: new_depth });
+                            result.add_edge(leaf, dest_node_idx, BlockEdge::None);
                             assert!(externals.insert(dest_node_idx));
 
+
                             changed = true;
+                        }
+                    }
+                }
+            }
+
+            if !changed {
+                if let Some((c, true_dest, false_dest)) = result[leaf].block.get_cond_dest() {
+                    let true_dest = funcs.get(&true_dest).unwrap_or_else(|| panic!("{}",  true_dest));
+                    let false_dest = funcs.get(&false_dest).unwrap_or_else(|| panic!("{}", false_dest));
+
+                    if let Some(true_cmds) = counts.get(&true_dest.body.id) {
+                        if let Some(false_cmds) = counts.get(&false_dest.body.id) {
+                            let new_cmds = true_cmds.max(false_cmds);
+                            if parent_cmds + new_cmds < MAX_INLINE_COMMANDS {
+                                assert!(externals.remove(&leaf));
+
+                                //println!("{} -> {}\n\t -> {}", result[leaf].block.body.id, true_dest.body.id, false_dest.body.id);
+                                //println!("count is now {}", parent_cmds + new_cmds);
+
+                                //result[leaf].block.term = None;
+
+                                let true_idx = result.add_node(ChainNode { block: true_dest, cmd_count: Some(parent_cmds + new_cmds), depth: new_depth });
+                                result.add_edge(leaf, true_idx, BlockEdge::Cond { value: c.clone(), inverted: false });
+                                assert!(externals.insert(true_idx));
+
+                                let false_idx = result.add_node(ChainNode { block: false_dest, cmd_count: Some(parent_cmds + new_cmds), depth: new_depth });
+                                result.add_edge(leaf, false_idx, BlockEdge::Cond { value: c.clone(), inverted: true });
+                                assert!(externals.insert(false_idx));
+
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -257,10 +356,12 @@ fn build_call_chain(funcs: &[AbstractBlock], block: AbstractBlock, func_starts: 
         }
     }
 
+    println!("Finished one");
+
     (result, head)
 }
 
-pub(crate) fn build_call_chains(funcs: &[AbstractBlock], func_starts: &HashMap<String, FunctionId>) -> Vec<BlockTree> {
+pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &HashMap<String, FunctionId>) -> Vec<BlockTree<'a>> {
     /*
         If leaf ends in a direct branch to tail:
             if total cmds okay and leaf != tail:
@@ -274,7 +375,11 @@ pub(crate) fn build_call_chains(funcs: &[AbstractBlock], func_starts: &HashMap<S
     let list = funcs.iter().map(|f| (f.body.id.clone(), f.clone())).collect();
     let counts = CountList::new(funcs, func_starts, &list);
 
-    let graphs = funcs.iter().cloned().map(|f| build_call_chain(funcs, f, func_starts, &counts)).collect::<Vec<_>>();
+    println!("Building chains out of {} MC basic blocks", funcs.len());
+
+    let funcs = funcs.iter().map(|f| (&f.body.id, f)).collect::<HashMap<&FunctionId, &AbstractBlock>>();
+
+    let graphs = funcs.iter().map(|(_, f)| build_call_chain(&funcs, f, func_starts, &counts)).collect::<Vec<_>>();
 
     println!("Max graph nodes: {}", graphs.iter().map(|g| g.0.node_count()).max().unwrap());
 

@@ -1,0 +1,3610 @@
+   Compiling langcraft v0.1.0 (/home/salix/Documents/Minecraft/langcraft)
+warning: associated function is never used: `all_dests`
+  --> src/analysis.rs:38:12
+   |
+38 |     pub fn all_dests(&self, func_starts: &HashMap<String, FunctionId>) -> Option<Vec<FunctionId>> {
+   |            ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: function is never used: `has_call_cycle`
+   --> src/analysis.rs:150:15
+    |
+150 | pub(crate) fn has_call_cycle(funcs: &[&Function], index: usize) -> bool {
+    |               ^^^^^^^^^^^^^^
+
+warning: function is never used: `has_call_cycle_inner`
+   --> src/analysis.rs:155:4
+    |
+155 | fn has_call_cycle_inner(funcs: &[&Function], index: usize, visited: &mut HashSet<usize>) -> bool {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: 3 warnings emitted
+
+    Finished dev [unoptimized + debuginfo] target(s) in 6.84s
+     Running `target/debug/langcraft-bin --run ../c-testsuite/tests/single-exec/00008.c.bc`
+Function main, 4
+main -> main-block3
+main-block3 -> main-block6
+main -> main-block3
+count is now 96
+main-block3 -> main-block6
+count is now 119
+main-block6 -> main-block3
+	 -> main-block9
+count is now 165
+main-block3 -> main-block6
+count is now 188
+main-block6 -> main-block3
+	 -> main-block9
+count is now 234
+main-block3 -> main-block6
+count is now 257
+main-block6 -> main-block3
+	 -> main-block9
+count is now 303
+main-block3 -> main-block6
+count is now 326
+main-block6 -> main-block3
+	 -> main-block9
+count is now 372
+main-block3 -> main-block6
+count is now 395
+main-block6 -> main-block3
+	 -> main-block9
+count is now 441
+main-block3 -> main-block6
+count is now 464
+main-block6 -> main-block3
+	 -> main-block9
+count is now 510
+main-block3 -> main-block6
+count is now 533
+main-block6 -> main-block3
+	 -> main-block9
+count is now 579
+main-block3 -> main-block6
+count is now 602
+main-block6 -> main-block3
+	 -> main-block9
+count is now 648
+main-block3 -> main-block6
+count is now 671
+main-block6 -> main-block3
+	 -> main-block9
+count is now 717
+main-block3 -> main-block6
+count is now 740
+main-block6 -> main-block3
+	 -> main-block9
+count is now 786
+main-block3 -> main-block6
+count is now 809
+main-block6 -> main-block3
+	 -> main-block9
+count is now 855
+main-block3 -> main-block6
+count is now 878
+main-block6 -> main-block3
+	 -> main-block9
+count is now 924
+main-block3 -> main-block6
+count is now 947
+main-block6 -> main-block3
+	 -> main-block9
+count is now 993
+main-block3 -> main-block6
+count is now 1016
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1062
+main-block3 -> main-block6
+count is now 1085
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1131
+main-block3 -> main-block6
+count is now 1154
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1200
+main-block3 -> main-block6
+count is now 1223
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1269
+main-block3 -> main-block6
+count is now 1292
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1338
+main-block3 -> main-block6
+count is now 1361
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1407
+main-block3 -> main-block6
+count is now 1430
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1476
+main-block3 -> main-block6
+count is now 1499
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1545
+main-block3 -> main-block6
+count is now 1568
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1614
+main-block3 -> main-block6
+count is now 1637
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1683
+main-block3 -> main-block6
+count is now 1706
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1752
+main-block3 -> main-block6
+count is now 1775
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1821
+main-block3 -> main-block6
+count is now 1844
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1890
+main-block3 -> main-block6
+count is now 1913
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1959
+main-block3 -> main-block6
+count is now 1982
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2028
+main-block3 -> main-block6
+count is now 2051
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2097
+main-block3 -> main-block6
+count is now 2120
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2166
+main-block3 -> main-block6
+count is now 2189
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2235
+main-block3 -> main-block6
+count is now 2258
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2304
+main-block3 -> main-block6
+count is now 2327
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2373
+main-block3 -> main-block6
+count is now 2396
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2442
+main-block3 -> main-block6
+count is now 2465
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2511
+main-block3 -> main-block6
+count is now 2534
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2580
+main-block3 -> main-block6
+count is now 2603
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2649
+main-block3 -> main-block6
+count is now 2672
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2718
+main-block3 -> main-block6
+count is now 2741
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2787
+main-block3 -> main-block6
+count is now 2810
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2856
+main-block3 -> main-block6
+count is now 2879
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2925
+main-block3 -> main-block6
+count is now 2948
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2994
+main-block3 -> main-block6
+count is now 69
+main-block6 -> main-block3
+	 -> main-block9
+count is now 115
+main-block3 -> main-block6
+count is now 138
+main-block6 -> main-block3
+	 -> main-block9
+count is now 184
+main-block3 -> main-block6
+count is now 207
+main-block6 -> main-block3
+	 -> main-block9
+count is now 253
+main-block3 -> main-block6
+count is now 276
+main-block6 -> main-block3
+	 -> main-block9
+count is now 322
+main-block3 -> main-block6
+count is now 345
+main-block6 -> main-block3
+	 -> main-block9
+count is now 391
+main-block3 -> main-block6
+count is now 414
+main-block6 -> main-block3
+	 -> main-block9
+count is now 460
+main-block3 -> main-block6
+count is now 483
+main-block6 -> main-block3
+	 -> main-block9
+count is now 529
+main-block3 -> main-block6
+count is now 552
+main-block6 -> main-block3
+	 -> main-block9
+count is now 598
+main-block3 -> main-block6
+count is now 621
+main-block6 -> main-block3
+	 -> main-block9
+count is now 667
+main-block3 -> main-block6
+count is now 690
+main-block6 -> main-block3
+	 -> main-block9
+count is now 736
+main-block3 -> main-block6
+count is now 759
+main-block6 -> main-block3
+	 -> main-block9
+count is now 805
+main-block3 -> main-block6
+count is now 828
+main-block6 -> main-block3
+	 -> main-block9
+count is now 874
+main-block3 -> main-block6
+count is now 897
+main-block6 -> main-block3
+	 -> main-block9
+count is now 943
+main-block3 -> main-block6
+count is now 966
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1012
+main-block3 -> main-block6
+count is now 1035
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1081
+main-block3 -> main-block6
+count is now 1104
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1150
+main-block3 -> main-block6
+count is now 1173
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1219
+main-block3 -> main-block6
+count is now 1242
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1288
+main-block3 -> main-block6
+count is now 1311
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1357
+main-block3 -> main-block6
+count is now 1380
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1426
+main-block3 -> main-block6
+count is now 1449
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1495
+main-block3 -> main-block6
+count is now 1518
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1564
+main-block3 -> main-block6
+count is now 1587
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1633
+main-block3 -> main-block6
+count is now 1656
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1702
+main-block3 -> main-block6
+count is now 1725
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1771
+main-block3 -> main-block6
+count is now 1794
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1840
+main-block3 -> main-block6
+count is now 1863
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1909
+main-block3 -> main-block6
+count is now 1932
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1978
+main-block3 -> main-block6
+count is now 2001
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2047
+main-block3 -> main-block6
+count is now 2070
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2116
+main-block3 -> main-block6
+count is now 2139
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2185
+main-block3 -> main-block6
+count is now 2208
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2254
+main-block3 -> main-block6
+count is now 2277
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2323
+main-block3 -> main-block6
+count is now 2346
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2392
+main-block3 -> main-block6
+count is now 2415
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2461
+main-block3 -> main-block6
+count is now 2484
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2530
+main-block3 -> main-block6
+count is now 2553
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2599
+main-block3 -> main-block6
+count is now 2622
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2668
+main-block3 -> main-block6
+count is now 2691
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2737
+main-block3 -> main-block6
+count is now 2760
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2806
+main-block3 -> main-block6
+count is now 2829
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2875
+main-block3 -> main-block6
+count is now 2898
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2944
+main-block3 -> main-block6
+count is now 2967
+main-block6 -> main-block3
+	 -> main-block9
+count is now 69
+main-block3 -> main-block6
+count is now 92
+main-block6 -> main-block3
+	 -> main-block9
+count is now 138
+main-block3 -> main-block6
+count is now 161
+main-block6 -> main-block3
+	 -> main-block9
+count is now 207
+main-block3 -> main-block6
+count is now 230
+main-block6 -> main-block3
+	 -> main-block9
+count is now 276
+main-block3 -> main-block6
+count is now 299
+main-block6 -> main-block3
+	 -> main-block9
+count is now 345
+main-block3 -> main-block6
+count is now 368
+main-block6 -> main-block3
+	 -> main-block9
+count is now 414
+main-block3 -> main-block6
+count is now 437
+main-block6 -> main-block3
+	 -> main-block9
+count is now 483
+main-block3 -> main-block6
+count is now 506
+main-block6 -> main-block3
+	 -> main-block9
+count is now 552
+main-block3 -> main-block6
+count is now 575
+main-block6 -> main-block3
+	 -> main-block9
+count is now 621
+main-block3 -> main-block6
+count is now 644
+main-block6 -> main-block3
+	 -> main-block9
+count is now 690
+main-block3 -> main-block6
+count is now 713
+main-block6 -> main-block3
+	 -> main-block9
+count is now 759
+main-block3 -> main-block6
+count is now 782
+main-block6 -> main-block3
+	 -> main-block9
+count is now 828
+main-block3 -> main-block6
+count is now 851
+main-block6 -> main-block3
+	 -> main-block9
+count is now 897
+main-block3 -> main-block6
+count is now 920
+main-block6 -> main-block3
+	 -> main-block9
+count is now 966
+main-block3 -> main-block6
+count is now 989
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1035
+main-block3 -> main-block6
+count is now 1058
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1104
+main-block3 -> main-block6
+count is now 1127
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1173
+main-block3 -> main-block6
+count is now 1196
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1242
+main-block3 -> main-block6
+count is now 1265
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1311
+main-block3 -> main-block6
+count is now 1334
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1380
+main-block3 -> main-block6
+count is now 1403
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1449
+main-block3 -> main-block6
+count is now 1472
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1518
+main-block3 -> main-block6
+count is now 1541
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1587
+main-block3 -> main-block6
+count is now 1610
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1656
+main-block3 -> main-block6
+count is now 1679
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1725
+main-block3 -> main-block6
+count is now 1748
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1794
+main-block3 -> main-block6
+count is now 1817
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1863
+main-block3 -> main-block6
+count is now 1886
+main-block6 -> main-block3
+	 -> main-block9
+count is now 1932
+main-block3 -> main-block6
+count is now 1955
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2001
+main-block3 -> main-block6
+count is now 2024
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2070
+main-block3 -> main-block6
+count is now 2093
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2139
+main-block3 -> main-block6
+count is now 2162
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2208
+main-block3 -> main-block6
+count is now 2231
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2277
+main-block3 -> main-block6
+count is now 2300
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2346
+main-block3 -> main-block6
+count is now 2369
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2415
+main-block3 -> main-block6
+count is now 2438
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2484
+main-block3 -> main-block6
+count is now 2507
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2553
+main-block3 -> main-block6
+count is now 2576
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2622
+main-block3 -> main-block6
+count is now 2645
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2691
+main-block3 -> main-block6
+count is now 2714
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2760
+main-block3 -> main-block6
+count is now 2783
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2829
+main-block3 -> main-block6
+count is now 2852
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2898
+main-block3 -> main-block6
+count is now 2921
+main-block6 -> main-block3
+	 -> main-block9
+count is now 2967
+main-block3 -> main-block6
+count is now 2990
+Max graph nodes: 130
+
+Indices:
+ 0: main-inline1-block3
+ 1: main-inline2-block9
+ 2: main-inline3-block3
+ 3: main-inline4-block9
+ 4: main-inline5-block3
+ 5: main-inline6-block9
+ 6: main-inline7-block3
+ 7: main-inline8-block9
+ 8: main-inline9-block3
+ 9: main-inline10-block9
+10: main-inline11-block3
+11: main-inline12-block9
+12: main-inline13-block3
+13: main-inline14-block9
+14: main-inline15-block3
+15: main-inline16-block9
+16: main-inline17-block3
+17: main-inline18-block9
+18: main-inline19-block3
+19: main-inline20-block9
+20: main-inline21-block3
+21: main-inline22-block9
+22: main-inline23-block3
+23: main-inline24-block9
+24: main-inline25-block3
+25: main-inline26-block9
+26: main-inline27-block3
+27: main-inline28-block9
+28: main-inline29-block3
+29: main-inline30-block9
+30: main-inline31-block3
+31: main-inline32-block9
+32: main-inline33-block3
+33: main-inline34-block9
+34: main-inline35-block3
+35: main-inline36-block9
+36: main-inline37-block3
+37: main-inline38-block9
+38: main-inline39-block3
+39: main-inline40-block9
+40: main-inline41-block3
+41: main-inline42-block9
+42: main-inline43-block3
+43: main-inline44-block9
+44: main-inline45-block3
+45: main-inline46-block9
+46: main-inline47-block3
+47: main-inline48-block9
+48: main-inline49-block3
+49: main-inline50-block9
+50: main-inline51-block3
+51: main-inline52-block9
+52: main-inline53-block3
+53: main-inline54-block9
+54: main-inline55-block3
+55: main-inline56-block9
+56: main-inline57-block3
+57: main-inline58-block9
+58: main-inline59-block3
+59: main-inline60-block9
+60: main-inline61-block3
+61: main-inline62-block9
+62: main-inline63-block3
+63: main-inline64-block9
+64: main-inline65-block3
+65: main-inline66-block9
+66: main-inline67-block3
+67: main-inline68-block9
+68: main-inline69-block3
+69: main-inline70-block9
+70: main-inline71-block3
+71: main-inline72-block9
+72: main-inline73-block3
+73: main-inline74-block9
+74: main-inline75-block3
+75: main-inline76-block9
+76: main-inline77-block3
+77: main-inline78-block9
+78: main-inline79-block3
+79: main-inline80-block9
+80: main-inline81-block3
+81: main-inline82-block9
+82: main-inline83-block3
+83: main-inline84-block9
+84: main
+85: main-inline85-block3
+86: main-inline86-block9
+87: main-inline87-block3
+88: main-inline88-block9
+89: main-inline89-block3
+90: main-inline90-block9
+91: main-inline91-block3
+92: main-inline92-block9
+93: main-inline93-block3
+94: main-inline94-block9
+95: main-inline95-block3
+96: main-inline96-block9
+97: main-inline97-block3
+98: main-inline98-block9
+99: main-inline99-block3
+100: main-inline100-block9
+101: main-inline101-block3
+102: main-inline102-block9
+103: main-inline103-block3
+104: main-inline104-block9
+105: main-inline105-block3
+106: main-inline106-block9
+107: main-inline107-block3
+108: main-inline108-block9
+109: main-inline109-block3
+110: main-inline110-block9
+111: main-inline111-block3
+112: main-inline112-block9
+113: main-inline113-block3
+114: main-inline114-block9
+115: main-inline115-block3
+116: main-inline116-block9
+117: main-inline117-block3
+118: main-inline118-block9
+119: main-inline119-block3
+120: main-inline120-block9
+121: main-inline121-block3
+122: main-inline122-block9
+123: main-inline123-block3
+124: main-inline124-block9
+125: main-inline125-block3
+126: main-inline126-block9
+127: main-inline127-block3
+128: main-inline128-block9
+129: main-inline129-block3
+130: main-inline130-block9
+131: main-inline131-block3
+132: main-inline132-block9
+133: main-inline133-block3
+134: main-inline134-block9
+135: main-inline135-block3
+136: main-inline136-block9
+137: main-inline137-block3
+138: main-inline138-block9
+139: main-inline139-block3
+140: main-inline140-block9
+141: main-inline141-block3
+142: main-inline142-block9
+143: main-inline143-block3
+144: main-inline144-block9
+145: main-inline145-block3
+146: main-inline146-block9
+147: main-inline147-block3
+148: main-inline148-block9
+149: main-inline149-block3
+150: main-inline150-block9
+151: main-inline151-block3
+152: main-inline152-block9
+153: main-inline153-block3
+154: main-inline154-block9
+155: main-inline155-block3
+156: main-inline156-block9
+157: main-inline157-block3
+158: main-inline158-block9
+159: main-inline159-block3
+160: main-inline160-block9
+161: main-inline161-block3
+162: main-inline162-block9
+163: main-inline163-block3
+164: main-inline164-block9
+165: main-inline165-block3
+166: main-inline166-block9
+167: main-inline167-block3
+168: main-inline168-block9
+169: main-block3
+170: main-inline169-block3
+171: main-inline170-block9
+172: main-inline171-block3
+173: main-inline172-block9
+174: main-inline173-block3
+175: main-inline174-block9
+176: main-inline175-block3
+177: main-inline176-block9
+178: main-inline177-block3
+179: main-inline178-block9
+180: main-inline179-block3
+181: main-inline180-block9
+182: main-inline181-block3
+183: main-inline182-block9
+184: main-inline183-block3
+185: main-inline184-block9
+186: main-inline185-block3
+187: main-inline186-block9
+188: main-inline187-block3
+189: main-inline188-block9
+190: main-inline189-block3
+191: main-inline190-block9
+192: main-inline191-block3
+193: main-inline192-block9
+194: main-inline193-block3
+195: main-inline194-block9
+196: main-inline195-block3
+197: main-inline196-block9
+198: main-inline197-block3
+199: main-inline198-block9
+200: main-inline199-block3
+201: main-inline200-block9
+202: main-inline201-block3
+203: main-inline202-block9
+204: main-inline203-block3
+205: main-inline204-block9
+206: main-inline205-block3
+207: main-inline206-block9
+208: main-inline207-block3
+209: main-inline208-block9
+210: main-inline209-block3
+211: main-inline210-block9
+212: main-inline211-block3
+213: main-inline212-block9
+214: main-inline213-block3
+215: main-inline214-block9
+216: main-inline215-block3
+217: main-inline216-block9
+218: main-inline217-block3
+219: main-inline218-block9
+220: main-inline219-block3
+221: main-inline220-block9
+222: main-inline221-block3
+223: main-inline222-block9
+224: main-inline223-block3
+225: main-inline224-block9
+226: main-inline225-block3
+227: main-inline226-block9
+228: main-inline227-block3
+229: main-inline228-block9
+230: main-inline229-block3
+231: main-inline230-block9
+232: main-inline231-block3
+233: main-inline232-block9
+234: main-inline233-block3
+235: main-inline234-block9
+236: main-inline235-block3
+237: main-inline236-block9
+238: main-inline237-block3
+239: main-inline238-block9
+240: main-inline239-block3
+241: main-inline240-block9
+242: main-inline241-block3
+243: main-inline242-block9
+244: main-inline243-block3
+245: main-inline244-block9
+246: main-inline245-block3
+247: main-inline246-block9
+248: main-inline247-block3
+249: main-inline248-block9
+250: main-inline249-block3
+251: main-inline250-block9
+252: main-inline251-block3
+253: main-inline252-block9
+254: main-inline253-block3
+255: main-inline254-block9
+256: main-block6
+257: main-block9
+258: intrinsic:lshr
+259: intrinsic:lshr/getshift
+260: intrinsic:lshr/inner
+261: intrinsic:memcpy
+262: intrinsic:memcpy/next_byte
+263: intrinsic:memcpy/inner
+264: intrinsic:or
+265: intrinsic:or_inner
+266: intrinsic:pop_and_branch
+267: intrinsic:setptr
+268: intrinsic:shift_from_ptr
+269: intrinsic:shift_from_ptr_inner
+270: intrinsic:xor
+271: intrinsic:xor_inner
+272: intrinsic:and
+273: intrinsic:and_inner
+274: intrinsic:store_byte
+275: intrinsic:store_halfword
+276: intrinsic:store_halfword_unaligned
+277: intrinsic:load_byte
+278: intrinsic:load_halfword
+279: intrinsic:load_halfword_unaligned
+280: intrinsic:bcmp
+281: intrinsic:bcmp_inner
+282: intrinsic:memset
+283: intrinsic:memset_inner
+284: intrinsic:store_word_unaligned
+285: intrinsic:load_word_unaligned
+286: intrinsic:mul_32_to_64
+287: intrinsic:llvm_fshr_i32
+288: intrinsic:llvm_ctlz_i32
+289: intrinsic:llvm_ctlz_i32_inner
+290: intrinsic:shl
+Generated 14852 commands
+Removing previous contents of output directory
+function rust:init
+scoreboard players set %%4 rust 1
+scoreboard players set %1%0 rust 1
+scoreboard players set %10%0 rust 1
+scoreboard players set %2%0 rust 1
+scoreboard players set %4%0 rust 1
+scoreboard players set %5%0 rust 1
+scoreboard players set %7%0 rust 1
+scoreboard players set %8%0 rust 1
+scoreboard players set %phi rust 1
+scoreboard players set %ptr rust 1
+scoreboard players set %stackptr rust 1
+scoreboard players set %temp0 rust 1
+scoreboard players set %temp1 rust 1
+scoreboard players set %temp2 rust 1
+scoreboard players set %temp3 rust 1
+scoreboard players set %temp4 rust 1
+scoreboard players set %%31BITSHIFT rust -2147483648
+scoreboard players set %%ROW_SIZE rust 32
+scoreboard players set %%SIXTEEN rust 16
+scoreboard players set %%-1 rust -1
+scoreboard players set %%1 rust 1
+scoreboard players set %%2 rust 2
+scoreboard players set %%4 rust 4
+scoreboard players set %%8 rust 8
+scoreboard players set %%16 rust 16
+scoreboard players set %%32 rust 32
+scoreboard players set %%64 rust 64
+scoreboard players set %%128 rust 128
+scoreboard players set %%256 rust 256
+scoreboard players set %%512 rust 512
+scoreboard players set %%1024 rust 1024
+scoreboard players set %%2048 rust 2048
+scoreboard players set %%4096 rust 4096
+scoreboard players set %%8192 rust 8192
+scoreboard players set %%16384 rust 16384
+scoreboard players set %%32768 rust 32768
+scoreboard players set %%65536 rust 65536
+scoreboard players set %%131072 rust 131072
+scoreboard players set %%262144 rust 262144
+scoreboard players set %%524288 rust 524288
+scoreboard players set %%1048576 rust 1048576
+scoreboard players set %%2097152 rust 2097152
+scoreboard players set %%4194304 rust 4194304
+scoreboard players set %%8388608 rust 8388608
+scoreboard players set %%16777216 rust 16777216
+scoreboard players set %%33554432 rust 33554432
+scoreboard players set %%67108864 rust 67108864
+scoreboard players set %%134217728 rust 134217728
+scoreboard players set %%268435456 rust 268435456
+scoreboard players set %%536870912 rust 536870912
+scoreboard players set %%1073741824 rust 1073741824
+scoreboard players set %condstackptr rust 4
+data modify block 0 7 14 RecordItem.tag.Memory set value -1
+scoreboard players set %stackptr rust 508
+scoreboard players set %stackbaseptr rust 0
+fill -2 0 0 -15 0 64 minecraft:air
+setblock -2 0 0 minecraft:command_block{Command:"function rust:main-inline1-block3"} destroy
+Command block placement at -2 0 0 block minecraft:command_block{Command:"function rust:main-inline1-block3"}
+setblock -2 0 1 minecraft:command_block{Command:"function rust:main-inline2-block9"} destroy
+Command block placement at -2 0 1 block minecraft:command_block{Command:"function rust:main-inline2-block9"}
+setblock -2 0 2 minecraft:command_block{Command:"function rust:main-inline3-block3"} destroy
+Command block placement at -2 0 2 block minecraft:command_block{Command:"function rust:main-inline3-block3"}
+setblock -2 0 3 minecraft:command_block{Command:"function rust:main-inline4-block9"} destroy
+Command block placement at -2 0 3 block minecraft:command_block{Command:"function rust:main-inline4-block9"}
+setblock -2 0 4 minecraft:command_block{Command:"function rust:main-inline5-block3"} destroy
+Command block placement at -2 0 4 block minecraft:command_block{Command:"function rust:main-inline5-block3"}
+setblock -2 0 5 minecraft:command_block{Command:"function rust:main-inline6-block9"} destroy
+Command block placement at -2 0 5 block minecraft:command_block{Command:"function rust:main-inline6-block9"}
+setblock -2 0 6 minecraft:command_block{Command:"function rust:main-inline7-block3"} destroy
+Command block placement at -2 0 6 block minecraft:command_block{Command:"function rust:main-inline7-block3"}
+setblock -2 0 7 minecraft:command_block{Command:"function rust:main-inline8-block9"} destroy
+Command block placement at -2 0 7 block minecraft:command_block{Command:"function rust:main-inline8-block9"}
+setblock -2 0 8 minecraft:command_block{Command:"function rust:main-inline9-block3"} destroy
+Command block placement at -2 0 8 block minecraft:command_block{Command:"function rust:main-inline9-block3"}
+setblock -2 0 9 minecraft:command_block{Command:"function rust:main-inline10-block9"} destroy
+Command block placement at -2 0 9 block minecraft:command_block{Command:"function rust:main-inline10-block9"}
+setblock -2 0 10 minecraft:command_block{Command:"function rust:main-inline11-block3"} destroy
+Command block placement at -2 0 10 block minecraft:command_block{Command:"function rust:main-inline11-block3"}
+setblock -2 0 11 minecraft:command_block{Command:"function rust:main-inline12-block9"} destroy
+Command block placement at -2 0 11 block minecraft:command_block{Command:"function rust:main-inline12-block9"}
+setblock -2 0 12 minecraft:command_block{Command:"function rust:main-inline13-block3"} destroy
+Command block placement at -2 0 12 block minecraft:command_block{Command:"function rust:main-inline13-block3"}
+setblock -2 0 13 minecraft:command_block{Command:"function rust:main-inline14-block9"} destroy
+Command block placement at -2 0 13 block minecraft:command_block{Command:"function rust:main-inline14-block9"}
+setblock -2 0 14 minecraft:command_block{Command:"function rust:main-inline15-block3"} destroy
+Command block placement at -2 0 14 block minecraft:command_block{Command:"function rust:main-inline15-block3"}
+setblock -2 0 15 minecraft:command_block{Command:"function rust:main-inline16-block9"} destroy
+Command block placement at -2 0 15 block minecraft:command_block{Command:"function rust:main-inline16-block9"}
+setblock -2 0 16 minecraft:command_block{Command:"function rust:main-inline17-block3"} destroy
+Command block placement at -2 0 16 block minecraft:command_block{Command:"function rust:main-inline17-block3"}
+setblock -2 0 17 minecraft:command_block{Command:"function rust:main-inline18-block9"} destroy
+Command block placement at -2 0 17 block minecraft:command_block{Command:"function rust:main-inline18-block9"}
+setblock -2 0 18 minecraft:command_block{Command:"function rust:main-inline19-block3"} destroy
+Command block placement at -2 0 18 block minecraft:command_block{Command:"function rust:main-inline19-block3"}
+setblock -2 0 19 minecraft:command_block{Command:"function rust:main-inline20-block9"} destroy
+Command block placement at -2 0 19 block minecraft:command_block{Command:"function rust:main-inline20-block9"}
+setblock -2 0 20 minecraft:command_block{Command:"function rust:main-inline21-block3"} destroy
+Command block placement at -2 0 20 block minecraft:command_block{Command:"function rust:main-inline21-block3"}
+setblock -2 0 21 minecraft:command_block{Command:"function rust:main-inline22-block9"} destroy
+Command block placement at -2 0 21 block minecraft:command_block{Command:"function rust:main-inline22-block9"}
+setblock -2 0 22 minecraft:command_block{Command:"function rust:main-inline23-block3"} destroy
+Command block placement at -2 0 22 block minecraft:command_block{Command:"function rust:main-inline23-block3"}
+setblock -2 0 23 minecraft:command_block{Command:"function rust:main-inline24-block9"} destroy
+Command block placement at -2 0 23 block minecraft:command_block{Command:"function rust:main-inline24-block9"}
+setblock -2 0 24 minecraft:command_block{Command:"function rust:main-inline25-block3"} destroy
+Command block placement at -2 0 24 block minecraft:command_block{Command:"function rust:main-inline25-block3"}
+setblock -2 0 25 minecraft:command_block{Command:"function rust:main-inline26-block9"} destroy
+Command block placement at -2 0 25 block minecraft:command_block{Command:"function rust:main-inline26-block9"}
+setblock -2 0 26 minecraft:command_block{Command:"function rust:main-inline27-block3"} destroy
+Command block placement at -2 0 26 block minecraft:command_block{Command:"function rust:main-inline27-block3"}
+setblock -2 0 27 minecraft:command_block{Command:"function rust:main-inline28-block9"} destroy
+Command block placement at -2 0 27 block minecraft:command_block{Command:"function rust:main-inline28-block9"}
+setblock -2 0 28 minecraft:command_block{Command:"function rust:main-inline29-block3"} destroy
+Command block placement at -2 0 28 block minecraft:command_block{Command:"function rust:main-inline29-block3"}
+setblock -2 0 29 minecraft:command_block{Command:"function rust:main-inline30-block9"} destroy
+Command block placement at -2 0 29 block minecraft:command_block{Command:"function rust:main-inline30-block9"}
+setblock -2 0 30 minecraft:command_block{Command:"function rust:main-inline31-block3"} destroy
+Command block placement at -2 0 30 block minecraft:command_block{Command:"function rust:main-inline31-block3"}
+setblock -2 0 31 minecraft:command_block{Command:"function rust:main-inline32-block9"} destroy
+Command block placement at -2 0 31 block minecraft:command_block{Command:"function rust:main-inline32-block9"}
+setblock -3 0 0 minecraft:command_block{Command:"function rust:main-inline33-block3"} destroy
+Command block placement at -3 0 0 block minecraft:command_block{Command:"function rust:main-inline33-block3"}
+setblock -3 0 1 minecraft:command_block{Command:"function rust:main-inline34-block9"} destroy
+Command block placement at -3 0 1 block minecraft:command_block{Command:"function rust:main-inline34-block9"}
+setblock -3 0 2 minecraft:command_block{Command:"function rust:main-inline35-block3"} destroy
+Command block placement at -3 0 2 block minecraft:command_block{Command:"function rust:main-inline35-block3"}
+setblock -3 0 3 minecraft:command_block{Command:"function rust:main-inline36-block9"} destroy
+Command block placement at -3 0 3 block minecraft:command_block{Command:"function rust:main-inline36-block9"}
+setblock -3 0 4 minecraft:command_block{Command:"function rust:main-inline37-block3"} destroy
+Command block placement at -3 0 4 block minecraft:command_block{Command:"function rust:main-inline37-block3"}
+setblock -3 0 5 minecraft:command_block{Command:"function rust:main-inline38-block9"} destroy
+Command block placement at -3 0 5 block minecraft:command_block{Command:"function rust:main-inline38-block9"}
+setblock -3 0 6 minecraft:command_block{Command:"function rust:main-inline39-block3"} destroy
+Command block placement at -3 0 6 block minecraft:command_block{Command:"function rust:main-inline39-block3"}
+setblock -3 0 7 minecraft:command_block{Command:"function rust:main-inline40-block9"} destroy
+Command block placement at -3 0 7 block minecraft:command_block{Command:"function rust:main-inline40-block9"}
+setblock -3 0 8 minecraft:command_block{Command:"function rust:main-inline41-block3"} destroy
+Command block placement at -3 0 8 block minecraft:command_block{Command:"function rust:main-inline41-block3"}
+setblock -3 0 9 minecraft:command_block{Command:"function rust:main-inline42-block9"} destroy
+Command block placement at -3 0 9 block minecraft:command_block{Command:"function rust:main-inline42-block9"}
+setblock -3 0 10 minecraft:command_block{Command:"function rust:main-inline43-block3"} destroy
+Command block placement at -3 0 10 block minecraft:command_block{Command:"function rust:main-inline43-block3"}
+setblock -3 0 11 minecraft:command_block{Command:"function rust:main-inline44-block9"} destroy
+Command block placement at -3 0 11 block minecraft:command_block{Command:"function rust:main-inline44-block9"}
+setblock -3 0 12 minecraft:command_block{Command:"function rust:main-inline45-block3"} destroy
+Command block placement at -3 0 12 block minecraft:command_block{Command:"function rust:main-inline45-block3"}
+setblock -3 0 13 minecraft:command_block{Command:"function rust:main-inline46-block9"} destroy
+Command block placement at -3 0 13 block minecraft:command_block{Command:"function rust:main-inline46-block9"}
+setblock -3 0 14 minecraft:command_block{Command:"function rust:main-inline47-block3"} destroy
+Command block placement at -3 0 14 block minecraft:command_block{Command:"function rust:main-inline47-block3"}
+setblock -3 0 15 minecraft:command_block{Command:"function rust:main-inline48-block9"} destroy
+Command block placement at -3 0 15 block minecraft:command_block{Command:"function rust:main-inline48-block9"}
+setblock -3 0 16 minecraft:command_block{Command:"function rust:main-inline49-block3"} destroy
+Command block placement at -3 0 16 block minecraft:command_block{Command:"function rust:main-inline49-block3"}
+setblock -3 0 17 minecraft:command_block{Command:"function rust:main-inline50-block9"} destroy
+Command block placement at -3 0 17 block minecraft:command_block{Command:"function rust:main-inline50-block9"}
+setblock -3 0 18 minecraft:command_block{Command:"function rust:main-inline51-block3"} destroy
+Command block placement at -3 0 18 block minecraft:command_block{Command:"function rust:main-inline51-block3"}
+setblock -3 0 19 minecraft:command_block{Command:"function rust:main-inline52-block9"} destroy
+Command block placement at -3 0 19 block minecraft:command_block{Command:"function rust:main-inline52-block9"}
+setblock -3 0 20 minecraft:command_block{Command:"function rust:main-inline53-block3"} destroy
+Command block placement at -3 0 20 block minecraft:command_block{Command:"function rust:main-inline53-block3"}
+setblock -3 0 21 minecraft:command_block{Command:"function rust:main-inline54-block9"} destroy
+Command block placement at -3 0 21 block minecraft:command_block{Command:"function rust:main-inline54-block9"}
+setblock -3 0 22 minecraft:command_block{Command:"function rust:main-inline55-block3"} destroy
+Command block placement at -3 0 22 block minecraft:command_block{Command:"function rust:main-inline55-block3"}
+setblock -3 0 23 minecraft:command_block{Command:"function rust:main-inline56-block9"} destroy
+Command block placement at -3 0 23 block minecraft:command_block{Command:"function rust:main-inline56-block9"}
+setblock -3 0 24 minecraft:command_block{Command:"function rust:main-inline57-block3"} destroy
+Command block placement at -3 0 24 block minecraft:command_block{Command:"function rust:main-inline57-block3"}
+setblock -3 0 25 minecraft:command_block{Command:"function rust:main-inline58-block9"} destroy
+Command block placement at -3 0 25 block minecraft:command_block{Command:"function rust:main-inline58-block9"}
+setblock -3 0 26 minecraft:command_block{Command:"function rust:main-inline59-block3"} destroy
+Command block placement at -3 0 26 block minecraft:command_block{Command:"function rust:main-inline59-block3"}
+setblock -3 0 27 minecraft:command_block{Command:"function rust:main-inline60-block9"} destroy
+Command block placement at -3 0 27 block minecraft:command_block{Command:"function rust:main-inline60-block9"}
+setblock -3 0 28 minecraft:command_block{Command:"function rust:main-inline61-block3"} destroy
+Command block placement at -3 0 28 block minecraft:command_block{Command:"function rust:main-inline61-block3"}
+setblock -3 0 29 minecraft:command_block{Command:"function rust:main-inline62-block9"} destroy
+Command block placement at -3 0 29 block minecraft:command_block{Command:"function rust:main-inline62-block9"}
+setblock -3 0 30 minecraft:command_block{Command:"function rust:main-inline63-block3"} destroy
+Command block placement at -3 0 30 block minecraft:command_block{Command:"function rust:main-inline63-block3"}
+setblock -3 0 31 minecraft:command_block{Command:"function rust:main-inline64-block9"} destroy
+Command block placement at -3 0 31 block minecraft:command_block{Command:"function rust:main-inline64-block9"}
+setblock -4 0 0 minecraft:command_block{Command:"function rust:main-inline65-block3"} destroy
+Command block placement at -4 0 0 block minecraft:command_block{Command:"function rust:main-inline65-block3"}
+setblock -4 0 1 minecraft:command_block{Command:"function rust:main-inline66-block9"} destroy
+Command block placement at -4 0 1 block minecraft:command_block{Command:"function rust:main-inline66-block9"}
+setblock -4 0 2 minecraft:command_block{Command:"function rust:main-inline67-block3"} destroy
+Command block placement at -4 0 2 block minecraft:command_block{Command:"function rust:main-inline67-block3"}
+setblock -4 0 3 minecraft:command_block{Command:"function rust:main-inline68-block9"} destroy
+Command block placement at -4 0 3 block minecraft:command_block{Command:"function rust:main-inline68-block9"}
+setblock -4 0 4 minecraft:command_block{Command:"function rust:main-inline69-block3"} destroy
+Command block placement at -4 0 4 block minecraft:command_block{Command:"function rust:main-inline69-block3"}
+setblock -4 0 5 minecraft:command_block{Command:"function rust:main-inline70-block9"} destroy
+Command block placement at -4 0 5 block minecraft:command_block{Command:"function rust:main-inline70-block9"}
+setblock -4 0 6 minecraft:command_block{Command:"function rust:main-inline71-block3"} destroy
+Command block placement at -4 0 6 block minecraft:command_block{Command:"function rust:main-inline71-block3"}
+setblock -4 0 7 minecraft:command_block{Command:"function rust:main-inline72-block9"} destroy
+Command block placement at -4 0 7 block minecraft:command_block{Command:"function rust:main-inline72-block9"}
+setblock -4 0 8 minecraft:command_block{Command:"function rust:main-inline73-block3"} destroy
+Command block placement at -4 0 8 block minecraft:command_block{Command:"function rust:main-inline73-block3"}
+setblock -4 0 9 minecraft:command_block{Command:"function rust:main-inline74-block9"} destroy
+Command block placement at -4 0 9 block minecraft:command_block{Command:"function rust:main-inline74-block9"}
+setblock -4 0 10 minecraft:command_block{Command:"function rust:main-inline75-block3"} destroy
+Command block placement at -4 0 10 block minecraft:command_block{Command:"function rust:main-inline75-block3"}
+setblock -4 0 11 minecraft:command_block{Command:"function rust:main-inline76-block9"} destroy
+Command block placement at -4 0 11 block minecraft:command_block{Command:"function rust:main-inline76-block9"}
+setblock -4 0 12 minecraft:command_block{Command:"function rust:main-inline77-block3"} destroy
+Command block placement at -4 0 12 block minecraft:command_block{Command:"function rust:main-inline77-block3"}
+setblock -4 0 13 minecraft:command_block{Command:"function rust:main-inline78-block9"} destroy
+Command block placement at -4 0 13 block minecraft:command_block{Command:"function rust:main-inline78-block9"}
+setblock -4 0 14 minecraft:command_block{Command:"function rust:main-inline79-block3"} destroy
+Command block placement at -4 0 14 block minecraft:command_block{Command:"function rust:main-inline79-block3"}
+setblock -4 0 15 minecraft:command_block{Command:"function rust:main-inline80-block9"} destroy
+Command block placement at -4 0 15 block minecraft:command_block{Command:"function rust:main-inline80-block9"}
+setblock -4 0 16 minecraft:command_block{Command:"function rust:main-inline81-block3"} destroy
+Command block placement at -4 0 16 block minecraft:command_block{Command:"function rust:main-inline81-block3"}
+setblock -4 0 17 minecraft:command_block{Command:"function rust:main-inline82-block9"} destroy
+Command block placement at -4 0 17 block minecraft:command_block{Command:"function rust:main-inline82-block9"}
+setblock -4 0 18 minecraft:command_block{Command:"function rust:main-inline83-block3"} destroy
+Command block placement at -4 0 18 block minecraft:command_block{Command:"function rust:main-inline83-block3"}
+setblock -4 0 19 minecraft:command_block{Command:"function rust:main-inline84-block9"} destroy
+Command block placement at -4 0 19 block minecraft:command_block{Command:"function rust:main-inline84-block9"}
+setblock -4 0 20 minecraft:command_block{Command:"function rust:main"} destroy
+Command block placement at -4 0 20 block minecraft:command_block{Command:"function rust:main"}
+setblock -4 0 21 minecraft:command_block{Command:"function rust:main-inline85-block3"} destroy
+Command block placement at -4 0 21 block minecraft:command_block{Command:"function rust:main-inline85-block3"}
+setblock -4 0 22 minecraft:command_block{Command:"function rust:main-inline86-block9"} destroy
+Command block placement at -4 0 22 block minecraft:command_block{Command:"function rust:main-inline86-block9"}
+setblock -4 0 23 minecraft:command_block{Command:"function rust:main-inline87-block3"} destroy
+Command block placement at -4 0 23 block minecraft:command_block{Command:"function rust:main-inline87-block3"}
+setblock -4 0 24 minecraft:command_block{Command:"function rust:main-inline88-block9"} destroy
+Command block placement at -4 0 24 block minecraft:command_block{Command:"function rust:main-inline88-block9"}
+setblock -4 0 25 minecraft:command_block{Command:"function rust:main-inline89-block3"} destroy
+Command block placement at -4 0 25 block minecraft:command_block{Command:"function rust:main-inline89-block3"}
+setblock -4 0 26 minecraft:command_block{Command:"function rust:main-inline90-block9"} destroy
+Command block placement at -4 0 26 block minecraft:command_block{Command:"function rust:main-inline90-block9"}
+setblock -4 0 27 minecraft:command_block{Command:"function rust:main-inline91-block3"} destroy
+Command block placement at -4 0 27 block minecraft:command_block{Command:"function rust:main-inline91-block3"}
+setblock -4 0 28 minecraft:command_block{Command:"function rust:main-inline92-block9"} destroy
+Command block placement at -4 0 28 block minecraft:command_block{Command:"function rust:main-inline92-block9"}
+setblock -4 0 29 minecraft:command_block{Command:"function rust:main-inline93-block3"} destroy
+Command block placement at -4 0 29 block minecraft:command_block{Command:"function rust:main-inline93-block3"}
+setblock -4 0 30 minecraft:command_block{Command:"function rust:main-inline94-block9"} destroy
+Command block placement at -4 0 30 block minecraft:command_block{Command:"function rust:main-inline94-block9"}
+setblock -4 0 31 minecraft:command_block{Command:"function rust:main-inline95-block3"} destroy
+Command block placement at -4 0 31 block minecraft:command_block{Command:"function rust:main-inline95-block3"}
+setblock -5 0 0 minecraft:command_block{Command:"function rust:main-inline96-block9"} destroy
+Command block placement at -5 0 0 block minecraft:command_block{Command:"function rust:main-inline96-block9"}
+setblock -5 0 1 minecraft:command_block{Command:"function rust:main-inline97-block3"} destroy
+Command block placement at -5 0 1 block minecraft:command_block{Command:"function rust:main-inline97-block3"}
+setblock -5 0 2 minecraft:command_block{Command:"function rust:main-inline98-block9"} destroy
+Command block placement at -5 0 2 block minecraft:command_block{Command:"function rust:main-inline98-block9"}
+setblock -5 0 3 minecraft:command_block{Command:"function rust:main-inline99-block3"} destroy
+Command block placement at -5 0 3 block minecraft:command_block{Command:"function rust:main-inline99-block3"}
+setblock -5 0 4 minecraft:command_block{Command:"function rust:main-inline100-block9"} destroy
+Command block placement at -5 0 4 block minecraft:command_block{Command:"function rust:main-inline100-block9"}
+setblock -5 0 5 minecraft:command_block{Command:"function rust:main-inline101-block3"} destroy
+Command block placement at -5 0 5 block minecraft:command_block{Command:"function rust:main-inline101-block3"}
+setblock -5 0 6 minecraft:command_block{Command:"function rust:main-inline102-block9"} destroy
+Command block placement at -5 0 6 block minecraft:command_block{Command:"function rust:main-inline102-block9"}
+setblock -5 0 7 minecraft:command_block{Command:"function rust:main-inline103-block3"} destroy
+Command block placement at -5 0 7 block minecraft:command_block{Command:"function rust:main-inline103-block3"}
+setblock -5 0 8 minecraft:command_block{Command:"function rust:main-inline104-block9"} destroy
+Command block placement at -5 0 8 block minecraft:command_block{Command:"function rust:main-inline104-block9"}
+setblock -5 0 9 minecraft:command_block{Command:"function rust:main-inline105-block3"} destroy
+Command block placement at -5 0 9 block minecraft:command_block{Command:"function rust:main-inline105-block3"}
+setblock -5 0 10 minecraft:command_block{Command:"function rust:main-inline106-block9"} destroy
+Command block placement at -5 0 10 block minecraft:command_block{Command:"function rust:main-inline106-block9"}
+setblock -5 0 11 minecraft:command_block{Command:"function rust:main-inline107-block3"} destroy
+Command block placement at -5 0 11 block minecraft:command_block{Command:"function rust:main-inline107-block3"}
+setblock -5 0 12 minecraft:command_block{Command:"function rust:main-inline108-block9"} destroy
+Command block placement at -5 0 12 block minecraft:command_block{Command:"function rust:main-inline108-block9"}
+setblock -5 0 13 minecraft:command_block{Command:"function rust:main-inline109-block3"} destroy
+Command block placement at -5 0 13 block minecraft:command_block{Command:"function rust:main-inline109-block3"}
+setblock -5 0 14 minecraft:command_block{Command:"function rust:main-inline110-block9"} destroy
+Command block placement at -5 0 14 block minecraft:command_block{Command:"function rust:main-inline110-block9"}
+setblock -5 0 15 minecraft:command_block{Command:"function rust:main-inline111-block3"} destroy
+Command block placement at -5 0 15 block minecraft:command_block{Command:"function rust:main-inline111-block3"}
+setblock -5 0 16 minecraft:command_block{Command:"function rust:main-inline112-block9"} destroy
+Command block placement at -5 0 16 block minecraft:command_block{Command:"function rust:main-inline112-block9"}
+setblock -5 0 17 minecraft:command_block{Command:"function rust:main-inline113-block3"} destroy
+Command block placement at -5 0 17 block minecraft:command_block{Command:"function rust:main-inline113-block3"}
+setblock -5 0 18 minecraft:command_block{Command:"function rust:main-inline114-block9"} destroy
+Command block placement at -5 0 18 block minecraft:command_block{Command:"function rust:main-inline114-block9"}
+setblock -5 0 19 minecraft:command_block{Command:"function rust:main-inline115-block3"} destroy
+Command block placement at -5 0 19 block minecraft:command_block{Command:"function rust:main-inline115-block3"}
+setblock -5 0 20 minecraft:command_block{Command:"function rust:main-inline116-block9"} destroy
+Command block placement at -5 0 20 block minecraft:command_block{Command:"function rust:main-inline116-block9"}
+setblock -5 0 21 minecraft:command_block{Command:"function rust:main-inline117-block3"} destroy
+Command block placement at -5 0 21 block minecraft:command_block{Command:"function rust:main-inline117-block3"}
+setblock -5 0 22 minecraft:command_block{Command:"function rust:main-inline118-block9"} destroy
+Command block placement at -5 0 22 block minecraft:command_block{Command:"function rust:main-inline118-block9"}
+setblock -5 0 23 minecraft:command_block{Command:"function rust:main-inline119-block3"} destroy
+Command block placement at -5 0 23 block minecraft:command_block{Command:"function rust:main-inline119-block3"}
+setblock -5 0 24 minecraft:command_block{Command:"function rust:main-inline120-block9"} destroy
+Command block placement at -5 0 24 block minecraft:command_block{Command:"function rust:main-inline120-block9"}
+setblock -5 0 25 minecraft:command_block{Command:"function rust:main-inline121-block3"} destroy
+Command block placement at -5 0 25 block minecraft:command_block{Command:"function rust:main-inline121-block3"}
+setblock -5 0 26 minecraft:command_block{Command:"function rust:main-inline122-block9"} destroy
+Command block placement at -5 0 26 block minecraft:command_block{Command:"function rust:main-inline122-block9"}
+setblock -5 0 27 minecraft:command_block{Command:"function rust:main-inline123-block3"} destroy
+Command block placement at -5 0 27 block minecraft:command_block{Command:"function rust:main-inline123-block3"}
+setblock -5 0 28 minecraft:command_block{Command:"function rust:main-inline124-block9"} destroy
+Command block placement at -5 0 28 block minecraft:command_block{Command:"function rust:main-inline124-block9"}
+setblock -5 0 29 minecraft:command_block{Command:"function rust:main-inline125-block3"} destroy
+Command block placement at -5 0 29 block minecraft:command_block{Command:"function rust:main-inline125-block3"}
+setblock -5 0 30 minecraft:command_block{Command:"function rust:main-inline126-block9"} destroy
+Command block placement at -5 0 30 block minecraft:command_block{Command:"function rust:main-inline126-block9"}
+setblock -5 0 31 minecraft:command_block{Command:"function rust:main-inline127-block3"} destroy
+Command block placement at -5 0 31 block minecraft:command_block{Command:"function rust:main-inline127-block3"}
+setblock -6 0 0 minecraft:command_block{Command:"function rust:main-inline128-block9"} destroy
+Command block placement at -6 0 0 block minecraft:command_block{Command:"function rust:main-inline128-block9"}
+setblock -6 0 1 minecraft:command_block{Command:"function rust:main-inline129-block3"} destroy
+Command block placement at -6 0 1 block minecraft:command_block{Command:"function rust:main-inline129-block3"}
+setblock -6 0 2 minecraft:command_block{Command:"function rust:main-inline130-block9"} destroy
+Command block placement at -6 0 2 block minecraft:command_block{Command:"function rust:main-inline130-block9"}
+setblock -6 0 3 minecraft:command_block{Command:"function rust:main-inline131-block3"} destroy
+Command block placement at -6 0 3 block minecraft:command_block{Command:"function rust:main-inline131-block3"}
+setblock -6 0 4 minecraft:command_block{Command:"function rust:main-inline132-block9"} destroy
+Command block placement at -6 0 4 block minecraft:command_block{Command:"function rust:main-inline132-block9"}
+setblock -6 0 5 minecraft:command_block{Command:"function rust:main-inline133-block3"} destroy
+Command block placement at -6 0 5 block minecraft:command_block{Command:"function rust:main-inline133-block3"}
+setblock -6 0 6 minecraft:command_block{Command:"function rust:main-inline134-block9"} destroy
+Command block placement at -6 0 6 block minecraft:command_block{Command:"function rust:main-inline134-block9"}
+setblock -6 0 7 minecraft:command_block{Command:"function rust:main-inline135-block3"} destroy
+Command block placement at -6 0 7 block minecraft:command_block{Command:"function rust:main-inline135-block3"}
+setblock -6 0 8 minecraft:command_block{Command:"function rust:main-inline136-block9"} destroy
+Command block placement at -6 0 8 block minecraft:command_block{Command:"function rust:main-inline136-block9"}
+setblock -6 0 9 minecraft:command_block{Command:"function rust:main-inline137-block3"} destroy
+Command block placement at -6 0 9 block minecraft:command_block{Command:"function rust:main-inline137-block3"}
+setblock -6 0 10 minecraft:command_block{Command:"function rust:main-inline138-block9"} destroy
+Command block placement at -6 0 10 block minecraft:command_block{Command:"function rust:main-inline138-block9"}
+setblock -6 0 11 minecraft:command_block{Command:"function rust:main-inline139-block3"} destroy
+Command block placement at -6 0 11 block minecraft:command_block{Command:"function rust:main-inline139-block3"}
+setblock -6 0 12 minecraft:command_block{Command:"function rust:main-inline140-block9"} destroy
+Command block placement at -6 0 12 block minecraft:command_block{Command:"function rust:main-inline140-block9"}
+setblock -6 0 13 minecraft:command_block{Command:"function rust:main-inline141-block3"} destroy
+Command block placement at -6 0 13 block minecraft:command_block{Command:"function rust:main-inline141-block3"}
+setblock -6 0 14 minecraft:command_block{Command:"function rust:main-inline142-block9"} destroy
+Command block placement at -6 0 14 block minecraft:command_block{Command:"function rust:main-inline142-block9"}
+setblock -6 0 15 minecraft:command_block{Command:"function rust:main-inline143-block3"} destroy
+Command block placement at -6 0 15 block minecraft:command_block{Command:"function rust:main-inline143-block3"}
+setblock -6 0 16 minecraft:command_block{Command:"function rust:main-inline144-block9"} destroy
+Command block placement at -6 0 16 block minecraft:command_block{Command:"function rust:main-inline144-block9"}
+setblock -6 0 17 minecraft:command_block{Command:"function rust:main-inline145-block3"} destroy
+Command block placement at -6 0 17 block minecraft:command_block{Command:"function rust:main-inline145-block3"}
+setblock -6 0 18 minecraft:command_block{Command:"function rust:main-inline146-block9"} destroy
+Command block placement at -6 0 18 block minecraft:command_block{Command:"function rust:main-inline146-block9"}
+setblock -6 0 19 minecraft:command_block{Command:"function rust:main-inline147-block3"} destroy
+Command block placement at -6 0 19 block minecraft:command_block{Command:"function rust:main-inline147-block3"}
+setblock -6 0 20 minecraft:command_block{Command:"function rust:main-inline148-block9"} destroy
+Command block placement at -6 0 20 block minecraft:command_block{Command:"function rust:main-inline148-block9"}
+setblock -6 0 21 minecraft:command_block{Command:"function rust:main-inline149-block3"} destroy
+Command block placement at -6 0 21 block minecraft:command_block{Command:"function rust:main-inline149-block3"}
+setblock -6 0 22 minecraft:command_block{Command:"function rust:main-inline150-block9"} destroy
+Command block placement at -6 0 22 block minecraft:command_block{Command:"function rust:main-inline150-block9"}
+setblock -6 0 23 minecraft:command_block{Command:"function rust:main-inline151-block3"} destroy
+Command block placement at -6 0 23 block minecraft:command_block{Command:"function rust:main-inline151-block3"}
+setblock -6 0 24 minecraft:command_block{Command:"function rust:main-inline152-block9"} destroy
+Command block placement at -6 0 24 block minecraft:command_block{Command:"function rust:main-inline152-block9"}
+setblock -6 0 25 minecraft:command_block{Command:"function rust:main-inline153-block3"} destroy
+Command block placement at -6 0 25 block minecraft:command_block{Command:"function rust:main-inline153-block3"}
+setblock -6 0 26 minecraft:command_block{Command:"function rust:main-inline154-block9"} destroy
+Command block placement at -6 0 26 block minecraft:command_block{Command:"function rust:main-inline154-block9"}
+setblock -6 0 27 minecraft:command_block{Command:"function rust:main-inline155-block3"} destroy
+Command block placement at -6 0 27 block minecraft:command_block{Command:"function rust:main-inline155-block3"}
+setblock -6 0 28 minecraft:command_block{Command:"function rust:main-inline156-block9"} destroy
+Command block placement at -6 0 28 block minecraft:command_block{Command:"function rust:main-inline156-block9"}
+setblock -6 0 29 minecraft:command_block{Command:"function rust:main-inline157-block3"} destroy
+Command block placement at -6 0 29 block minecraft:command_block{Command:"function rust:main-inline157-block3"}
+setblock -6 0 30 minecraft:command_block{Command:"function rust:main-inline158-block9"} destroy
+Command block placement at -6 0 30 block minecraft:command_block{Command:"function rust:main-inline158-block9"}
+setblock -6 0 31 minecraft:command_block{Command:"function rust:main-inline159-block3"} destroy
+Command block placement at -6 0 31 block minecraft:command_block{Command:"function rust:main-inline159-block3"}
+setblock -7 0 0 minecraft:command_block{Command:"function rust:main-inline160-block9"} destroy
+Command block placement at -7 0 0 block minecraft:command_block{Command:"function rust:main-inline160-block9"}
+setblock -7 0 1 minecraft:command_block{Command:"function rust:main-inline161-block3"} destroy
+Command block placement at -7 0 1 block minecraft:command_block{Command:"function rust:main-inline161-block3"}
+setblock -7 0 2 minecraft:command_block{Command:"function rust:main-inline162-block9"} destroy
+Command block placement at -7 0 2 block minecraft:command_block{Command:"function rust:main-inline162-block9"}
+setblock -7 0 3 minecraft:command_block{Command:"function rust:main-inline163-block3"} destroy
+Command block placement at -7 0 3 block minecraft:command_block{Command:"function rust:main-inline163-block3"}
+setblock -7 0 4 minecraft:command_block{Command:"function rust:main-inline164-block9"} destroy
+Command block placement at -7 0 4 block minecraft:command_block{Command:"function rust:main-inline164-block9"}
+setblock -7 0 5 minecraft:command_block{Command:"function rust:main-inline165-block3"} destroy
+Command block placement at -7 0 5 block minecraft:command_block{Command:"function rust:main-inline165-block3"}
+setblock -7 0 6 minecraft:command_block{Command:"function rust:main-inline166-block9"} destroy
+Command block placement at -7 0 6 block minecraft:command_block{Command:"function rust:main-inline166-block9"}
+setblock -7 0 7 minecraft:command_block{Command:"function rust:main-inline167-block3"} destroy
+Command block placement at -7 0 7 block minecraft:command_block{Command:"function rust:main-inline167-block3"}
+setblock -7 0 8 minecraft:command_block{Command:"function rust:main-inline168-block9"} destroy
+Command block placement at -7 0 8 block minecraft:command_block{Command:"function rust:main-inline168-block9"}
+setblock -7 0 9 minecraft:command_block{Command:"function rust:main-block3"} destroy
+Command block placement at -7 0 9 block minecraft:command_block{Command:"function rust:main-block3"}
+setblock -7 0 10 minecraft:command_block{Command:"function rust:main-inline169-block3"} destroy
+Command block placement at -7 0 10 block minecraft:command_block{Command:"function rust:main-inline169-block3"}
+setblock -7 0 11 minecraft:command_block{Command:"function rust:main-inline170-block9"} destroy
+Command block placement at -7 0 11 block minecraft:command_block{Command:"function rust:main-inline170-block9"}
+setblock -7 0 12 minecraft:command_block{Command:"function rust:main-inline171-block3"} destroy
+Command block placement at -7 0 12 block minecraft:command_block{Command:"function rust:main-inline171-block3"}
+setblock -7 0 13 minecraft:command_block{Command:"function rust:main-inline172-block9"} destroy
+Command block placement at -7 0 13 block minecraft:command_block{Command:"function rust:main-inline172-block9"}
+setblock -7 0 14 minecraft:command_block{Command:"function rust:main-inline173-block3"} destroy
+Command block placement at -7 0 14 block minecraft:command_block{Command:"function rust:main-inline173-block3"}
+setblock -7 0 15 minecraft:command_block{Command:"function rust:main-inline174-block9"} destroy
+Command block placement at -7 0 15 block minecraft:command_block{Command:"function rust:main-inline174-block9"}
+setblock -7 0 16 minecraft:command_block{Command:"function rust:main-inline175-block3"} destroy
+Command block placement at -7 0 16 block minecraft:command_block{Command:"function rust:main-inline175-block3"}
+setblock -7 0 17 minecraft:command_block{Command:"function rust:main-inline176-block9"} destroy
+Command block placement at -7 0 17 block minecraft:command_block{Command:"function rust:main-inline176-block9"}
+setblock -7 0 18 minecraft:command_block{Command:"function rust:main-inline177-block3"} destroy
+Command block placement at -7 0 18 block minecraft:command_block{Command:"function rust:main-inline177-block3"}
+setblock -7 0 19 minecraft:command_block{Command:"function rust:main-inline178-block9"} destroy
+Command block placement at -7 0 19 block minecraft:command_block{Command:"function rust:main-inline178-block9"}
+setblock -7 0 20 minecraft:command_block{Command:"function rust:main-inline179-block3"} destroy
+Command block placement at -7 0 20 block minecraft:command_block{Command:"function rust:main-inline179-block3"}
+setblock -7 0 21 minecraft:command_block{Command:"function rust:main-inline180-block9"} destroy
+Command block placement at -7 0 21 block minecraft:command_block{Command:"function rust:main-inline180-block9"}
+setblock -7 0 22 minecraft:command_block{Command:"function rust:main-inline181-block3"} destroy
+Command block placement at -7 0 22 block minecraft:command_block{Command:"function rust:main-inline181-block3"}
+setblock -7 0 23 minecraft:command_block{Command:"function rust:main-inline182-block9"} destroy
+Command block placement at -7 0 23 block minecraft:command_block{Command:"function rust:main-inline182-block9"}
+setblock -7 0 24 minecraft:command_block{Command:"function rust:main-inline183-block3"} destroy
+Command block placement at -7 0 24 block minecraft:command_block{Command:"function rust:main-inline183-block3"}
+setblock -7 0 25 minecraft:command_block{Command:"function rust:main-inline184-block9"} destroy
+Command block placement at -7 0 25 block minecraft:command_block{Command:"function rust:main-inline184-block9"}
+setblock -7 0 26 minecraft:command_block{Command:"function rust:main-inline185-block3"} destroy
+Command block placement at -7 0 26 block minecraft:command_block{Command:"function rust:main-inline185-block3"}
+setblock -7 0 27 minecraft:command_block{Command:"function rust:main-inline186-block9"} destroy
+Command block placement at -7 0 27 block minecraft:command_block{Command:"function rust:main-inline186-block9"}
+setblock -7 0 28 minecraft:command_block{Command:"function rust:main-inline187-block3"} destroy
+Command block placement at -7 0 28 block minecraft:command_block{Command:"function rust:main-inline187-block3"}
+setblock -7 0 29 minecraft:command_block{Command:"function rust:main-inline188-block9"} destroy
+Command block placement at -7 0 29 block minecraft:command_block{Command:"function rust:main-inline188-block9"}
+setblock -7 0 30 minecraft:command_block{Command:"function rust:main-inline189-block3"} destroy
+Command block placement at -7 0 30 block minecraft:command_block{Command:"function rust:main-inline189-block3"}
+setblock -7 0 31 minecraft:command_block{Command:"function rust:main-inline190-block9"} destroy
+Command block placement at -7 0 31 block minecraft:command_block{Command:"function rust:main-inline190-block9"}
+setblock -8 0 0 minecraft:command_block{Command:"function rust:main-inline191-block3"} destroy
+Command block placement at -8 0 0 block minecraft:command_block{Command:"function rust:main-inline191-block3"}
+setblock -8 0 1 minecraft:command_block{Command:"function rust:main-inline192-block9"} destroy
+Command block placement at -8 0 1 block minecraft:command_block{Command:"function rust:main-inline192-block9"}
+setblock -8 0 2 minecraft:command_block{Command:"function rust:main-inline193-block3"} destroy
+Command block placement at -8 0 2 block minecraft:command_block{Command:"function rust:main-inline193-block3"}
+setblock -8 0 3 minecraft:command_block{Command:"function rust:main-inline194-block9"} destroy
+Command block placement at -8 0 3 block minecraft:command_block{Command:"function rust:main-inline194-block9"}
+setblock -8 0 4 minecraft:command_block{Command:"function rust:main-inline195-block3"} destroy
+Command block placement at -8 0 4 block minecraft:command_block{Command:"function rust:main-inline195-block3"}
+setblock -8 0 5 minecraft:command_block{Command:"function rust:main-inline196-block9"} destroy
+Command block placement at -8 0 5 block minecraft:command_block{Command:"function rust:main-inline196-block9"}
+setblock -8 0 6 minecraft:command_block{Command:"function rust:main-inline197-block3"} destroy
+Command block placement at -8 0 6 block minecraft:command_block{Command:"function rust:main-inline197-block3"}
+setblock -8 0 7 minecraft:command_block{Command:"function rust:main-inline198-block9"} destroy
+Command block placement at -8 0 7 block minecraft:command_block{Command:"function rust:main-inline198-block9"}
+setblock -8 0 8 minecraft:command_block{Command:"function rust:main-inline199-block3"} destroy
+Command block placement at -8 0 8 block minecraft:command_block{Command:"function rust:main-inline199-block3"}
+setblock -8 0 9 minecraft:command_block{Command:"function rust:main-inline200-block9"} destroy
+Command block placement at -8 0 9 block minecraft:command_block{Command:"function rust:main-inline200-block9"}
+setblock -8 0 10 minecraft:command_block{Command:"function rust:main-inline201-block3"} destroy
+Command block placement at -8 0 10 block minecraft:command_block{Command:"function rust:main-inline201-block3"}
+setblock -8 0 11 minecraft:command_block{Command:"function rust:main-inline202-block9"} destroy
+Command block placement at -8 0 11 block minecraft:command_block{Command:"function rust:main-inline202-block9"}
+setblock -8 0 12 minecraft:command_block{Command:"function rust:main-inline203-block3"} destroy
+Command block placement at -8 0 12 block minecraft:command_block{Command:"function rust:main-inline203-block3"}
+setblock -8 0 13 minecraft:command_block{Command:"function rust:main-inline204-block9"} destroy
+Command block placement at -8 0 13 block minecraft:command_block{Command:"function rust:main-inline204-block9"}
+setblock -8 0 14 minecraft:command_block{Command:"function rust:main-inline205-block3"} destroy
+Command block placement at -8 0 14 block minecraft:command_block{Command:"function rust:main-inline205-block3"}
+setblock -8 0 15 minecraft:command_block{Command:"function rust:main-inline206-block9"} destroy
+Command block placement at -8 0 15 block minecraft:command_block{Command:"function rust:main-inline206-block9"}
+setblock -8 0 16 minecraft:command_block{Command:"function rust:main-inline207-block3"} destroy
+Command block placement at -8 0 16 block minecraft:command_block{Command:"function rust:main-inline207-block3"}
+setblock -8 0 17 minecraft:command_block{Command:"function rust:main-inline208-block9"} destroy
+Command block placement at -8 0 17 block minecraft:command_block{Command:"function rust:main-inline208-block9"}
+setblock -8 0 18 minecraft:command_block{Command:"function rust:main-inline209-block3"} destroy
+Command block placement at -8 0 18 block minecraft:command_block{Command:"function rust:main-inline209-block3"}
+setblock -8 0 19 minecraft:command_block{Command:"function rust:main-inline210-block9"} destroy
+Command block placement at -8 0 19 block minecraft:command_block{Command:"function rust:main-inline210-block9"}
+setblock -8 0 20 minecraft:command_block{Command:"function rust:main-inline211-block3"} destroy
+Command block placement at -8 0 20 block minecraft:command_block{Command:"function rust:main-inline211-block3"}
+setblock -8 0 21 minecraft:command_block{Command:"function rust:main-inline212-block9"} destroy
+Command block placement at -8 0 21 block minecraft:command_block{Command:"function rust:main-inline212-block9"}
+setblock -8 0 22 minecraft:command_block{Command:"function rust:main-inline213-block3"} destroy
+Command block placement at -8 0 22 block minecraft:command_block{Command:"function rust:main-inline213-block3"}
+setblock -8 0 23 minecraft:command_block{Command:"function rust:main-inline214-block9"} destroy
+Command block placement at -8 0 23 block minecraft:command_block{Command:"function rust:main-inline214-block9"}
+setblock -8 0 24 minecraft:command_block{Command:"function rust:main-inline215-block3"} destroy
+Command block placement at -8 0 24 block minecraft:command_block{Command:"function rust:main-inline215-block3"}
+setblock -8 0 25 minecraft:command_block{Command:"function rust:main-inline216-block9"} destroy
+Command block placement at -8 0 25 block minecraft:command_block{Command:"function rust:main-inline216-block9"}
+setblock -8 0 26 minecraft:command_block{Command:"function rust:main-inline217-block3"} destroy
+Command block placement at -8 0 26 block minecraft:command_block{Command:"function rust:main-inline217-block3"}
+setblock -8 0 27 minecraft:command_block{Command:"function rust:main-inline218-block9"} destroy
+Command block placement at -8 0 27 block minecraft:command_block{Command:"function rust:main-inline218-block9"}
+setblock -8 0 28 minecraft:command_block{Command:"function rust:main-inline219-block3"} destroy
+Command block placement at -8 0 28 block minecraft:command_block{Command:"function rust:main-inline219-block3"}
+setblock -8 0 29 minecraft:command_block{Command:"function rust:main-inline220-block9"} destroy
+Command block placement at -8 0 29 block minecraft:command_block{Command:"function rust:main-inline220-block9"}
+setblock -8 0 30 minecraft:command_block{Command:"function rust:main-inline221-block3"} destroy
+Command block placement at -8 0 30 block minecraft:command_block{Command:"function rust:main-inline221-block3"}
+setblock -8 0 31 minecraft:command_block{Command:"function rust:main-inline222-block9"} destroy
+Command block placement at -8 0 31 block minecraft:command_block{Command:"function rust:main-inline222-block9"}
+setblock -9 0 0 minecraft:command_block{Command:"function rust:main-inline223-block3"} destroy
+Command block placement at -9 0 0 block minecraft:command_block{Command:"function rust:main-inline223-block3"}
+setblock -9 0 1 minecraft:command_block{Command:"function rust:main-inline224-block9"} destroy
+Command block placement at -9 0 1 block minecraft:command_block{Command:"function rust:main-inline224-block9"}
+setblock -9 0 2 minecraft:command_block{Command:"function rust:main-inline225-block3"} destroy
+Command block placement at -9 0 2 block minecraft:command_block{Command:"function rust:main-inline225-block3"}
+setblock -9 0 3 minecraft:command_block{Command:"function rust:main-inline226-block9"} destroy
+Command block placement at -9 0 3 block minecraft:command_block{Command:"function rust:main-inline226-block9"}
+setblock -9 0 4 minecraft:command_block{Command:"function rust:main-inline227-block3"} destroy
+Command block placement at -9 0 4 block minecraft:command_block{Command:"function rust:main-inline227-block3"}
+setblock -9 0 5 minecraft:command_block{Command:"function rust:main-inline228-block9"} destroy
+Command block placement at -9 0 5 block minecraft:command_block{Command:"function rust:main-inline228-block9"}
+setblock -9 0 6 minecraft:command_block{Command:"function rust:main-inline229-block3"} destroy
+Command block placement at -9 0 6 block minecraft:command_block{Command:"function rust:main-inline229-block3"}
+setblock -9 0 7 minecraft:command_block{Command:"function rust:main-inline230-block9"} destroy
+Command block placement at -9 0 7 block minecraft:command_block{Command:"function rust:main-inline230-block9"}
+setblock -9 0 8 minecraft:command_block{Command:"function rust:main-inline231-block3"} destroy
+Command block placement at -9 0 8 block minecraft:command_block{Command:"function rust:main-inline231-block3"}
+setblock -9 0 9 minecraft:command_block{Command:"function rust:main-inline232-block9"} destroy
+Command block placement at -9 0 9 block minecraft:command_block{Command:"function rust:main-inline232-block9"}
+setblock -9 0 10 minecraft:command_block{Command:"function rust:main-inline233-block3"} destroy
+Command block placement at -9 0 10 block minecraft:command_block{Command:"function rust:main-inline233-block3"}
+setblock -9 0 11 minecraft:command_block{Command:"function rust:main-inline234-block9"} destroy
+Command block placement at -9 0 11 block minecraft:command_block{Command:"function rust:main-inline234-block9"}
+setblock -9 0 12 minecraft:command_block{Command:"function rust:main-inline235-block3"} destroy
+Command block placement at -9 0 12 block minecraft:command_block{Command:"function rust:main-inline235-block3"}
+setblock -9 0 13 minecraft:command_block{Command:"function rust:main-inline236-block9"} destroy
+Command block placement at -9 0 13 block minecraft:command_block{Command:"function rust:main-inline236-block9"}
+setblock -9 0 14 minecraft:command_block{Command:"function rust:main-inline237-block3"} destroy
+Command block placement at -9 0 14 block minecraft:command_block{Command:"function rust:main-inline237-block3"}
+setblock -9 0 15 minecraft:command_block{Command:"function rust:main-inline238-block9"} destroy
+Command block placement at -9 0 15 block minecraft:command_block{Command:"function rust:main-inline238-block9"}
+setblock -9 0 16 minecraft:command_block{Command:"function rust:main-inline239-block3"} destroy
+Command block placement at -9 0 16 block minecraft:command_block{Command:"function rust:main-inline239-block3"}
+setblock -9 0 17 minecraft:command_block{Command:"function rust:main-inline240-block9"} destroy
+Command block placement at -9 0 17 block minecraft:command_block{Command:"function rust:main-inline240-block9"}
+setblock -9 0 18 minecraft:command_block{Command:"function rust:main-inline241-block3"} destroy
+Command block placement at -9 0 18 block minecraft:command_block{Command:"function rust:main-inline241-block3"}
+setblock -9 0 19 minecraft:command_block{Command:"function rust:main-inline242-block9"} destroy
+Command block placement at -9 0 19 block minecraft:command_block{Command:"function rust:main-inline242-block9"}
+setblock -9 0 20 minecraft:command_block{Command:"function rust:main-inline243-block3"} destroy
+Command block placement at -9 0 20 block minecraft:command_block{Command:"function rust:main-inline243-block3"}
+setblock -9 0 21 minecraft:command_block{Command:"function rust:main-inline244-block9"} destroy
+Command block placement at -9 0 21 block minecraft:command_block{Command:"function rust:main-inline244-block9"}
+setblock -9 0 22 minecraft:command_block{Command:"function rust:main-inline245-block3"} destroy
+Command block placement at -9 0 22 block minecraft:command_block{Command:"function rust:main-inline245-block3"}
+setblock -9 0 23 minecraft:command_block{Command:"function rust:main-inline246-block9"} destroy
+Command block placement at -9 0 23 block minecraft:command_block{Command:"function rust:main-inline246-block9"}
+setblock -9 0 24 minecraft:command_block{Command:"function rust:main-inline247-block3"} destroy
+Command block placement at -9 0 24 block minecraft:command_block{Command:"function rust:main-inline247-block3"}
+setblock -9 0 25 minecraft:command_block{Command:"function rust:main-inline248-block9"} destroy
+Command block placement at -9 0 25 block minecraft:command_block{Command:"function rust:main-inline248-block9"}
+setblock -9 0 26 minecraft:command_block{Command:"function rust:main-inline249-block3"} destroy
+Command block placement at -9 0 26 block minecraft:command_block{Command:"function rust:main-inline249-block3"}
+setblock -9 0 27 minecraft:command_block{Command:"function rust:main-inline250-block9"} destroy
+Command block placement at -9 0 27 block minecraft:command_block{Command:"function rust:main-inline250-block9"}
+setblock -9 0 28 minecraft:command_block{Command:"function rust:main-inline251-block3"} destroy
+Command block placement at -9 0 28 block minecraft:command_block{Command:"function rust:main-inline251-block3"}
+setblock -9 0 29 minecraft:command_block{Command:"function rust:main-inline252-block9"} destroy
+Command block placement at -9 0 29 block minecraft:command_block{Command:"function rust:main-inline252-block9"}
+setblock -9 0 30 minecraft:command_block{Command:"function rust:main-inline253-block3"} destroy
+Command block placement at -9 0 30 block minecraft:command_block{Command:"function rust:main-inline253-block3"}
+setblock -9 0 31 minecraft:command_block{Command:"function rust:main-inline254-block9"} destroy
+Command block placement at -9 0 31 block minecraft:command_block{Command:"function rust:main-inline254-block9"}
+setblock -10 0 0 minecraft:command_block{Command:"function rust:main-block6"} destroy
+Command block placement at -10 0 0 block minecraft:command_block{Command:"function rust:main-block6"}
+setblock -10 0 1 minecraft:command_block{Command:"function rust:main-block9"} destroy
+Command block placement at -10 0 1 block minecraft:command_block{Command:"function rust:main-block9"}
+setblock -10 0 2 minecraft:command_block{Command:"function intrinsic:lshr"} destroy
+Command block placement at -10 0 2 block minecraft:command_block{Command:"function intrinsic:lshr"}
+setblock -10 0 3 minecraft:command_block{Command:"function intrinsic:lshr/getshift"} destroy
+Command block placement at -10 0 3 block minecraft:command_block{Command:"function intrinsic:lshr/getshift"}
+setblock -10 0 4 minecraft:command_block{Command:"function intrinsic:lshr/inner"} destroy
+Command block placement at -10 0 4 block minecraft:command_block{Command:"function intrinsic:lshr/inner"}
+setblock -10 0 5 minecraft:command_block{Command:"function intrinsic:memcpy"} destroy
+Command block placement at -10 0 5 block minecraft:command_block{Command:"function intrinsic:memcpy"}
+setblock -10 0 6 minecraft:command_block{Command:"function intrinsic:memcpy/next_byte"} destroy
+Command block placement at -10 0 6 block minecraft:command_block{Command:"function intrinsic:memcpy/next_byte"}
+setblock -10 0 7 minecraft:command_block{Command:"function intrinsic:memcpy/inner"} destroy
+Command block placement at -10 0 7 block minecraft:command_block{Command:"function intrinsic:memcpy/inner"}
+setblock -10 0 8 minecraft:command_block{Command:"function intrinsic:or"} destroy
+Command block placement at -10 0 8 block minecraft:command_block{Command:"function intrinsic:or"}
+setblock -10 0 9 minecraft:command_block{Command:"function intrinsic:or_inner"} destroy
+Command block placement at -10 0 9 block minecraft:command_block{Command:"function intrinsic:or_inner"}
+setblock -10 0 10 minecraft:command_block{Command:"function intrinsic:pop_and_branch"} destroy
+Command block placement at -10 0 10 block minecraft:command_block{Command:"function intrinsic:pop_and_branch"}
+setblock -10 0 11 minecraft:command_block{Command:"function intrinsic:setptr"} destroy
+Command block placement at -10 0 11 block minecraft:command_block{Command:"function intrinsic:setptr"}
+setblock -10 0 12 minecraft:command_block{Command:"function intrinsic:shift_from_ptr"} destroy
+Command block placement at -10 0 12 block minecraft:command_block{Command:"function intrinsic:shift_from_ptr"}
+setblock -10 0 13 minecraft:command_block{Command:"function intrinsic:shift_from_ptr_inner"} destroy
+Command block placement at -10 0 13 block minecraft:command_block{Command:"function intrinsic:shift_from_ptr_inner"}
+setblock -10 0 14 minecraft:command_block{Command:"function intrinsic:xor"} destroy
+Command block placement at -10 0 14 block minecraft:command_block{Command:"function intrinsic:xor"}
+setblock -10 0 15 minecraft:command_block{Command:"function intrinsic:xor_inner"} destroy
+Command block placement at -10 0 15 block minecraft:command_block{Command:"function intrinsic:xor_inner"}
+setblock -10 0 16 minecraft:command_block{Command:"function intrinsic:and"} destroy
+Command block placement at -10 0 16 block minecraft:command_block{Command:"function intrinsic:and"}
+setblock -10 0 17 minecraft:command_block{Command:"function intrinsic:and_inner"} destroy
+Command block placement at -10 0 17 block minecraft:command_block{Command:"function intrinsic:and_inner"}
+setblock -10 0 18 minecraft:command_block{Command:"function intrinsic:store_byte"} destroy
+Command block placement at -10 0 18 block minecraft:command_block{Command:"function intrinsic:store_byte"}
+setblock -10 0 19 minecraft:command_block{Command:"function intrinsic:store_halfword"} destroy
+Command block placement at -10 0 19 block minecraft:command_block{Command:"function intrinsic:store_halfword"}
+setblock -10 0 20 minecraft:command_block{Command:"function intrinsic:store_halfword_unaligned"} destroy
+Command block placement at -10 0 20 block minecraft:command_block{Command:"function intrinsic:store_halfword_unaligned"}
+setblock -10 0 21 minecraft:command_block{Command:"function intrinsic:load_byte"} destroy
+Command block placement at -10 0 21 block minecraft:command_block{Command:"function intrinsic:load_byte"}
+setblock -10 0 22 minecraft:command_block{Command:"function intrinsic:load_halfword"} destroy
+Command block placement at -10 0 22 block minecraft:command_block{Command:"function intrinsic:load_halfword"}
+setblock -10 0 23 minecraft:command_block{Command:"function intrinsic:load_halfword_unaligned"} destroy
+Command block placement at -10 0 23 block minecraft:command_block{Command:"function intrinsic:load_halfword_unaligned"}
+setblock -10 0 24 minecraft:command_block{Command:"function intrinsic:bcmp"} destroy
+Command block placement at -10 0 24 block minecraft:command_block{Command:"function intrinsic:bcmp"}
+setblock -10 0 25 minecraft:command_block{Command:"function intrinsic:bcmp_inner"} destroy
+Command block placement at -10 0 25 block minecraft:command_block{Command:"function intrinsic:bcmp_inner"}
+setblock -10 0 26 minecraft:command_block{Command:"function intrinsic:memset"} destroy
+Command block placement at -10 0 26 block minecraft:command_block{Command:"function intrinsic:memset"}
+setblock -10 0 27 minecraft:command_block{Command:"function intrinsic:memset_inner"} destroy
+Command block placement at -10 0 27 block minecraft:command_block{Command:"function intrinsic:memset_inner"}
+setblock -10 0 28 minecraft:command_block{Command:"function intrinsic:store_word_unaligned"} destroy
+Command block placement at -10 0 28 block minecraft:command_block{Command:"function intrinsic:store_word_unaligned"}
+setblock -10 0 29 minecraft:command_block{Command:"function intrinsic:load_word_unaligned"} destroy
+Command block placement at -10 0 29 block minecraft:command_block{Command:"function intrinsic:load_word_unaligned"}
+setblock -10 0 30 minecraft:command_block{Command:"function intrinsic:mul_32_to_64"} destroy
+Command block placement at -10 0 30 block minecraft:command_block{Command:"function intrinsic:mul_32_to_64"}
+setblock -10 0 31 minecraft:command_block{Command:"function intrinsic:llvm_fshr_i32"} destroy
+Command block placement at -10 0 31 block minecraft:command_block{Command:"function intrinsic:llvm_fshr_i32"}
+setblock -11 0 0 minecraft:command_block{Command:"function intrinsic:llvm_ctlz_i32"} destroy
+Command block placement at -11 0 0 block minecraft:command_block{Command:"function intrinsic:llvm_ctlz_i32"}
+setblock -11 0 1 minecraft:command_block{Command:"function intrinsic:llvm_ctlz_i32_inner"} destroy
+Command block placement at -11 0 1 block minecraft:command_block{Command:"function intrinsic:llvm_ctlz_i32_inner"}
+setblock -11 0 2 minecraft:command_block{Command:"function intrinsic:shl"} destroy
+Command block placement at -11 0 2 block minecraft:command_block{Command:"function intrinsic:shl"}
+setblock -4 1 20 minecraft:redstone_block replace
+Branching to main
+Executed 349 commands from function 'run'
+
+Now about to execute main
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%4 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %1%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %10%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %2%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %4%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %7%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %8%0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %temp0 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %temp1 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %temp2 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %temp3 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %temp4 rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %stackbaseptr rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %stackbaseptr rust = %stackptr rust
+scoreboard players operation %1%0 rust = %stackptr rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %2%0 rust = %stackptr rust
+scoreboard players add %stackptr rust 4
+scoreboard players operation %temp0 rust = %1%0 rust
+scoreboard players operation %temp0 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp0 rust matches 0..0
+scoreboard players operation %ptr rust = %1%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] run data modify block ~ ~ ~ RecordItem.tag.Memory set value 0
+scoreboard players operation %temp1 rust = %2%0 rust
+scoreboard players operation %temp1 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp1 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] run data modify block ~ ~ ~ RecordItem.tag.Memory set value 50
+scoreboard players set %phi rust 0
+# ===== Begin block main-block3 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline83-block3
+function rust:main-inline83-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline81-block3
+function rust:main-inline81-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline79-block3
+function rust:main-inline79-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline77-block3
+function rust:main-inline77-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline75-block3
+function rust:main-inline75-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline73-block3
+function rust:main-inline73-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline71-block3
+function rust:main-inline71-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline69-block3
+function rust:main-inline69-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline67-block3
+function rust:main-inline67-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline65-block3
+function rust:main-inline65-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline63-block3
+function rust:main-inline63-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline61-block3
+function rust:main-inline61-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline59-block3
+function rust:main-inline59-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline57-block3
+function rust:main-inline57-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline55-block3
+function rust:main-inline55-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline53-block3
+function rust:main-inline53-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline51-block3
+function rust:main-inline51-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline49-block3
+function rust:main-inline49-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline47-block3
+function rust:main-inline47-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline45-block3
+function rust:main-inline45-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline43-block3
+function rust:main-inline43-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline41-block3
+function rust:main-inline41-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline39-block3
+function rust:main-inline39-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline37-block3
+function rust:main-inline37-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline35-block3
+function rust:main-inline35-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline33-block3
+function rust:main-inline33-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline31-block3
+function rust:main-inline31-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline29-block3
+function rust:main-inline29-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline27-block3
+function rust:main-inline27-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline25-block3
+function rust:main-inline25-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline23-block3
+function rust:main-inline23-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline21-block3
+function rust:main-inline21-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline19-block3
+function rust:main-inline19-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline17-block3
+function rust:main-inline17-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline15-block3
+function rust:main-inline15-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline13-block3
+function rust:main-inline13-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline11-block3
+function rust:main-inline11-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline9-block3
+function rust:main-inline9-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline7-block3
+function rust:main-inline7-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline5-block3
+function rust:main-inline5-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline3-block3
+function rust:main-inline3-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline1-block3
+function rust:main-inline1-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# main-block6
+setblock -10 1 0 minecraft:redstone_block destroy
+Branching to main-block6
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline2-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline4-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline6-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline8-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline10-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline12-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline14-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline16-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline18-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline20-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline22-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline24-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline26-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline28-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline30-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline32-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline34-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline36-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline38-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline40-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline42-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline44-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline46-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline48-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline50-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline52-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline54-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline56-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline58-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline60-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline62-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline64-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline66-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline68-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline70-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline72-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline74-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline76-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline78-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline80-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline82-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline84-block9
+Executed 4344 commands from function 'main'
+
+Now about to execute main-block6
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline253-block3
+function rust:main-inline253-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline251-block3
+function rust:main-inline251-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline249-block3
+function rust:main-inline249-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline247-block3
+function rust:main-inline247-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline245-block3
+function rust:main-inline245-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline243-block3
+function rust:main-inline243-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline241-block3
+function rust:main-inline241-block3
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp2 rust 1
+scoreboard players operation %5%0 rust = %4%0 rust
+scoreboard players operation %5%0 rust -= %temp2 rust
+scoreboard players operation %temp3 rust = %2%0 rust
+scoreboard players operation %temp3 rust %= %%4 rust
+# !INTERPRETER: ASSERT if score %temp3 rust matches 0..0
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %5%0 rust
+scoreboard players set %phi rust 1
+# ===== Begin block main-block6 =====
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %temp4 rust 0
+execute store success score %8%0 rust unless score %7%0 rust = %temp4 rust
+scoreboard players set %phi rust 2
+scoreboard players operation %%condtempholder rust = %8%0 rust
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result block ~ ~ ~ RecordItem.tag.Memory int 1 run scoreboard players get %%condtempholder rust
+scoreboard players add %condstackptr rust 4
+execute if score %%condtempholder rust matches 1..1 run function rust:main-inline239-block3
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline240-block9
+function rust:main-inline240-block9
+setblock ~ ~1 ~ minecraft:air replace
+scoreboard players operation %ptr rust = %2%0 rust
+scoreboard players add %ptr rust 0
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %10%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players set %phi rust 3
+# return operand LocalOperand { name: Number(10), ty: IntegerType { bits: 32 } }
+scoreboard players operation %return%0 rust = %10%0 rust
+scoreboard players operation %stackptr rust = %stackbaseptr rust
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %stackbaseptr rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %temp4 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %temp3 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %temp2 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %temp1 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %temp0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %8%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %7%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %5%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %4%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %2%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %10%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %1%0 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+scoreboard players remove %stackptr rust 4
+scoreboard players operation %ptr rust = %stackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%4 rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+function intrinsic:pop_and_branch
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline242-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline244-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline246-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline248-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline250-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline252-block9
+scoreboard players remove %condstackptr rust 4
+scoreboard players operation %ptr rust = %condstackptr rust
+function intrinsic:setptr
+execute at @e[tag=ptr] store result score %%condtempholder rust run data get block ~ ~ ~ RecordItem.tag.Memory 1
+execute unless score %%condtempholder rust matches 1..1 run function rust:main-inline254-block9
+Executed 999 commands from function 'main-block6'
+=== Begin output ===
+==== End output ====
+Program finished normally in 3 ticks

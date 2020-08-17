@@ -1,4 +1,4 @@
-use crate::analysis::{AbstractBlock, BlockEnd, self};
+use crate::analysis::{AbstractBlock, BlockEdge, BlockEnd, ChainNode, self};
 use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
 use crate::cir::FunctionId as McFuncId;
@@ -49,6 +49,62 @@ pub fn pos_to_func_idx(x: i32, z: i32) -> usize {
 
 pub fn func_idx_to_pos(f: usize) -> (i32, i32) {
     (-2 - (f / ROW_SIZE) as i32, (f % ROW_SIZE) as i32)
+}
+
+pub const COND_STACK_BYTES: usize = 500;
+
+pub fn condtempholder() -> ScoreHolder {
+    ScoreHolder::new("%%condtempholder".to_string()).unwrap()
+}
+
+pub fn condstackptr() -> ScoreHolder {
+    ScoreHolder::new("%condstackptr".to_string()).unwrap()
+}
+
+pub fn push_cond_stack(target: ScoreHolder) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    cmds.push(assign(ptr(), condstackptr()));
+    cmds.push(
+        McFuncCall {
+            id: McFuncId::new("intrinsic:setptr"),
+        }
+        .into(),
+    );
+    cmds.push(write_ptr(target));
+    cmds.push(
+        ScoreAdd {
+            target: condstackptr().into(),
+            target_obj: OBJECTIVE.to_string(),
+            score: 4,
+        }
+        .into(),
+    );
+
+    cmds
+}
+
+pub fn pop_cond_stack(target: ScoreHolder) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    cmds.push(
+        ScoreAdd {
+            target: condstackptr().into(),
+            target_obj: OBJECTIVE.to_string(),
+            score: -4,
+        }
+        .into(),
+    );
+    cmds.push(assign(ptr(), condstackptr()));
+    cmds.push(
+        McFuncCall {
+            id: McFuncId::new("intrinsic:setptr"),
+        }
+        .into(),
+    );
+    cmds.push(read_ptr(target));
+
+    cmds
 }
 
 pub fn stackptr() -> ScoreHolder {
@@ -102,6 +158,14 @@ pub fn mark_assertion(is_unless: bool, cond: &ExecuteCondition) -> Command {
     }
     text.push_str(&cond.to_string());
     Command::Comment(text)
+}
+
+pub fn mark_assertion_matches<R: Into<cir::McRange>>(inverted: bool, score_holder: ScoreHolder, range: R) -> Command {
+    mark_assertion(inverted, &ExecuteCondition::Score {
+        target: score_holder.into(),
+        target_obj: OBJECTIVE.into(),
+        kind: ExecuteCondKind::Matches(range.into()),
+    })
 }
 
 // %ptr, %x, %y, %z, %param<X> are caller-saved registers
@@ -342,6 +406,8 @@ where
         .filter(|reg| {
             reg != &stackptr() &&
             reg != &ptr() &&
+            reg != &condstackptr() &&
+            reg != &condtempholder() &&
             //reg != &stackbaseptr() &&
             reg != &ScoreHolder::new("%phi".into()).unwrap() &&
             !reg.as_ref().contains("%%fixup") &&
@@ -366,6 +432,8 @@ where
             .filter(|reg| {
                 reg != &stackptr() &&
                 reg != &ptr() &&
+                reg != &condstackptr() &&
+                reg != &condtempholder() &&
                 //reg != &stackbaseptr() &&
                 reg != &ScoreHolder::new("%phi".into()).unwrap() &&
                 !reg.as_ref().contains("%%fixup") &&
@@ -461,10 +529,15 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     // Step 3
     let funcs = analysis::build_call_chains(&funcs, &func_starts);
 
+    let mut inline_id = 0;
     // Step 4: Reify call graph to MC functions
     let mut funcs = funcs
         .into_iter()
-        .map(|(block, root)| reify_block(block, root, &clobber_list, &globals))
+        .flat_map(|(block, root)| {
+            let (start, mut others) = reify_block(&block, root, &clobber_list, &globals, &mut inline_id);
+            others.push(start);
+            others
+        })
         .collect::<Vec<_>>();
 
     funcs.extend(crate::intrinsics::INTRINSICS.clone());
@@ -479,6 +552,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
 
     // Step 6: Add global variable init commands
     let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals);
+    init_cmds.push(assign_lit(condstackptr(), alloc.reserve(COND_STACK_BYTES as u32) as i32));
     let main_return = alloc.reserve(4);
     init_cmds.push(set_memory(-1, main_return as i32));
     init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
@@ -1615,25 +1689,11 @@ fn compile_shl(
 
         let (mut cmds, op0) = eval_operand(operand0, globals);
 
-        cmds.push(mark_assertion(
-            false,
-            &ExecuteCondition::Score {
-                target: op0[1].clone().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=0).into()),
-            },
-        ));
+        cmds.push(mark_assertion_matches(false, op0[1].clone(), 0..=0));
 
         let mut intra_byte = |max_bound: i32, dest_lo: ScoreHolder, dest_hi: ScoreHolder| {
             let mul = 1 << shift;
-            cmds.push(mark_assertion(
-                false,
-                &ExecuteCondition::Score {
-                    target: op0[0].clone().into(),
-                    target_obj: OBJECTIVE.into(),
-                    kind: ExecuteCondKind::Matches((0..=max_bound).into()),
-                },
-            ));
+            cmds.push(mark_assertion_matches(false, op0[0].clone(), 0..=max_bound));
 
             cmds.push(assign(dest_lo.clone(), op0[0].clone()));
             cmds.push(assign_lit(dest_hi, 0));
@@ -1676,14 +1736,7 @@ fn compile_shl(
 
         let (mut cmds, op0) = eval_operand(operand0, globals);
 
-        cmds.push(mark_assertion(
-            false,
-            &ExecuteCondition::Score {
-                target: op0[1].clone().into(),
-                target_obj: OBJECTIVE.into(),
-                kind: ExecuteCondKind::Matches((0..=0).into()),
-            },
-        ));
+        cmds.push(mark_assertion_matches(false, op0[1].clone(), 0..=0));
 
         let mut intra_byte = |max_bound: i32, dest_lo: ScoreHolder, dest_hi: ScoreHolder| {
             let mul = 1 << shift;
@@ -1717,14 +1770,7 @@ fn compile_shl(
             16 => intra_byte(0x00_00_FF_FF, dest_lo, dest_hi),
             24 => intra_byte(0x00_00_00_FF, dest_lo, dest_hi),
             32 => {
-                cmds.push(mark_assertion(
-                    false,
-                    &ExecuteCondition::Score {
-                        target: op0[0].clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((0..=0xFF).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(false, op0[0].clone(), 0..=0xFF));
 
                 cmds.push(assign_lit(dest_lo, 0));
                 cmds.push(assign(dest_hi, op0[0].clone()));
@@ -1764,14 +1810,7 @@ fn compile_shl(
                         ty => todo!("{:?}", ty),
                     };
 
-                    cmds.push(mark_assertion(
-                        false,
-                        &ExecuteCondition::Score {
-                            target: dest.into(),
-                            target_obj: OBJECTIVE.into(),
-                            kind: ExecuteCondKind::Matches((..=max_val).into()),
-                        },
-                    ))
+                    cmds.push(mark_assertion_matches(false, dest, ..=max_val));
                 }
             }
             MaybeConst::NonConst(tmp, op1) => {
@@ -1890,14 +1929,7 @@ fn compile_call(
 
                 let (mut cmds, op) = eval_operand(&arguments[0].0, globals);
 
-                cmds.push(mark_assertion(
-                    false,
-                    &ExecuteCondition::Score {
-                        target: op[0].clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((1..=1).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(false, op[0].clone(), 1..=1));
 
                 (cmds, None)
             }
@@ -2416,6 +2448,8 @@ fn compile_call(
             _ => {
                 let mut before_cmds = Vec::new();
 
+                before_cmds.push(Command::Comment(format!("Calling {}", name)));
+
                 // Push return address
                 before_cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
 
@@ -2777,8 +2811,8 @@ pub fn compile_terminator(
 }
 
 #[allow(clippy::reversed_empty_ranges)]
-fn reify_block(graph: DiGraph<(AbstractBlock, Option<usize>), ()>, root: NodeIndex<u32>, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList) -> McFunction {
-    let (AbstractBlock { needs_prolog, mut body, term, parent }, _) = graph[root].clone();
+fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList, inline_id: &mut usize) -> (McFunction, Vec<McFunction>) {
+    let AbstractBlock { needs_prolog, mut body, term, parent } = graph[root].block.clone();
 
     let mut clobbers = clobber_list.get(&body.id.name).unwrap().clone();
 
@@ -2807,15 +2841,75 @@ fn reify_block(graph: DiGraph<(AbstractBlock, Option<usize>), ()>, root: NodeInd
         body.cmds.splice(1..1, prolog);
     }
 
-    let children = graph.neighbors_directed(root, petgraph::Outgoing).collect::<Vec<_>>();
+    let children = graph
+        .neighbors_directed(root, petgraph::Outgoing)
+        .map(|n| (n, graph.edge_weight(graph.find_edge(root, n).unwrap()).unwrap()))
+        .collect::<Vec<_>>();
 
     match children[..] {
-        [ab] => {
-            assert_eq!(term, None);
+        [(ab1, edge1), (ab2, edge2)] => {
+            let (true_dest, false_dest, value) = if let BlockEdge::Cond { value, inverted: false } = edge1 {
+                let expected = BlockEdge::Cond { value: value.clone(), inverted: true };
+                assert_eq!(edge2, &expected);
+                (ab1, ab2, value)
+            } else if let BlockEdge::Cond { value, inverted: true } = edge1 {
+                let expected = BlockEdge::Cond { value: value.clone(), inverted: false };
+                assert_eq!(edge2, &expected);
+                (ab2, ab1, value)
+            } else {
+                todo!()
+            };
 
-            body.cmds.push(Command::Comment(format!("===== Begin block {} =====", graph[ab].0.body.id)));
-            let inner = reify_block(graph, ab, clobber_list, globals);
+            let mut others = Vec::new();
+
+            let (mut true_dest, tmp) = reify_block(graph, true_dest, clobber_list, globals, inline_id);
+            *inline_id += 1;
+            true_dest.id.name.push_str(&format!("-inline{}", *inline_id));
+            others.extend(tmp);
+
+            let (mut false_dest, tmp) = reify_block(graph, false_dest, clobber_list, globals, inline_id);
+            *inline_id += 1;
+            false_dest.id.name.push_str(&format!("-inline{}", *inline_id));
+            others.extend(tmp);
+
+            let cond_tmp = condtempholder();
+            body.cmds.push(assign(cond_tmp.clone(), value.clone()));
+
+            let mut true_cmd = Execute::new();
+            true_cmd
+                .with_if(ExecuteCondition::Score {
+                    target: Target::Uuid(cond_tmp.clone()),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
+                })
+                .with_run(McFuncCall { id: true_dest.id.clone() });
+
+            let mut false_cmd = Execute::new();
+            false_cmd
+                .with_unless(ExecuteCondition::Score {
+                    target: Target::Uuid(cond_tmp.clone()),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
+                })
+                .with_run(McFuncCall { id: false_dest.id.clone() });
+
+            body.cmds.extend(push_cond_stack(cond_tmp.clone()));
+            body.cmds.push(true_cmd.into());
+            body.cmds.extend(pop_cond_stack(cond_tmp));
+            body.cmds.push(false_cmd.into());
+
+            others.push(true_dest);
+            others.push(false_dest);
+
+            (body, others)
+        }
+        [(ab, edge)] => {
+            assert_eq!(edge, &BlockEdge::None);
+
+            body.cmds.push(Command::Comment(format!("===== Begin block {} =====", graph[ab].block.body.id)));
+            let (inner, others) = reify_block(graph, ab, clobber_list, globals, inline_id);
             body.cmds.extend(inner.cmds);
+            (body, others)
         }
         [] => {
             match term.unwrap() {
@@ -2844,11 +2938,11 @@ fn reify_block(graph: DiGraph<(AbstractBlock, Option<usize>), ()>, root: NodeInd
                     body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals));
                 }
             }
+
+            (body, Vec::new())
         }
         _ => todo!()
     }
-
-    body
 }
 
 fn compile_function(
@@ -3978,14 +4072,7 @@ pub fn compile_instr(
                 let tmp = get_unique_holder();
                 cmds.push(assign(tmp.clone(), addr.clone()));
                 cmds.push(make_op_lit(tmp.clone(), "%=", 4));
-                cmds.push(mark_assertion(
-                    false,
-                    &ExecuteCondition::Score {
-                        target: tmp.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((0..=0).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(false, tmp, 0..=0));
 
                 for (idx, write_cmd) in write_cmds.into_iter().enumerate() {
                     cmds.push(assign(ptr(), addr.clone()));
@@ -4261,25 +4348,11 @@ pub fn compile_instr(
 
             // FIXME: THIS DOES AN SREM
             for s in source0.iter().cloned() {
-                cmds.push(mark_assertion(
-                    true,
-                    &ExecuteCondition::Score {
-                        target: s.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((..=-1).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(true, s, ..=-1));
             }
 
             for s in source1.iter().cloned() {
-                cmds.push(mark_assertion(
-                    true,
-                    &ExecuteCondition::Score {
-                        target: s.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((..=-1).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(true, s, ..=-1));
             }
 
             let dest = ScoreHolder::from_local_name(
@@ -4335,25 +4408,11 @@ pub fn compile_instr(
 
             // FIXME: THIS DOES AN SREM
             for s in source0.iter().cloned() {
-                cmds.push(mark_assertion(
-                    true,
-                    &ExecuteCondition::Score {
-                        target: s.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((..=-1).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(true, s, ..=-1));
             }
 
             for s in source1.iter().cloned() {
-                cmds.push(mark_assertion(
-                    true,
-                    &ExecuteCondition::Score {
-                        target: s.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((..=-1).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(true, s, ..=-1));
             }
 
             let dest = ScoreHolder::from_local_name(
@@ -4809,14 +4868,7 @@ pub fn compile_instr(
             if type_layout(&element.get_type()).size() == 4 && offset % 4 == 0 {
                 cmds.push(assign(dest[insert_idx].clone(), elem));
             } else if type_layout(&element.get_type()).size() == 1 {
-                cmds.push(mark_assertion(
-                    true,
-                    &ExecuteCondition::Score {
-                        target: dest[insert_idx].clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((0..=255).into()),
-                    },
-                ));
+                cmds.push(mark_assertion_matches(true, dest[insert_idx].clone(), 0..=255));
 
                 if index == 0 {
                     cmds.extend(zero_low_bytes(dest[insert_idx].clone(), 1));

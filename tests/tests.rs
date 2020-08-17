@@ -10,13 +10,15 @@ pub fn compile_and_run(path: &Path) -> Interpreter {
     let mut interp = Interpreter::new(datapack, idx, "");
 
     if let Err(err) = interp.run_to_end() {
-        eprintln!("Encountered error: {}", err);
         for f in interp.program() {
             eprintln!("======= {} =======", f.id);
             for c in f.cmds.iter() {
                 eprintln!("{}", c);
             }
         }
+        eprintln!("==========================");
+        eprintln!("Failure in test {:?}", path);
+        eprintln!("Encountered error: {}", err);
         eprintln!("Stack:");
         for (f, c) in interp.call_stack() {
             eprintln!("{} line {}", f.id, c);

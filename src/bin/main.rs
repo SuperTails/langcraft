@@ -20,6 +20,11 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
             } else if input == "CONT" {
                 eprintln!("Continuing");
                 hit_breakpoint = false;
+            } else if input == "BTRACE" {
+                for (f, c) in interp.call_stack() {
+                    eprintln!("{} line {}", f.id, f.get_line(c));
+                }
+                eprintln!();
             } else if input.starts_with("REG") {
                 let words = input.split_whitespace().collect::<Vec<_>>();
                 match &words[..] {
@@ -80,6 +85,18 @@ fn run_interpreter(interp: &mut Interpreter) -> Result<(), Box<dyn std::error::E
                 }
                 hit_breakpoint = true;
             }
+
+            /*if interp
+                .next_command()
+                .map(|c| c.to_string().contains("pop_and_branch"))
+                .unwrap_or(false)
+            {
+                for o in interp.output.iter() {
+                    println!("{:?}", o);
+                }
+                hit_breakpoint = true;
+
+            }*/
         }
     }
 
