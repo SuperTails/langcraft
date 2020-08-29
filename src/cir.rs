@@ -662,6 +662,10 @@ impl Execute {
         self.with_subcmd(ExecuteSubCmd::At { target })
     }
 
+    pub fn with_positioned(&mut self, pos: String) -> &mut Self {
+        self.with_subcmd(ExecuteSubCmd::Positioned { pos })
+    }
+
     pub fn with_run<C: Into<Command>>(&mut self, cmd: C) -> &mut Self {
         assert!(self.run.is_none());
 
@@ -701,6 +705,10 @@ pub enum ExecuteSubCmd {
     At {
         target: Target,
     },
+    // TODO: There's another one
+    Positioned {
+        pos: String,
+    }
 }
 
 impl ExecuteSubCmd {
@@ -741,6 +749,7 @@ impl ExecuteSubCmd {
                     result
                 }
             },
+            Self::Positioned { .. } |
             Self::At { .. } | Self::As { .. } => HashMap::new(),
         }
     }
@@ -769,6 +778,7 @@ impl fmt::Display for ExecuteSubCmd {
             }
             Self::As { target } => write!(f, "as {}", target),
             Self::At { target } => write!(f, "at {}", target),
+            Self::Positioned { pos } => write!(f, "positioned {}", pos),
         }
     }
 }
@@ -981,7 +991,7 @@ impl CommandParser<'_> {
             Some("scoreboard") => self.parse_scoreboard(),
             Some("execute") => self.parse_execute(),
             Some("function") => FuncCall {
-                id: FunctionId::new(self.tail),
+                id: self.tail.parse().unwrap(),
             }
             .into(),
             Some("tellraw") => self.parse_tellraw(),
@@ -1439,8 +1449,8 @@ impl From<Tellraw> for Command {
 
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub struct Teleport {
-    target: Target,
-    pos: BlockPos,
+    pub target: Target,
+    pub pos: BlockPos,
 }
 
 impl fmt::Display for Teleport {
@@ -1819,12 +1829,19 @@ pub enum DataModifySource {
     // TODO: There's another
     // TODO: This can technically be other datatypes too, I think
     Value(i32),
+    ValueString(String),
 }
 
 impl fmt::Display for DataModifySource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DataModifySource::Value(v) => write!(f, "value {}", v),
+            DataModifySource::ValueString(v) => {
+                if v.contains(char::is_control) || v.contains('\\') || v.contains('"') {
+                    todo!("{:?}", v)
+                }
+                write!(f, "value {:?}", v)
+            }
         }
     }
 }

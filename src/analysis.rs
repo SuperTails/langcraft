@@ -8,7 +8,7 @@ use petgraph::prelude::{DiGraph, Graph, NodeIndex};
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum BlockEnd {
     StaticCall(String),
-    DynCall,
+    DynCall(ScoreHolder),
     Normal(Terminator),
 }
 
@@ -30,7 +30,7 @@ impl AbstractBlock {
                 Some(func_starts.get(&c["!FIXUPCALL ".len()..]).unwrap_or_else(|| panic!("failed to get {}", c)).clone())
             },
             BlockEnd::Normal(Terminator::Br(Br { dest, debugloc: _ })) => Some(FunctionId::new_block(&self.parent.name, dest.clone())),
-            BlockEnd::DynCall => None,
+            BlockEnd::DynCall(_) => None,
             _ => None,
         }
     }
@@ -247,6 +247,27 @@ pub(crate) enum BlockEdge {
     Cond {
         value: ScoreHolder,
         inverted: bool,
+    }
+}
+
+impl BlockEdge {
+    pub fn into_conds(self) -> Vec<crate::cir::ExecuteCondition> {
+        match self {
+            BlockEdge::None => Vec::new(),
+            BlockEdge::Cond { value, inverted } => {
+                let range = if inverted {
+                    0..=0
+                } else {
+                    1..=1
+                };
+
+                vec![crate::cir::ExecuteCondition::Score {
+                    target: value.into(),
+                    target_obj: crate::compile_ir::OBJECTIVE.into(),
+                    kind: crate::cir::ExecuteCondKind::Matches(range.into()),
+                }]
+            }
+        }
     }
 }
 

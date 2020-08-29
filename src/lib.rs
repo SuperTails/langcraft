@@ -75,22 +75,30 @@ impl Datapack {
             FLUSH_STR,
         )?;
 
-        for func in self.functions.iter() {
-            let contents = func
-                .cmds
-                .iter()
-                .map(|cmd| cmd.to_string())
-                .collect::<Vec<_>>();
+        let on_tick_id = FunctionId::new("__langcraft_on_tick");
 
-            let contents = contents.join("\n");
+        // Iterator over (ID, contents)
+        let funcs= self.functions.iter()
+            .map(|func| {
+                let contents = func
+                    .cmds
+                    .iter()
+                    .map(|cmd| cmd.to_string())
+                    .collect::<Vec<_>>();
 
-            let path = func.id.path();
+                let contents = contents.join("\n");
+
+                (&func.id, contents)
+            });
+
+        for (id, contents) in funcs {
+            let path = id.path();
             let path_folders = &path[..path.len() - 1];
             let file_name = &path[path.len() - 1];
 
             let mut full_path = output_folder
                 .join(Path::new("data"))
-                .join(Path::new(func.id.namespace()))
+                .join(Path::new(id.namespace()))
                 .join(Path::new("functions"));
 
             for folder in path_folders {
