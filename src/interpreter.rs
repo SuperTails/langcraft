@@ -499,7 +499,7 @@ impl Interpreter {
                     }
                 }*/
             }
-            RunState::Chain { resume_cmd, cmd_2, tick_queued, .. } => {
+            RunState::Chain { resume_cmd, cmd_1, cmd_2, tick_queued, .. } => {
                 let extract_cmd = |block: &str| {
                     assert!(block.contains("command_block"), "{}", block);
 
@@ -517,7 +517,11 @@ impl Interpreter {
                 } else if pos == (-2, 1, 1) {
                     *resume_cmd = extract_cmd(block);
                 } else if pos == (-2, 0, 2) {
-                    *cmd_2 = extract_cmd(block);
+                    if block == "minecraft:air" {
+                        *cmd_2 = None;
+                    } else {
+                        *cmd_2 = extract_cmd(block);
+                    }
                 } else if pos == (-2, 1, 0) {
                     if block == "minecraft:redstone_block" {
                         assert_eq!(*tick_queued, false);
@@ -527,6 +531,8 @@ impl Interpreter {
                     } else {
                         todo!()
                     }
+                } else if pos == (-2, 0, 1) && block == "minecraft:air" {
+                    *cmd_1 = None;
                 } else {
                     todo!("{:?}: {}", pos, block)
                 }
@@ -535,7 +541,7 @@ impl Interpreter {
     }
 
     fn execute_cmd(&mut self, pos: (i32, i32, i32), cmd: &Command) -> Result<(), InterpError> {
-        eprintln!("{}", cmd);
+        //eprintln!("{}", cmd);
         /*if !self
             .call_stack
             .iter()
@@ -965,6 +971,9 @@ impl Interpreter {
                             if passes {
                                 self.call_stack.push((called_idx, 0, dest_pos));
                             }
+                        } else if let Command::SetBlock(SetBlock { pos, block, kind}) = &**run {
+                            let rel = parse_rel_coords(pos).unwrap();
+                            self.execute_setblock(add_rel_pos(dest_pos, rel), block, *kind);
                         } else {
                             todo!()
                         }

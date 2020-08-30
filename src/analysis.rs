@@ -105,7 +105,7 @@ impl AbstractBlock {
 
 fn estimate_count(
     visited: &mut HashSet<FunctionId>,
-    list: &HashMap<FunctionId, AbstractBlock>,
+    list: &HashMap<FunctionId, &Function>,
     func_starts: &HashMap<String, FunctionId>,
     cmd: &Command
 ) -> Option<usize> {
@@ -118,7 +118,8 @@ fn estimate_count(
                 // FIXME:
                 None
             } else {
-                todo!("{}", id)
+                let func = *list.get(id).unwrap();
+                Some(1 + estimate_total_count(list, func_starts, func)?)
             }
         }
         _ => Some(1),
@@ -126,9 +127,9 @@ fn estimate_count(
 }
 
 pub(crate) fn estimate_total_count(
-    list: &HashMap<FunctionId, AbstractBlock>,
+    list: &HashMap<FunctionId, &Function>,
     func_starts: &HashMap<String, FunctionId>,
-    block: &AbstractBlock
+    block: &Function,
 ) -> Option<usize> {
     let mut visited = HashSet::new();
     estimate_total_count_inner(&mut visited, list, func_starts, block)
@@ -136,12 +137,12 @@ pub(crate) fn estimate_total_count(
 
 fn estimate_total_count_inner(
     visited: &mut HashSet<FunctionId>,
-    list: &HashMap<FunctionId, AbstractBlock>,
+    list: &HashMap<FunctionId, &Function>,
     func_starts: &HashMap<String, FunctionId>,
-    block: &AbstractBlock
+    block: &Function,
 ) -> Option<usize> {
     let mut total = 0;
-    for cmd in block.body.cmds.iter() {
+    for cmd in block.cmds.iter() {
         total += estimate_count(visited, list, func_starts, cmd)?;
     }
     Some(total)
@@ -221,7 +222,7 @@ mod test {
     }
 }*/
 
-struct CountList(HashMap<FunctionId, Option<usize>>);
+/*struct CountList(HashMap<FunctionId, Option<usize>>);
 
 impl CountList {
     fn get(&self, id: &FunctionId) -> Option<usize> {
@@ -237,7 +238,7 @@ impl CountList {
 
         s
     }
-}
+}*/
 
 pub(crate) type BlockTree<'a> = (DiGraph<ChainNode<'a>, BlockEdge>, NodeIndex<u32>);
 
@@ -282,6 +283,7 @@ static MAX_INLINE_COMMANDS: usize = 10_000;
 
 static MAX_TREE_DEPTH: usize = 10;
 
+/*
 // this returns a tree, but petgraph is really nice
 fn build_call_chain<'a>(funcs: &HashMap<&FunctionId, &'a AbstractBlock>, block: &'a AbstractBlock, func_starts: &HashMap<String, FunctionId>, counts: &CountList) -> BlockTree<'a> {
     let mut result = Graph::new();
@@ -381,8 +383,9 @@ fn build_call_chain<'a>(funcs: &HashMap<&FunctionId, &'a AbstractBlock>, block: 
 
     (result, head)
 }
+*/
 
-pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &HashMap<String, FunctionId>) -> Vec<BlockTree<'a>> {
+/*pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &HashMap<String, FunctionId>) -> Vec<BlockTree<'a>> {
     /*
         If leaf ends in a direct branch to tail:
             if total cmds okay and leaf != tail:
@@ -409,5 +412,5 @@ pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &Ha
     }*/
 
     graphs
-}
+}*/
 

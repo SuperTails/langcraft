@@ -653,9 +653,6 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     // Step 5: Do relocations
     let mut funcs = do_relocation(funcs, &func_starts, &mut globals);
 
-    funcs.push(create_call_func(&funcs));
-    funcs.push(create_return_func());
-
     println!("\nIndices:");
     for (idx, f) in funcs.iter().enumerate() {
         println!("{:>2}: {}", idx, f.id);
@@ -735,6 +732,9 @@ fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: 
             globals.insert(name, (idx as u32, None));
         }
     }
+
+    funcs.push(create_call_func(&funcs));
+    funcs.push(create_return_func());
 
     apply_fixups(&mut funcs, &func_starts);
 
@@ -974,6 +974,7 @@ fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId
     apply_return_fixups(funcs);
     apply_func_ref_fixups(funcs, func_starts);
     apply_call_fixups(funcs, func_starts);
+    apply_cmd_count_fixups(funcs, func_starts);
 
     // Make sure we didn't miss anything
     for func in funcs.iter() {
@@ -981,6 +982,21 @@ fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId
             let as_string = cmd.to_string();
             if as_string.contains("%%fixup") || as_string.contains("!FIXUP") {
                 todo!("{}", cmd)
+            }
+        }
+    }
+}
+
+fn apply_cmd_count_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
+    let list = funcs.iter().map(|f| (f.id.clone(), f)).collect();
+
+    let counts = funcs.iter().map(|f| crate::analysis::estimate_total_count(&list, func_starts, f)).collect::<Vec<_>>();
+    for (func_idx, count) in (0..funcs.len()).zip(counts.into_iter()) {
+        for cmd_idx in 0..funcs[func_idx].cmds.len() {
+            if let Command::Comment(c) = &funcs[func_idx].cmds[cmd_idx] {
+                if c == "%%fixup_update_cmds" {
+                    funcs[func_idx].cmds[cmd_idx] = make_op_lit(cmd_count(), "+=", count.unwrap() as i32);
+                }
             }
         }
     }
@@ -2859,7 +2875,7 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractB
     }
 
     if needs_prolog {
-        let mut prolog = Vec::new();
+        let mut prolog = save_regs(clobbers.clone());
 
         for (idx, arg) in parent.parameters.iter().enumerate() {
             let arg_size = type_layout(&arg.ty).size();
@@ -2873,9 +2889,10 @@ fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractB
             }
         }
 
-        prolog.splice(0..0, save_regs(clobbers.clone()));
+        body.cmds.splice(0..0, prolog);
 
-        body.cmds.splice(1..1, prolog);
+        // FIXME: When `trace-bbs` is enabled this puts them at the correct place
+        // body.cmds.splice(1..1, prolog);
     }
 
     body.cmds.extend(compile_block_end(&term.unwrap(), body.cmds.len(), &parent, clobbers, &func_starts, globals));
