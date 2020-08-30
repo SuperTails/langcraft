@@ -3111,7 +3111,7 @@ pub fn lshr_64_bit_const(
             );
             cmds.push(assign(dest_lo, param(0, 0)));
         } else {
-            cmds.push(assign(dest_lo, op0_lo));
+            cmds.push(assign(dest_lo, op0_hi));
         }
 
         cmds
