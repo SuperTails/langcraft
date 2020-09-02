@@ -14,14 +14,16 @@ use llvm_ir::constant::BitCast as BitCastConst;
 use llvm_ir::constant::GetElementPtr as GetElementPtrConst;
 use llvm_ir::constant::ICmp as ICmpConst;
 use llvm_ir::constant::Select as SelectConst;
+use llvm_ir::constant::ConstantRef;
 use llvm_ir::instruction::{
     Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
     InsertElement, InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem,
     Select, Shl, ShuffleVector, Store, Sub, Trunc, UDiv, URem, Xor, ZExt,
 };
+use llvm_ir::function::ParameterAttribute;
 use llvm_ir::module::GlobalVariable;
 use llvm_ir::terminator::{Br, CondBr, Ret, Switch, Unreachable};
-use llvm_ir::types::Typed;
+use llvm_ir::types::{Typed, TypeRef, Types, NamedStructDef};
 use llvm_ir::{
     Constant, Function, Instruction, IntPredicate, Module, Name, Operand, Terminator, Type,
 };
@@ -38,6 +40,47 @@ use petgraph::prelude::{DiGraph, NodeIndex};
 // VALUES THAT ARE NOT A MULTIPLE OF WORD SIZE STORED IN REGISTERS
 // ARE NOT GUARANTEED TO HAVE THEIR HIGH BITS ZEROED OR SIGN-EXTENDED
 // SO YOU CANNOT JUST ADD A "u8" INTO A "u32" AND EXPECT IT TO WORK
+
+fn as_struct_ty(n: &NamedStructDef) -> Option<(&[TypeRef], bool)> {
+    named_as_type(n).and_then(|d| {
+        if let Type::StructType { element_types, is_packed } = &**d {
+            Some((&element_types[..], *is_packed))
+        } else {
+            unreachable!()
+        }
+    })
+}
+
+fn named_as_type(n: &NamedStructDef) -> Option<&TypeRef> {
+    match n {
+        NamedStructDef::Defined(d) => Some(d),
+        NamedStructDef::Opaque => None,
+    }
+}
+
+fn as_const_64(operand: &Operand) -> Option<u64> {
+    as_const_int(64, operand)
+}
+
+fn as_const_32(operand: &Operand) -> Option<u32> {
+    as_const_int(32, operand).map(|n| n as u32)
+}
+
+fn as_const_int(bits: u32, operand: &Operand) -> Option<u64> {
+    if let Operand::ConstantOperand(c) = operand {
+        if let Constant::Int { bits: b, value } = &**c {
+            if *b == bits {
+                Some(*value)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
 
 pub const OBJECTIVE: &str = "rust";
 
@@ -460,7 +503,7 @@ fn compile_module_abstract(module: &Module, options: &BuildOptions, globals: &Gl
     for (parent, (mc_funcs, clobbers)) in module
         .functions
         .iter()
-        .map(|f| (f, compile_function(f, &globals, options)))
+        .map(|f| (f, compile_function(f, &globals, &module.types, options)))
     {
         for AbstractBlock { body: McFunction { id, .. }, .. } in mc_funcs.iter() {
             clobber_list.insert(
@@ -515,7 +558,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     
     // Step 1: Lay out global variables
     let mut alloc = StaticAllocator(4);
-    let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc);
+    let mut globals = global_var_layout(&module.global_vars, &module.functions, &mut alloc, &module.types);
 
     // Step 2: Convert LLVM functions to abstract blocks
     let (funcs, clobber_list, func_starts) = compile_module_abstract(module, options, &globals);
@@ -534,7 +577,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     let mut funcs = funcs
         .into_iter()
         .flat_map(|(block, root)| {
-            let (start, mut others) = reify_block(&block, root, &clobber_list, &globals, &mut inline_id);
+            let (start, mut others) = reify_block(&block, root, &clobber_list, &globals, &module.types, &mut inline_id);
             others.push(start);
             others
         })
@@ -551,7 +594,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     }
 
     // Step 6: Add global variable init commands
-    let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals);
+    let mut init_cmds = compile_global_var_init(&module.global_vars, &mut globals, &module.types);
     init_cmds.push(assign_lit(condstackptr(), alloc.reserve(COND_STACK_BYTES as u32) as i32));
     let main_return = alloc.reserve(4);
     init_cmds.push(set_memory(-1, main_return as i32));
@@ -610,7 +653,7 @@ fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: 
     for (func, func_id) in func_starts.iter() {
         let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0;
 
-        let name = Name::Name(func.clone());
+        let name = Name::Name(Box::new(func.clone()));
 
         #[allow(clippy::map_entry)]
         if globals.contains_key(&name) {
@@ -916,7 +959,8 @@ fn getelementptr_const(
         indices,
         in_bounds,
     }: &GetElementPtrConst,
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    globals: &GlobalVarList,
+    tys: &Types,
 ) -> u32 {
     if !in_bounds {
         todo!("not inbounds constant getelementptr")
@@ -925,7 +969,7 @@ fn getelementptr_const(
     println!("Address: {:?}", address);
     println!("Indices: {:?}", indices);
 
-    let result = if let Constant::GlobalReference { name, ty } = address {
+    let result = if let Constant::GlobalReference { name, ty } = &**address {
         let mut offset = globals
             .get(&name)
             .unwrap_or_else(|| panic!("couldn't find global {:?}", name))
@@ -933,44 +977,34 @@ fn getelementptr_const(
         let mut ty = ty.clone();
 
         for index in &indices[1..] {
-            let index = if let Constant::Int { bits: 32, value } = index {
+            let index = if let Constant::Int { bits: 32, value } = &**index {
                 *value as i32
             } else {
                 unreachable!()
             };
 
-            match ty {
+            match (*ty).clone() {
                 Type::NamedStructType {
-                    name: _name,
-                    ty: inner_ty,
+                    name,
                 } => {
-                    let inner_ty = inner_ty.as_ref().unwrap();
-                    let inner_ty = inner_ty.upgrade().unwrap().read().unwrap().clone();
-                    if let Type::StructType {
-                        element_types,
-                        is_packed,
-                    } = &inner_ty
-                    {
-                        ty = element_types[index as usize].clone();
-                        offset += offset_of(element_types, *is_packed, index as u32) as u32;
-                    } else {
-                        todo!("{:?}", inner_ty)
-                    }
+                    let (element_types, is_packed) = as_struct_ty(tys.named_struct_def(&name).unwrap()).unwrap();
+                    ty = element_types[index as usize].clone();
+                    offset += offset_of(element_types, is_packed, index as u32, tys) as u32;
                 }
                 Type::StructType {
                     element_types,
                     is_packed,
                 } => {
                     ty = element_types[index as usize].clone();
-                    offset += offset_of(&element_types, is_packed, index as u32) as u32;
+                    offset += offset_of(&element_types, is_packed, index as u32, tys) as u32;
                 }
                 Type::ArrayType {
                     element_type,
                     num_elements: _,
                 } => {
-                    let elem_size = type_layout(&element_type).pad_to_align().size();
+                    let elem_size = type_layout(&element_type, tys).pad_to_align().size();
 
-                    ty = *element_type;
+                    ty = element_type;
                     offset += elem_size as u32 * index as u32;
                 }
                 _ => todo!("{:?}", ty),
@@ -994,11 +1028,12 @@ type GlobalVarList<'a> = HashMap<&'a Name, (u32, Option<Constant>)>;
 fn compile_global_var_init<'a>(
     vars: &'a [GlobalVariable],
     globals: &mut GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
     let mut cmds = Vec::new();
 
     for var in vars {
-        cmds.extend(one_global_var_init(var, &globals));
+        cmds.extend(one_global_var_init(var, &globals, tys));
     }
 
     // TODO: This needs a better system
@@ -1026,42 +1061,40 @@ fn compile_global_var_init<'a>(
     cmds
 }
 
-fn global_var_layout<'a>(v: &'a [GlobalVariable], funcs: &[Function], alloc: &mut StaticAllocator) -> GlobalVarList<'a> {
+fn global_var_layout<'a>(v: &'a [GlobalVariable], funcs: &[Function], alloc: &mut StaticAllocator, tys: &Types) -> GlobalVarList<'a> {
     let mut result = HashMap::new();
     for v in v.iter() {
-        let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty {
+        let pointee_type = if let Type::PointerType { pointee_type, .. } = &v.ty.as_ref() {
             pointee_type
         } else {
             unreachable!()
         };
 
-        let start = alloc.reserve(type_layout(pointee_type).size() as u32);
-        result.insert(&v.name, (start, Some(v.initializer.clone().unwrap())));
+        let start = alloc.reserve(type_layout(pointee_type, tys).size() as u32);
+        result.insert(&v.name, (start, Some((**v.initializer.as_ref().unwrap()).clone())));
     }
 
     for func in funcs.iter() {
-        let name = Box::leak(Box::new(Name::Name(func.name.clone())));
+        let name = Box::leak(Box::new(Name::Name(Box::new(func.name.clone()))));
         result.insert(name, (u32::MAX, None));
     }
 
     result
 }
 
-pub fn make_zeroed(ty: &Type) -> Constant {
+pub fn make_zeroed(ty: &Type, tys: &Types) -> Constant {
     match ty {
         Type::NamedStructType {
-            name: _,
-            ty: struct_ty,
+            name,
         } => {
-            let struct_ty = struct_ty.as_ref().unwrap().upgrade().unwrap();
-            let struct_ty = struct_ty.read().unwrap();
-            make_zeroed(&struct_ty)
+            let struct_ty = tys.named_struct_def(name).unwrap();
+            make_zeroed(named_as_type(struct_ty).unwrap(), tys)
         }
         Type::StructType {
             element_types,
             is_packed,
         } => {
-            let values = element_types.iter().map(|et| make_zeroed(et)).collect();
+            let values = element_types.iter().map(|et| ConstantRef::new(make_zeroed(et, tys))).collect();
             Constant::Struct {
                 name: None,
                 values,
@@ -1072,11 +1105,11 @@ pub fn make_zeroed(ty: &Type) -> Constant {
             element_type,
             num_elements,
         } => {
-            let elements = std::iter::repeat(make_zeroed(element_type))
+            let elements = std::iter::repeat(ConstantRef::new(make_zeroed(element_type, tys)))
                 .take(*num_elements)
                 .collect();
             Constant::Array {
-                element_type: (**element_type).clone(),
+                element_type: (*element_type).clone(),
                 elements,
             }
         }
@@ -1093,15 +1126,16 @@ fn init_data(
     ty: &Type,
     mut value: Constant,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> BTreeMap<i32, u8> {
     if let Constant::AggregateZero(t) = value {
-        value = make_zeroed(&t);
+        value = make_zeroed(&t, tys);
     }
     let value = value;
 
     match ty {
         Type::IntegerType { bits: 8 } => {
-            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals) {
+            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals, tys) {
                 i8::try_from(c).unwrap() as u8
             } else {
                 todo!("{:?}", value)
@@ -1110,7 +1144,7 @@ fn init_data(
             std::iter::once((start_addr, val)).collect()
         }
         Type::IntegerType { bits: 16 } => {
-            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals) {
+            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals, tys) {
                 c
             } else {
                 todo!("{:?}", value)
@@ -1124,7 +1158,7 @@ fn init_data(
                 .collect()
         }
         Type::IntegerType { bits: 32 } => {
-            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals) {
+            let val = if let MaybeConst::Const(c) = eval_constant(&value, globals, tys) {
                 c
             } else {
                 todo!("{:?}", value)
@@ -1153,7 +1187,7 @@ fn init_data(
             pointee_type: _,
             addr_space: _,
         } => {
-            let val = match eval_constant(&value, globals) {
+            let val = match eval_constant(&value, globals, tys) {
                 MaybeConst::Const(c) => c,
                 _ => todo!("{:?}", value),
             };
@@ -1173,7 +1207,7 @@ fn init_data(
                     element_type: et,
                     elements,
                 } => {
-                    assert_eq!(&**element_type, et);
+                    assert_eq!(&**element_type, &**et);
                     elements
                 }
                 _ => todo!("{:?}", value),
@@ -1184,20 +1218,18 @@ fn init_data(
             vals.iter()
                 .enumerate()
                 .flat_map(|(idx, val)| {
-                    let offset = offset_of_array(element_type, idx as u32);
+                    let offset = offset_of_array(element_type, idx as u32, tys);
                     let field_addr = start_addr + offset as i32;
-                    init_data(field_addr, element_type, val.clone(), globals)
+                    init_data(field_addr, element_type, (**val).clone(), globals, tys)
                 })
                 .collect()
         }
         Type::NamedStructType {
-            name: _,
-            ty: struct_ty,
+            name,
         } => {
-            let struct_ty = struct_ty.as_ref().unwrap().upgrade().unwrap();
-            let struct_ty = struct_ty.read().unwrap();
+            let struct_ty = tys.named_struct_def(name).unwrap();
 
-            init_data(start_addr, &struct_ty, value, globals)
+            init_data(start_addr, named_as_type(struct_ty).unwrap(), value, globals, tys)
         }
         Type::StructType {
             element_types,
@@ -1222,9 +1254,9 @@ fn init_data(
                 .zip(vals.iter())
                 .enumerate()
                 .flat_map(|(idx, (field_ty, value))| {
-                    let offset = offset_of(element_types, *is_packed, idx as u32);
+                    let offset = offset_of(element_types, *is_packed, idx as u32, tys);
                     let field_addr = start_addr + offset as i32;
-                    init_data(field_addr, field_ty, value.clone(), globals)
+                    init_data(field_addr, field_ty, (**value).clone(), globals, tys)
                 })
                 .collect()
         }
@@ -1232,7 +1264,7 @@ fn init_data(
     }
 }
 
-fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> Vec<Command> {
+fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList, tys: &Types) -> Vec<Command> {
     if matches!(v.name, Name::Number(_)) {
         todo!()
     }
@@ -1244,14 +1276,15 @@ fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> Vec<Comma
     let temp = v.name.to_string();
     let target = ScoreHolder::new_lossy(format!("%@{}", &temp[1..temp.len() - 1]));
 
-    match &v.ty {
+    match &*v.ty {
         // I'm pretty sure it's *always* a pointer...
         Type::PointerType { pointee_type, .. } => {
             let bytes = init_data(
                 start as i32,
                 pointee_type,
-                v.initializer.clone().unwrap(),
+                (*v.initializer.clone().unwrap()).clone(),
                 globals,
+                tys,
             );
 
             let mut cmds = Vec::new();
@@ -1286,13 +1319,6 @@ fn one_global_var_init(v: &GlobalVariable, globals: &GlobalVarList) -> Vec<Comma
             cmds
         }
         _ => todo!("{:?}", v.ty),
-    }
-}
-
-pub fn mc_block_name(func_name: &str, block_name: &Name) -> String {
-    match block_name {
-        Name::Name(s) => s.clone(),
-        Name::Number(n) => format!("{}-block{}", func_name, n),
     }
 }
 
@@ -1364,20 +1390,27 @@ impl TryFrom<i32> for McBlock {
 }
 
 fn compile_memset(
-    arguments: &[(Operand, Vec<llvm_ir::function::ParameterAttribute>)],
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    arguments: &[(Operand, Vec<ParameterAttribute>)],
+    globals: &GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
     if let [(dest, _), (value, _), (len, _), (volatile, _)] = &arguments[..] {
-        let (mut cmds, dest1) = eval_operand(dest, globals);
-        let (tmp, value1) = eval_operand(value, globals);
+        let volatile = as_const_int(1, volatile).unwrap() != 0;
+
+        if volatile {
+            todo!()
+        }
+
+        let (mut cmds, dest1) = eval_operand(dest, globals, tys);
+        let (tmp, value1) = eval_operand(value, globals, tys);
         cmds.extend(tmp);
 
-        let len1 = if let Operand::ConstantOperand(Constant::Int { bits: 64, value }) = len {
+        let len1 = if let Some(value) = as_const_64(len) {
             let len1 = get_unique_holder();
-            cmds.push(assign_lit(len1.clone(), *value as i32));
+            cmds.push(assign_lit(len1.clone(), value as i32));
             vec![len1]
         } else {
-            let (tmp, len1) = eval_operand(len, globals);
+            let (tmp, len1) = eval_operand(len, globals, tys);
             cmds.extend(tmp);
             len1
         };
@@ -1389,13 +1422,6 @@ fn compile_memset(
         cmds.push(assign(param(0, 0), dest1[0].clone()));
         cmds.push(assign(param(1, 0), value1[0].clone()));
         cmds.push(assign(param(2, 0), len1[0].clone()));
-
-        if !matches!(
-            volatile,
-            Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })
-        ) {
-            todo!("{:?}", volatile)
-        }
 
         cmds.push(
             McFuncCall {
@@ -1411,20 +1437,16 @@ fn compile_memset(
 }
 
 fn compile_memcpy(
-    arguments: &[(Operand, Vec<llvm_ir::function::ParameterAttribute>)],
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    arguments: &[(Operand, Vec<ParameterAttribute>)],
+    globals: &GlobalVarList,
+    tys: &Types,
 ) -> (Vec<Command>, Option<Vec<Command>>) {
-    use llvm_ir::function::Attribute;
-    let get_align = |attrs: &[Attribute]| -> Option<u64> {
+    let get_align = |attrs: &[ParameterAttribute]| -> Option<u64> {
         attrs
             .iter()
             .filter_map(|attr| {
-                if let Attribute::EnumAttribute {
-                    kind: 1,
-                    value: Some(value),
-                } = attr
-                {
-                    Some(value.get())
+                if let ParameterAttribute::Alignment(value) = attr {
+                    Some(*value)
                 } else {
                     None
                 }
@@ -1433,8 +1455,14 @@ fn compile_memcpy(
     };
 
     if let [(dest, dest_attr), (src, src_attr), (len, _), (volatile, _)] = &arguments[..] {
-        let (mut cmds, src1) = eval_operand(src, globals);
-        let (tmp, dest1) = eval_operand(dest, globals);
+        let volatile = as_const_int(1, volatile).unwrap() != 0;
+
+        if volatile {
+            todo!()
+        }
+
+        let (mut cmds, src1) = eval_operand(src, globals, tys);
+        let (tmp, dest1) = eval_operand(dest, globals, tys);
         cmds.extend(tmp);
 
         assert_eq!(src1.len(), 1, "multiword pointer {:?}", src);
@@ -1443,116 +1471,99 @@ fn compile_memcpy(
         let src1 = src1.into_iter().next().unwrap();
         let dest1 = dest1.into_iter().next().unwrap();
 
-        match (get_align(dest_attr), get_align(src_attr), len) {
-            (_, _, Operand::ConstantOperand(Constant::Int { bits: 32, value }))
-                if *value > 1024 =>
-            {
-                cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
-                cmds.push(assign(param(0, 0), dest1));
-                cmds.push(assign(param(1, 0), src1));
-                cmds.push(assign_lit(param(2, 0), *value as i32));
-                cmds.push(assign_lit(param(4, 0), 1));
-                cmds.push(Command::Comment("!FIXUPCALL intrinsic:memcpy".into()));
+        let dest_align = get_align(dest_attr);
+        let src_align = get_align(src_attr);
 
-                return (cmds, Some(Vec::new()));
-            }
-            (
-                Some(d),
-                Some(s),
-                Operand::ConstantOperand(Constant::Int {
-                    bits: 32,
-                    value: len,
-                }),
-            ) if d % 4 == 0 && s % 4 == 0 => {
-                let word_count = len / 4;
-                let byte_count = len % 4;
+        if let Some(value) = as_const_32(len).filter(|v| *v > 1024) {
+            cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
+            cmds.push(assign(param(0, 0), dest1));
+            cmds.push(assign(param(1, 0), src1));
+            cmds.push(assign_lit(param(2, 0), value as i32));
+            cmds.push(assign_lit(param(4, 0), 1));
+            cmds.push(Command::Comment("!FIXUPCALL intrinsic:memcpy".into()));
 
-                let tempsrc = get_unique_holder();
-                let tempdst = get_unique_holder();
+            return (cmds, Some(Vec::new()));
+        } else if let Some(((d, s), len)) = dest_align.zip(src_align).zip(as_const_32(len)).filter(|((d, s), _)| d % 4 == 0 && s % 4 == 0) {
+            let word_count = len / 4;
+            let byte_count = len % 4;
 
-                cmds.push(Command::Comment(format!(
-                    "Begin memcpy with src {} and dest {}",
-                    src1, dest1
-                )));
-                cmds.push(assign(tempsrc.clone(), src1));
-                cmds.push(assign(tempdst.clone(), dest1));
-                cmds.push(assign_lit(param(4, 0), 0));
+            let tempsrc = get_unique_holder();
+            let tempdst = get_unique_holder();
 
-                let temp = get_unique_holder();
+            cmds.push(Command::Comment(format!(
+                "Begin memcpy with src {} and dest {}",
+                src1, dest1
+            )));
+            cmds.push(assign(tempsrc.clone(), src1));
+            cmds.push(assign(tempdst.clone(), dest1));
+            cmds.push(assign_lit(param(4, 0), 0));
 
-                for _ in 0..word_count {
-                    cmds.push(assign(ptr(), tempsrc.clone()));
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:setptr"),
-                        }
-                        .into(),
-                    );
-                    cmds.push(read_ptr(temp.clone()));
-                    cmds.push(make_op_lit(tempsrc.clone(), "+=", 4));
+            let temp = get_unique_holder();
 
-                    cmds.push(assign(ptr(), tempdst.clone()));
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:setptr"),
-                        }
-                        .into(),
-                    );
-                    cmds.push(write_ptr(temp.clone()));
-                    cmds.push(make_op_lit(tempdst.clone(), "+=", 4));
-                }
-
-                for _ in 0..byte_count {
-                    cmds.push(assign(ptr(), tempsrc.clone()));
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:load_byte"),
-                        }
-                        .into(),
-                    );
-                    cmds.push(make_op_lit(tempsrc.clone(), "+=", 1));
-
-                    cmds.push(assign(param(2, 0), return_holder(0)));
-
-                    cmds.push(assign(ptr(), tempdst.clone()));
-                    cmds.push(
-                        McFuncCall {
-                            id: McFuncId::new("intrinsic:store_byte"),
-                        }
-                        .into(),
-                    );
-                    cmds.push(make_op_lit(tempdst.clone(), "+=", 1));
-                }
-
-                cmds.push(Command::Comment("End memcpy".into()));
-            }
-            _ => {
-                let (tmp, len1) = eval_operand(len, globals);
-                cmds.extend(tmp);
-
-                assert_eq!(len1.len(), 1, "multiword length {:?}", len);
-                let len1 = len1.into_iter().next().unwrap();
-
-                cmds.push(assign(param(0, 0), dest1));
-                cmds.push(assign(param(1, 0), src1));
-                cmds.push(assign(param(2, 0), len1));
-                cmds.push(assign_lit(param(4, 0), 0));
-
-                if !matches!(
-                    volatile,
-                    Operand::ConstantOperand(Constant::Int { bits: 1, value: 0 })
-                ) {
-                    todo!("{:?}", volatile)
-                }
-
+            for _ in 0..word_count {
+                cmds.push(assign(ptr(), tempsrc.clone()));
                 cmds.push(
                     McFuncCall {
-                        id: McFuncId::new("intrinsic:memcpy"),
+                        id: McFuncId::new("intrinsic:setptr"),
                     }
                     .into(),
                 );
+                cmds.push(read_ptr(temp.clone()));
+                cmds.push(make_op_lit(tempsrc.clone(), "+=", 4));
+
+                cmds.push(assign(ptr(), tempdst.clone()));
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:setptr"),
+                    }
+                    .into(),
+                );
+                cmds.push(write_ptr(temp.clone()));
+                cmds.push(make_op_lit(tempdst.clone(), "+=", 4));
             }
-        };
+
+            for _ in 0..byte_count {
+                cmds.push(assign(ptr(), tempsrc.clone()));
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:load_byte"),
+                    }
+                    .into(),
+                );
+                cmds.push(make_op_lit(tempsrc.clone(), "+=", 1));
+
+                cmds.push(assign(param(2, 0), return_holder(0)));
+
+                cmds.push(assign(ptr(), tempdst.clone()));
+                cmds.push(
+                    McFuncCall {
+                        id: McFuncId::new("intrinsic:store_byte"),
+                    }
+                    .into(),
+                );
+                cmds.push(make_op_lit(tempdst.clone(), "+=", 1));
+            }
+
+            cmds.push(Command::Comment("End memcpy".into()));
+        } else {
+            let (tmp, len1) = eval_operand(len, globals, tys);
+            cmds.extend(tmp);
+
+            assert_eq!(len1.len(), 1, "multiword length {:?}", len);
+            let len1 = len1.into_iter().next().unwrap();
+
+            cmds.push(assign(param(0, 0), dest1));
+            cmds.push(assign(param(1, 0), src1));
+            cmds.push(assign(param(2, 0), len1));
+            cmds.push(assign_lit(param(4, 0), 0));
+
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:memcpy"),
+                }
+                .into(),
+            );
+        }
 
         (cmds, None)
     } else {
@@ -1561,14 +1572,15 @@ fn compile_memcpy(
 }
 
 fn setup_arguments(
-    arguments: &[(Operand, Vec<llvm_ir::function::Attribute>)],
+    arguments: &[(Operand, Vec<ParameterAttribute>)],
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    tys: &Types,
 ) -> Vec<Command> {
     let mut before_cmds = Vec::new();
 
     // Set arguments
     for (idx, (arg, _attrs)) in arguments.iter().enumerate() {
-        match eval_maybe_const(arg, globals) {
+        match eval_maybe_const(arg, globals, tys) {
             MaybeConst::Const(score) => {
                 before_cmds.push(assign_lit(param(idx, 0), score));
             }
@@ -1593,15 +1605,16 @@ fn compile_xor(
         debugloc: _,
     }: &Xor,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
-    assert_eq!(operand0.get_type(), operand1.get_type());
+    assert_eq!(operand0.get_type(tys), operand1.get_type(tys));
 
-    let layout = type_layout(&operand0.get_type());
+    let layout = type_layout(&operand0.get_type(tys), tys);
 
-    if matches!(operand0.get_type(), Type::IntegerType { bits: 1 }) {
-        let (mut cmds, op0) = eval_operand(operand0, globals);
+    if matches!(&*operand0.get_type(tys), Type::IntegerType { bits: 1 }) {
+        let (mut cmds, op0) = eval_operand(operand0, globals, tys);
 
-        let (tmp, op1) = eval_operand(operand1, globals);
+        let (tmp, op1) = eval_operand(operand1, globals, tys);
 
         cmds.extend(tmp);
 
@@ -1644,7 +1657,7 @@ fn compile_xor(
 
         cmds
     } else {
-        compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::Xor, globals)
+        compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::Xor, globals, tys)
     }
 }
 
@@ -1656,24 +1669,19 @@ fn compile_shl(
         debugloc: _,
     }: &Shl,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
-    if matches!(operand0.get_type(), Type::IntegerType { bits: 64 })
-        && matches!(
-            operand1,
-            Operand::ConstantOperand(Constant::Int {
-                bits: 64,
-                value: 32
-            })
-        )
-    {
-        let (mut cmds, op0) = eval_operand(operand0, globals);
+    let operand1_is_32 = as_const_64(operand1) == Some(32);
+
+    if matches!(&*operand0.get_type(tys), Type::IntegerType { bits: 64 }) && operand1_is_32 {
+        let (mut cmds, op0) = eval_operand(operand0, globals, tys);
         let dest = ScoreHolder::from_local_name(dest.clone(), 8);
 
         cmds.push(assign_lit(dest[0].clone(), 0));
         cmds.push(assign(dest[1].clone(), op0[0].clone()));
 
         cmds
-    } else if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) {
+    } else if matches!(&*operand0.get_type(tys), Type::IntegerType { bits: 64 }) {
         let (dest_lo, dest_hi) =
             if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
                 (dest_lo.clone(), dest_hi.clone())
@@ -1681,13 +1689,9 @@ fn compile_shl(
                 unreachable!()
             };
 
-        let shift = if let Operand::ConstantOperand(Constant::Int { bits: 64, value }) = operand1 {
-            *value
-        } else {
-            todo!("{:?}", operand1)
-        };
+        let shift = as_const_64(operand1).unwrap();
 
-        let (mut cmds, op0) = eval_operand(operand0, globals);
+        let (mut cmds, op0) = eval_operand(operand0, globals, tys);
 
         cmds.push(mark_assertion_matches(false, op0[1].clone(), 0..=0));
 
@@ -1720,7 +1724,7 @@ fn compile_shl(
         };
 
         cmds
-    } else if matches!(operand0.get_type(), Type::IntegerType { bits: 48 }) {
+    } else if matches!(&*operand0.get_type(tys), Type::IntegerType { bits: 48 }) {
         let (dest_lo, dest_hi) =
             if let [dest_lo, dest_hi] = &ScoreHolder::from_local_name(dest.clone(), 6)[..] {
                 (dest_lo.clone(), dest_hi.clone())
@@ -1728,13 +1732,9 @@ fn compile_shl(
                 unreachable!()
             };
 
-        let shift = if let Operand::ConstantOperand(Constant::Int { bits: 48, value }) = operand1 {
-            *value
-        } else {
-            todo!("{:?}", operand1)
-        };
+        let shift = as_const_int(48, operand1).unwrap();
 
-        let (mut cmds, op0) = eval_operand(operand0, globals);
+        let (mut cmds, op0) = eval_operand(operand0, globals, tys);
 
         cmds.push(mark_assertion_matches(false, op0[1].clone(), 0..=0));
 
@@ -1780,7 +1780,9 @@ fn compile_shl(
 
         cmds
     } else {
-        let bits = match operand0.get_type() {
+        let op0_type = operand0.get_type(tys);
+
+        let bits = match &*op0_type {
             Type::IntegerType { bits: 32 } => 32,
             Type::IntegerType { bits: 24 } => 24,
             Type::IntegerType { bits: 16 } => 16,
@@ -1788,7 +1790,7 @@ fn compile_shl(
             _ => todo!("{:?}, shift: {:?}", operand0, operand1),
         };
 
-        let (mut cmds, op0) = eval_operand(operand0, globals);
+        let (mut cmds, op0) = eval_operand(operand0, globals, tys);
         let op0 = op0.into_iter().next().unwrap();
 
         let dest = ScoreHolder::from_local_name(dest.clone(), 4)
@@ -1796,17 +1798,16 @@ fn compile_shl(
             .next()
             .unwrap();
 
-        match eval_maybe_const(operand1, globals) {
+        match eval_maybe_const(operand1, globals, tys) {
             MaybeConst::Const(c) => {
                 cmds.push(assign(dest.clone(), op0));
                 cmds.push(make_op_lit(dest.clone(), "*=", 1 << c));
 
-                if !matches!(operand0.get_type(), Type::IntegerType { bits: 32 }) {
-                    let max_val = match operand0.get_type() {
+                if !matches!(&*op0_type, Type::IntegerType { bits: 32 }) {
+                    let max_val = match &*op0_type {
                         Type::IntegerType { bits: 8 } => 255,
                         Type::IntegerType { bits: 16 } => 65535,
                         Type::IntegerType { bits: 24 } => 16777216,
-                        Type::IntegerType { bits: 32 } => unreachable!(),
                         ty => todo!("{:?}", ty),
                     };
 
@@ -1844,25 +1845,26 @@ fn compile_lshr(
         debugloc: _,
     }: &LShr,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
-    let (mut cmds, op0) = eval_operand(operand0, globals);
+    let (mut cmds, op0) = eval_operand(operand0, globals, tys);
 
-    if let Operand::ConstantOperand(Constant::Int { bits: 64, value }) = operand1 {
-        if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) {
-            cmds.extend(lshr_64_bit_const(
-                op0[0].clone(),
-                op0[1].clone(),
-                *value as i32,
-                dest.clone(),
-            ));
+    let op0_type = operand0.get_type(tys);
 
-            cmds
-        } else {
-            unreachable!()
-        }
+    if let Some(value) = as_const_64(operand1) {
+        assert!(matches!(&*op0_type, Type::IntegerType { bits: 64 }));
+
+        cmds.extend(lshr_64_bit_const(
+            op0[0].clone(),
+            op0[1].clone(),
+            value as i32,
+            dest.clone(),
+        ));
+
+        cmds
     } else {
-        if let Type::IntegerType { bits } = operand0.get_type() {
-            if bits > 32 {
+        if let Type::IntegerType { bits } = &*op0_type {
+            if *bits > 32 {
                 todo!("{:?}, {:?}", operand0, operand1);
             }
         } else {
@@ -1874,7 +1876,7 @@ fn compile_lshr(
             .next()
             .unwrap();
 
-        let (tmp, op1) = eval_operand(operand1, globals);
+        let (tmp, op1) = eval_operand(operand1, globals, tys);
         let op1 = op1.into_iter().next().unwrap();
 
         cmds.extend(tmp);
@@ -1899,24 +1901,40 @@ fn compile_call(
         dest,
         ..
     }: &Call,
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    globals: &GlobalVarList,
+    tys: &Types,
 ) -> (Vec<Command>, Option<Vec<Command>>) {
     let function = match function {
         Either::Left(asm) => todo!("inline assembly {:?}", asm),
         Either::Right(operand) => operand,
     };
 
-    if let Operand::ConstantOperand(Constant::GlobalReference {
-        name: Name::Name(name),
-        ty:
-            Type::FuncType {
-                result_type,
-                is_var_arg: false,
-                ..
-            },
-    }) = function
-    {
-        let dest_size = type_layout(result_type).size();
+    let static_call = if let Operand::ConstantOperand(c) = function {
+        if let Constant::GlobalReference { name: Name::Name(name), ty } = &**c {
+            if let Type::FuncType { result_type, is_var_arg: false, .. } = &**ty {
+                Some((name, result_type))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let local_op = if let Operand::LocalOperand { name: _, ty } = function {
+        if let Type::PointerType { pointee_type, addr_space: _ } = &**ty {
+            Some(pointee_type)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some((name, result_type)) = static_call {
+        let dest_size = type_layout(result_type, tys).size();
         let dest = dest
             .clone()
             .map(|d| ScoreHolder::from_local_name(d, dest_size));
@@ -1927,7 +1945,7 @@ fn compile_call(
                 assert!(dest.is_none());
                 println!("Assumption {:?}", arguments[0]);
 
-                let (mut cmds, op) = eval_operand(&arguments[0].0, globals);
+                let (mut cmds, op) = eval_operand(&arguments[0].0, globals, tys);
 
                 cmds.push(mark_assertion_matches(false, op[0].clone(), 1..=1));
 
@@ -1939,41 +1957,43 @@ fn compile_call(
                 let ptr = arguments[0].clone();
                 let len = arguments[1].clone();
 
-                let len = if let Operand::ConstantOperand(Constant::Int { bits: 32, value }) = len.0
-                {
-                    value as u32
-                } else {
-                    todo!("{:?}", len)
-                };
+                let len = as_const_32(&len.0).unwrap();
+
 
                 // TODO: this is so so terribly awful
-                let addr = if let Operand::ConstantOperand(Constant::GetElementPtr(g)) = &ptr.0 {
+
+                let addr = if let Operand::ConstantOperand(c) = &ptr.0 {
+                    c
+                } else {
+                    todo!("{:?}", ptr)
+                };
+
+                let addr = if let Constant::GetElementPtr(g) = &**addr {
                     let GetElementPtrConst {
                         address,
                         indices,
                         in_bounds: _in_bounds,
-                    } = &**g;
+                    } = &*g;
 
-                    let addr = if let Constant::GlobalReference { name, .. } = address {
+                    let addr = if let Constant::GlobalReference { name, .. } = &**address {
                         name
                     } else {
                         todo!("{:?}", address)
                     };
 
-                    if !matches!(
-                        indices[..],
-                        [
-                            Constant::Int { bits: 32, value: 0 },
-                            Constant::Int { bits: 32, value: 0 },
-                            Constant::Int { bits: 32, value: 0 }
-                        ]
-                    ) {
+                    let indices_ok =
+                        indices.len() == 3 &&
+                        *indices[0] == Constant::Int { bits: 32, value: 0 } &&
+                        *indices[1] == Constant::Int { bits: 32, value: 0 } &&
+                        *indices[2] == Constant::Int { bits: 32, value: 0 };
+
+                    if !indices_ok {
                         todo!("{:?}", indices)
                     }
 
                     addr
                 } else {
-                    todo!("{:?}", ptr)
+                    todo!("{:?}", addr)
                 };
 
                 let data = &globals.get(addr).unwrap().1;
@@ -1984,12 +2004,20 @@ fn compile_call(
                     ..
                 } = data.as_ref().unwrap()
                 {
-                    if let [Constant::Array {
-                        element_type: Type::IntegerType { bits: 8 },
-                        elements,
-                    }] = &values[..]
+                    if let [c] = &values[..]
                     {
-                        elements
+                        if let Constant::Array {
+                            element_type,
+                            elements,
+                        } = &**c {
+                            if element_type == &tys.i8() {
+                                elements
+                            } else {
+                                todo!("{:?}", element_type)
+                            }
+                        } else {
+                            todo!("{:?}", c)
+                        }
                     } else {
                         todo!("{:?}", values)
                     }
@@ -2000,7 +2028,7 @@ fn compile_call(
                 let data = data[..len as usize]
                     .iter()
                     .map(|d| {
-                        if let Constant::Int { bits: 8, value } = d {
+                        if let Constant::Int { bits: 8, value } = &**d {
                             *value as u8
                         } else {
                             unreachable!()
@@ -2010,7 +2038,7 @@ fn compile_call(
 
                 let text = std::str::from_utf8(&data).unwrap();
 
-                let (mut cmds, arg) = eval_operand(&arguments[2].0, globals);
+                let (mut cmds, arg) = eval_operand(&arguments[2].0, globals, tys);
                 let arg = arg.into_iter().next().unwrap();
 
                 let interpolated = text
@@ -2029,35 +2057,35 @@ fn compile_call(
                 let ptr = arguments[0].clone();
                 let len = arguments[1].clone();
 
-                let len = if let Operand::ConstantOperand(Constant::Int { bits: 32, value }) = len.0
-                {
-                    value as u32
-                } else {
-                    todo!("{:?}", len)
-                };
+                let len = as_const_32(&len.0).unwrap();
 
                 // TODO: this is so so terribly awful
-                let addr = if let Operand::ConstantOperand(Constant::GetElementPtr(g)) = &ptr.0 {
+                let addr = if let Operand::ConstantOperand(c) = &ptr.0 {
+                    c
+                } else {
+                    todo!("{:?}", ptr)
+                };
+
+                let addr = if let Constant::GetElementPtr(g) = &**addr {
                     let GetElementPtrConst {
                         address,
                         indices,
                         in_bounds: _in_bounds,
-                    } = &**g;
+                    } = &*g;
 
-                    let addr = if let Constant::GlobalReference { name, .. } = address {
+                    let addr = if let Constant::GlobalReference { name, .. } = &**address {
                         name
                     } else {
                         todo!("{:?}", address)
                     };
 
-                    if !matches!(
-                        indices[..],
-                        [
-                            Constant::Int { bits: 32, value: 0 },
-                            Constant::Int { bits: 32, value: 0 },
-                            Constant::Int { bits: 32, value: 0 }
-                        ]
-                    ) {
+                    let indices_ok =
+                        indices.len() == 3 &&
+                        *indices[0] == Constant::Int { bits: 32, value: 0 } &&
+                        *indices[1] == Constant::Int { bits: 32, value: 0 } &&
+                        *indices[2] == Constant::Int { bits: 32, value: 0 };
+
+                    if !indices_ok {
                         todo!("{:?}", indices)
                     }
 
@@ -2074,12 +2102,20 @@ fn compile_call(
                     ..
                 } = data.as_ref().unwrap()
                 {
-                    if let [Constant::Array {
-                        element_type: Type::IntegerType { bits: 8 },
-                        elements,
-                    }] = &values[..]
+                    if let [c] = &values[..]
                     {
-                        elements
+                        if let Constant::Array {
+                            element_type,
+                            elements,
+                        } = &**c {
+                            if element_type == &tys.i8() {
+                                elements
+                            } else {
+                                todo!("{:?}", element_type)
+                            }
+                        } else {
+                            todo!("{:?}", c)
+                        }
                     } else {
                         todo!("{:?}", values)
                     }
@@ -2090,7 +2126,7 @@ fn compile_call(
                 let data = data[..len as usize]
                     .iter()
                     .map(|d| {
-                        if let Constant::Int { bits: 8, value } = d {
+                        if let Constant::Int { bits: 8, value } = &**d {
                             *value as u8
                         } else {
                             unreachable!()
@@ -2122,7 +2158,7 @@ fn compile_call(
 
                 assert!(dest.is_none());
 
-                let (mut cmds, name) = eval_operand(&arguments[0].0, globals);
+                let (mut cmds, name) = eval_operand(&arguments[0].0, globals, tys);
 
                 let name = name[0].clone();
 
@@ -2147,7 +2183,7 @@ fn compile_call(
                 assert!(dest.is_none());
 
                 let mc_block =
-                    if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0, globals) {
+                    if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0, globals, tys) {
                         c
                     } else {
                         todo!("non-constant block {:?}", &arguments[0].0)
@@ -2181,7 +2217,7 @@ fn compile_call(
                 let dest = dest[0].clone();
 
                 let mc_block =
-                    if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0, globals) {
+                    if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0, globals, tys) {
                         c
                     } else {
                         todo!("non-constant block {:?}", &arguments[0].0)
@@ -2311,7 +2347,7 @@ fn compile_call(
                 let dest = dest.unwrap().into_iter().next().unwrap();
                 let mut cmds = Vec::new();
 
-                match eval_maybe_const(&arguments[0].0, globals) {
+                match eval_maybe_const(&arguments[0].0, globals, tys) {
                     MaybeConst::Const(c) => {
                         cmds.push(assign_lit(dest, c.leading_zeros() as i32));
                     }
@@ -2339,7 +2375,7 @@ fn compile_call(
                 let mut cmds = Vec::new();
                 cmds.push(assign_lit(dest_flag.clone(), 0));
 
-                cmds.extend(setup_arguments(arguments, globals));
+                cmds.extend(setup_arguments(arguments, globals, tys));
 
                 cmds.push(make_op_lit(param(1, 0), "*=", -1));
 
@@ -2354,7 +2390,7 @@ fn compile_call(
             }
             "llvm.fshr.i32" => {
                 let dest = dest.unwrap().into_iter().next().unwrap();
-                let mut cmds = setup_arguments(arguments, globals);
+                let mut cmds = setup_arguments(arguments, globals, tys);
                 cmds.push(
                     McFuncCall {
                         id: McFuncId::new("intrinsic:llvm_fshr_i32"),
@@ -2366,18 +2402,18 @@ fn compile_call(
             }
             "llvm.memset.p0i8.i32" | "llvm.memset.p0i8.i64" => {
                 assert_eq!(dest, None);
-                (compile_memset(arguments, globals), None)
+                (compile_memset(arguments, globals, tys), None)
             }
             "llvm.memcpy.p0i8.p0i8.i32" => {
                 assert_eq!(dest, None);
-                compile_memcpy(arguments, globals)
+                compile_memcpy(arguments, globals, tys)
             }
             "llvm.usub.with.overflow.i8" => {
                 let dest = dest.unwrap().into_iter().next().unwrap();
 
                 if let [(lhs, _), (rhs, _)] = &arguments[..] {
-                    let (mut cmds, l) = eval_operand(lhs, globals);
-                    let (tmp, r) = eval_operand(rhs, globals);
+                    let (mut cmds, l) = eval_operand(lhs, globals, tys);
+                    let (tmp, r) = eval_operand(rhs, globals, tys);
                     cmds.extend(tmp);
 
                     let l = l.into_iter().next().unwrap();
@@ -2400,8 +2436,8 @@ fn compile_call(
                 let dest = dest.unwrap().into_iter().next().unwrap();
 
                 if let [(lhs, _), (rhs, _)] = &arguments[..] {
-                    let (mut cmds, l) = eval_operand(lhs, globals);
-                    let (tmp, r) = eval_operand(rhs, globals);
+                    let (mut cmds, l) = eval_operand(lhs, globals, tys);
+                    let (tmp, r) = eval_operand(rhs, globals, tys);
                     cmds.extend(tmp);
 
                     let l = l.into_iter().next().unwrap();
@@ -2432,7 +2468,7 @@ fn compile_call(
 
                 let mut cmds = Vec::new();
 
-                cmds.extend(setup_arguments(arguments, globals));
+                cmds.extend(setup_arguments(arguments, globals, tys));
 
                 cmds.push(
                     McFuncCall {
@@ -2453,7 +2489,7 @@ fn compile_call(
                 // Push return address
                 before_cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
 
-                before_cmds.extend(setup_arguments(arguments, globals));
+                before_cmds.extend(setup_arguments(arguments, globals, tys));
 
                 // Branch to function
                 before_cmds.push(Command::Comment(format!("!FIXUPCALL {}", name)));
@@ -2470,16 +2506,8 @@ fn compile_call(
                 (before_cmds, Some(after_cmds))
             }
         }
-    } else if let Operand::LocalOperand {
-        name: _name,
-        ty:
-            Type::PointerType {
-                pointee_type,
-                addr_space: _addr_space,
-            },
-    } = function
-    {
-        let (mut before_cmds, func_ptr) = eval_operand(function, globals);
+    } else if let Some(pointee_type) = local_op {
+        let (mut before_cmds, func_ptr) = eval_operand(function, globals, tys);
         assert_eq!(func_ptr.len(), 1);
         let func_ptr = func_ptr.into_iter().next().unwrap();
 
@@ -2489,7 +2517,7 @@ fn compile_call(
             ..
         } = &**pointee_type
         {
-            let dest_size = type_layout(result_type).size();
+            let dest_size = type_layout(result_type, tys).size();
             let dest = dest
                 .clone()
                 .map(|d| ScoreHolder::from_local_name(d, dest_size));
@@ -2497,7 +2525,7 @@ fn compile_call(
             // Push return address
             before_cmds.extend(push(ScoreHolder::new("%%fixup_return_addr".to_string()).unwrap()));
 
-            before_cmds.extend(setup_arguments(arguments, globals));
+            before_cmds.extend(setup_arguments(arguments, globals, tys));
 
             let temp_z = get_unique_holder();
             before_cmds.push(assign(temp_z.clone(), func_ptr.clone()));
@@ -2609,6 +2637,7 @@ pub fn compile_terminator(
     term: &Terminator,
     clobbers: BTreeSet<ScoreHolder>,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
     let mut cmds = Vec::new();
 
@@ -2636,7 +2665,7 @@ pub fn compile_terminator(
         }) => {
             cmds.push(Command::Comment(format!("return operand {:?}", operand)));
 
-            let (tmp, source) = eval_operand(operand, globals);
+            let (tmp, source) = eval_operand(operand, globals, tys);
 
             cmds.extend(tmp);
 
@@ -2670,7 +2699,7 @@ pub fn compile_terminator(
             false_dest,
             ..
         }) => {
-            let (tmp, cond) = eval_operand(condition, globals);
+            let (tmp, cond) = eval_operand(condition, globals, tys);
             cmds.extend(tmp);
 
             assert_eq!(cond.len(), 1);
@@ -2711,7 +2740,7 @@ pub fn compile_terminator(
             default_dest,
             ..
         }) => {
-            let (tmp, operand) = eval_operand(operand, globals);
+            let (tmp, operand) = eval_operand(operand, globals, tys);
             cmds.extend(tmp);
 
             if operand.len() != 1 {
@@ -2725,7 +2754,7 @@ pub fn compile_terminator(
             cmds.push(assign_lit(default_tracker.clone(), 0));
 
             for (dest_value, dest_name) in dests.iter() {
-                let dest_value = if let Constant::Int { value, .. } = dest_value {
+                let dest_value = if let Constant::Int { value, .. } = &**dest_value {
                     *value as i32
                 } else {
                     todo!("{:?}", dest_value)
@@ -2811,13 +2840,13 @@ pub fn compile_terminator(
 }
 
 #[allow(clippy::reversed_empty_ranges)]
-fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList, inline_id: &mut usize) -> (McFunction, Vec<McFunction>) {
+fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList, tys: &Types, inline_id: &mut usize) -> (McFunction, Vec<McFunction>) {
     let AbstractBlock { needs_prolog, mut body, term, parent } = graph[root].block.clone();
 
     let mut clobbers = clobber_list.get(&body.id.name).unwrap().clone();
 
     for arg in parent.parameters.iter() {
-        let arg_size = type_layout(&arg.ty).size();
+        let arg_size = type_layout(&arg.ty, tys).size();
         clobbers.extend(ScoreHolder::from_local_name(arg.name.clone(), arg_size).iter().cloned());
     }
 
@@ -2825,7 +2854,7 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
         let mut prolog = Vec::new();
 
         for (idx, arg) in parent.parameters.iter().enumerate() {
-            let arg_size = type_layout(&arg.ty).size();
+            let arg_size = type_layout(&arg.ty, tys).size();
 
             for (arg_word, arg_holder) in
                 ScoreHolder::from_local_name(arg.name.clone(), arg_size)
@@ -2862,12 +2891,12 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
 
             let mut others = Vec::new();
 
-            let (mut true_dest, tmp) = reify_block(graph, true_dest, clobber_list, globals, inline_id);
+            let (mut true_dest, tmp) = reify_block(graph, true_dest, clobber_list, globals, tys, inline_id);
             *inline_id += 1;
             true_dest.id.name.push_str(&format!("-inline{}", *inline_id));
             others.extend(tmp);
 
-            let (mut false_dest, tmp) = reify_block(graph, false_dest, clobber_list, globals, inline_id);
+            let (mut false_dest, tmp) = reify_block(graph, false_dest, clobber_list, globals, tys, inline_id);
             *inline_id += 1;
             false_dest.id.name.push_str(&format!("-inline{}", *inline_id));
             others.extend(tmp);
@@ -2907,7 +2936,7 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
             assert_eq!(edge, &BlockEdge::None);
 
             body.cmds.push(Command::Comment(format!("===== Begin block {} =====", graph[ab].block.body.id)));
-            let (inner, others) = reify_block(graph, ab, clobber_list, globals, inline_id);
+            let (inner, others) = reify_block(graph, ab, clobber_list, globals, tys, inline_id);
             body.cmds.extend(inner.cmds);
             (body, others)
         }
@@ -2935,7 +2964,7 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
                     body.cmds.push(set_block.into());
                 }
                 BlockEnd::Normal(t) => {
-                    body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals));
+                    body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals, tys));
                 }
             }
 
@@ -2947,7 +2976,8 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
 
 fn compile_function(
     func: &Function,
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    globals: &GlobalVarList,
+    tys: &Types,
     options: &BuildOptions,
 ) -> (Vec<AbstractBlock>, HashMap<ScoreHolder, cir::HolderUse>) {
     if func.is_var_arg {
@@ -2989,7 +3019,7 @@ fn compile_function(
             }
 
             for instr in block.instrs.iter() {
-                let (mut before, after) = compile_instr(instr, func, globals, options);
+                let (mut before, after) = compile_instr(instr, func, globals, tys, options);
 
                 if let Some(after) = after {
                     let term = match before.pop().unwrap() {
@@ -3290,12 +3320,15 @@ pub fn compile_arithmetic(
     dest: &Name,
     kind: ScoreOpKind,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    tys: &Types,
 ) -> Vec<Command> {
-    let (mut cmds, source0) = eval_operand(operand0, globals);
-    let (tmp, source1) = eval_operand(operand1, globals);
+    let (mut cmds, source0) = eval_operand(operand0, globals, tys);
+    let (tmp, source1) = eval_operand(operand1, globals, tys);
     cmds.extend(tmp.into_iter());
 
-    if matches!(operand0.get_type(), Type::IntegerType { bits: 64 }) {
+    let op0_type = operand0.get_type(tys);
+
+    if matches!(&*op0_type, Type::IntegerType { bits: 64 }) {
         let op0_lo = source0[0].clone();
         let op0_hi = source0[1].clone();
 
@@ -3315,20 +3348,20 @@ pub fn compile_arithmetic(
         cmds
     } else {
         let dest =
-            ScoreHolder::from_local_name(dest.clone(), type_layout(&operand0.get_type()).size());
+            ScoreHolder::from_local_name(dest.clone(), type_layout(&*op0_type, tys).size());
 
         if let Type::VectorType {
             element_type,
             num_elements,
-        } = operand0.get_type()
+        } = &*op0_type
         {
-            if !matches!(&*element_type, Type::IntegerType { bits: 32 }) {
+            if !matches!(&**element_type, Type::IntegerType { bits: 32 }) {
                 todo!("{:?}", element_type)
             }
 
-            assert_eq!(source0.len(), num_elements);
-            assert_eq!(source1.len(), num_elements);
-            assert_eq!(dest.len(), num_elements);
+            assert_eq!(source0.len(), *num_elements);
+            assert_eq!(source1.len(), *num_elements);
+            assert_eq!(dest.len(), *num_elements);
         } else {
             assert_eq!(source0.len(), 1, "{:?}", kind);
             assert_eq!(source1.len(), 1);
@@ -3401,28 +3434,28 @@ pub fn pop(target: ScoreHolder) -> Vec<Command> {
     cmds
 }
 
-pub fn offset_of_array(element_type: &Type, field: u32) -> usize {
+pub fn offset_of_array(element_type: &Type, field: u32, tys: &Types) -> usize {
     let mut offset = 0;
     let mut result = Layout::from_size_align(0, 1).unwrap();
     for _ in 0..field + 1 {
-        let (r, o) = result.extend(type_layout(element_type)).unwrap();
+        let (r, o) = result.extend(type_layout(element_type, tys)).unwrap();
         offset = o;
         result = r;
     }
     offset
 }
 
-pub fn offset_of(element_types: &[Type], is_packed: bool, field: u32) -> usize {
+pub fn offset_of(element_types: &[TypeRef], is_packed: bool, field: u32, tys: &Types) -> usize {
     if is_packed {
         element_types[0..field as usize]
             .iter()
-            .map(|t| type_layout(t).size())
+            .map(|t| type_layout(t, tys).size())
             .sum::<usize>()
     } else {
         let mut offset = 0;
         let mut result = Layout::from_size_align(0, 1).unwrap();
         for elem in &element_types[0..field as usize + 1] {
-            let (r, o) = result.extend(type_layout(elem)).unwrap();
+            let (r, o) = result.extend(type_layout(elem, tys)).unwrap();
             offset = o;
             result = r;
         }
@@ -3430,7 +3463,7 @@ pub fn offset_of(element_types: &[Type], is_packed: bool, field: u32) -> usize {
     }
 }
 
-pub fn type_layout(ty: &Type) -> Layout {
+pub fn type_layout(ty: &Type, tys: &Types) -> Layout {
     match ty {
         Type::IntegerType { bits: 1 } => Layout::from_size_align(1, 1).unwrap(),
         Type::IntegerType { bits: 8 } => Layout::from_size_align(1, 1).unwrap(),
@@ -3446,34 +3479,32 @@ pub fn type_layout(ty: &Type) -> Layout {
             if *is_packed {
                 // TODO: Determine if this applies to inner fields as well
                 Layout::from_size_align(
-                    element_types.iter().map(|e| type_layout(e).size()).sum(),
+                    element_types.iter().map(|e| type_layout(e, tys).size()).sum(),
                     1,
                 )
                 .unwrap()
             } else if element_types.is_empty() {
                 Layout::from_size_align(0, 1).unwrap()
             } else {
-                let mut result = type_layout(&element_types[0]);
+                let mut result = type_layout(&element_types[0], tys);
                 for elem in &element_types[1..] {
-                    result = result.extend(type_layout(elem)).unwrap().0;
+                    result = result.extend(type_layout(elem, tys)).unwrap().0;
                 }
                 result
             }
         }
-        Type::NamedStructType { ty: Some(ty), .. } => {
-            let ty = ty.upgrade().expect("Failed to upgrade type");
+        Type::NamedStructType { name } => {
+            let ty = tys.named_struct_def(name).unwrap();
 
-            let ty_read = ty.read().unwrap();
-
-            type_layout(&ty_read)
+            type_layout(named_as_type(ty).unwrap(), tys)
         }
         Type::VectorType {
             element_type,
             num_elements,
         } => {
-            let mut result = type_layout(element_type);
+            let mut result = type_layout(element_type, tys);
             for _ in 0..num_elements - 1 {
-                result = result.extend(type_layout(element_type)).unwrap().0;
+                result = result.extend(type_layout(element_type, tys)).unwrap().0;
             }
             result.align_to(4).unwrap()
         }
@@ -3484,9 +3515,9 @@ pub fn type_layout(ty: &Type) -> Layout {
             if *num_elements == 0 {
                 Layout::from_size_align(0, 1).unwrap()
             } else {
-                let mut result = type_layout(element_type);
+                let mut result = type_layout(element_type, tys);
                 for _ in 0..num_elements - 1 {
-                    result = result.extend(type_layout(element_type)).unwrap().0;
+                    result = result.extend(type_layout(element_type, tys)).unwrap().0;
                 }
                 result
             }
@@ -3504,8 +3535,9 @@ pub fn compile_alloca(
         dest,
         ..
     }: &Alloca,
+    tys: &Types,
 ) -> Vec<Command> {
-    let type_size = type_layout(allocated_type)
+    let type_size = type_layout(allocated_type, tys)
         .align_to(4)
         .unwrap()
         .pad_to_align()
@@ -3515,12 +3547,7 @@ pub fn compile_alloca(
     assert_eq!(dest.len(), 1);
     let dest = dest[0].clone();
 
-    let num_elements =
-        if let Operand::ConstantOperand(Constant::Int { bits: 32, value }) = num_elements {
-            *value as i32
-        } else {
-            todo!("{:?}", num_elements);
-        };
+    let num_elements = as_const_32(num_elements).unwrap() as i32;
 
     let mut cmds = Vec::new();
 
@@ -3759,25 +3786,26 @@ fn compile_getelementptr(
         debugloc: _,
     }: &GetElementPtr,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> Vec<Command> {
     let dest = ScoreHolder::from_local_name(dest.clone(), 4);
     let dest = dest[0].clone();
 
     let mut offset: i32 = 0;
-    let mut ty = address.get_type();
+    let mut ty = address.get_type(tys);
 
     let mut cmds = Vec::new();
 
-    assert!(matches!(ty, Type::PointerType { .. }));
+    assert!(matches!(&*ty, Type::PointerType { .. }));
 
     for index in indices {
-        match ty {
+        match (*ty).clone() {
             Type::PointerType { pointee_type, .. } => {
-                let pointee_size = type_layout(&pointee_type).pad_to_align().size();
+                let pointee_size = type_layout(&pointee_type, tys).pad_to_align().size();
 
-                ty = *pointee_type;
+                ty = pointee_type;
 
-                match eval_maybe_const(index, globals) {
+                match eval_maybe_const(index, globals, tys) {
                     MaybeConst::Const(c) => offset += pointee_size as i32 * c,
                     MaybeConst::NonConst(a, b) => {
                         assert_eq!(b.len(), 1);
@@ -3794,42 +3822,32 @@ fn compile_getelementptr(
                 element_types,
                 is_packed,
             } => {
-                let index = if let MaybeConst::Const(c) = eval_maybe_const(index, globals) {
+                let index = if let MaybeConst::Const(c) = eval_maybe_const(index, globals, tys) {
                     c
                 } else {
                     unreachable!("attempt to index struct at runtime")
                 };
 
-                offset += offset_of(&element_types, is_packed, index as u32) as i32;
+                offset += offset_of(&element_types, is_packed, index as u32, tys) as i32;
 
-                ty = element_types.into_iter().nth(index as usize).unwrap();
+                ty = element_types.into_iter().nth(index as usize).unwrap().clone();
             }
-            Type::NamedStructType { ty: struct_ty, .. } => {
-                let index = if let MaybeConst::Const(c) = eval_maybe_const(index, globals) {
+            Type::NamedStructType { name, .. } => {
+                let index = if let MaybeConst::Const(c) = eval_maybe_const(index, globals, tys) {
                     c
                 } else {
                     unreachable!("attempt to index named struct at runtime")
                 };
 
-                let struct_ty = struct_ty.unwrap().upgrade().unwrap();
-                let struct_ty = struct_ty.try_read().unwrap();
+                let (element_types, is_packed) = as_struct_ty(tys.named_struct_def(&name).unwrap()).unwrap();
 
-                if let Type::StructType {
-                    element_types,
-                    is_packed,
-                } = &*struct_ty
-                {
-                    offset += offset_of(element_types, *is_packed, index as u32) as i32;
-
-                    ty = element_types[index as usize].clone();
-                } else {
-                    todo!("{:?}", &*struct_ty);
-                }
+                offset += offset_of(&element_types, is_packed, index as u32, tys) as i32;
+                ty = element_types[index as usize].clone();
             }
             Type::ArrayType { element_type, .. } => {
-                let elem_size = type_layout(&element_type).pad_to_align().size();
+                let elem_size = type_layout(&element_type, tys).pad_to_align().size();
 
-                match eval_maybe_const(index, globals) {
+                match eval_maybe_const(index, globals, tys) {
                     MaybeConst::Const(c) => {
                         offset += c * elem_size as i32;
                     }
@@ -3844,13 +3862,13 @@ fn compile_getelementptr(
                     }
                 }
 
-                ty = *element_type;
+                ty = element_type;
             }
             _ => todo!("{:?}", ty),
         }
     }
 
-    let mut start_cmds = match eval_maybe_const(address, globals) {
+    let mut start_cmds = match eval_maybe_const(address, globals, tys) {
         MaybeConst::Const(addr) => vec![assign_lit(dest.clone(), addr + offset as i32)],
         MaybeConst::NonConst(mut cmds, addr) => {
             assert_eq!(addr.len(), 1);
@@ -3956,14 +3974,14 @@ enum BitOp {
     Xor,
 }
 
-fn compile_bitwise_word(operand0: &Operand, operand1: &Operand, dest: Name, op: BitOp, globals: &GlobalVarList) -> Vec<Command> {
-    let ty = operand0.get_type();
-    let layout = type_layout(&ty);
+fn compile_bitwise_word(operand0: &Operand, operand1: &Operand, dest: Name, op: BitOp, globals: &GlobalVarList, tys: &Types) -> Vec<Command> {
+    let ty = operand0.get_type(tys);
+    let layout = type_layout(&ty, tys);
 
     let dest = ScoreHolder::from_local_name(dest, layout.size());
 
-    let (mut cmds, op0) = eval_operand(operand0, globals);
-    let (tmp, op1) = eval_operand(operand1, globals);
+    let (mut cmds, op0) = eval_operand(operand0, globals, tys);
+    let (tmp, op1) = eval_operand(operand1, globals, tys);
     cmds.extend(tmp);
 
     for (dest, (op0, op1)) in dest.into_iter().zip(op0.into_iter().zip(op1.into_iter())) {
@@ -3990,12 +4008,13 @@ pub fn compile_instr(
     instr: &Instruction,
     parent: &Function,
     globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    tys: &Types,
     _options: &BuildOptions,
 ) -> (Vec<Command>, Option<Vec<Command>>) {
     let result = match instr {
         // We use an empty stack
-        Instruction::Alloca(alloca) => compile_alloca(alloca),
-        Instruction::GetElementPtr(gep) => compile_getelementptr(gep, globals),
+        Instruction::Alloca(alloca) => compile_alloca(alloca, tys),
+        Instruction::GetElementPtr(gep) => compile_getelementptr(gep, globals, tys),
         Instruction::Select(Select {
             condition,
             true_value,
@@ -4003,13 +4022,13 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let (mut cmds, true_val) = eval_operand(true_value, globals);
-            let (tmp, false_val) = eval_operand(false_value, globals);
+            let (mut cmds, true_val) = eval_operand(true_value, globals, tys);
+            let (tmp, false_val) = eval_operand(false_value, globals, tys);
             cmds.extend(tmp);
-            let (tmp, cond) = eval_operand(condition, globals);
+            let (tmp, cond) = eval_operand(condition, globals, tys);
             cmds.extend(tmp);
 
-            let dest_size = type_layout(&true_value.get_type()).size();
+            let dest_size = type_layout(&true_value.get_type(tys), tys).size();
 
             let dest = ScoreHolder::from_local_name(dest.clone(), dest_size);
 
@@ -4050,17 +4069,17 @@ pub fn compile_instr(
             alignment,
             ..
         }) => {
-            let (mut cmds, addr) = eval_operand(address, globals);
+            let (mut cmds, addr) = eval_operand(address, globals, tys);
 
             assert_eq!(addr.len(), 1, "multiword addr {:?}", address);
 
             let addr = addr[0].clone();
 
-            let value_size = type_layout(&value.get_type()).size();
+            let value_size = type_layout(&value.get_type(tys), tys).size();
             if value_size % 4 == 0 && alignment % 4 == 0 {
                 // If we're directly storing a constant,
                 // we can skip writing to a temporary value
-                let write_cmds = match eval_maybe_const(value, globals) {
+                let write_cmds = match eval_maybe_const(value, globals, tys) {
                     MaybeConst::Const(value) => vec![write_ptr_const(value)],
                     MaybeConst::NonConst(eval_cmds, ids) => {
                         cmds.extend(eval_cmds);
@@ -4093,7 +4112,7 @@ pub fn compile_instr(
                     cmds.push(write_cmd);
                 }
             } else if value_size == 1 {
-                let (eval_cmds, value) = eval_operand(value, globals);
+                let (eval_cmds, value) = eval_operand(value, globals, tys);
                 let value = value.into_iter().next().unwrap();
 
                 cmds.extend(eval_cmds);
@@ -4106,7 +4125,7 @@ pub fn compile_instr(
                     .into(),
                 )
             } else if value_size == 2 {
-                let (eval_cmds, value) = eval_operand(value, globals);
+                let (eval_cmds, value) = eval_operand(value, globals, tys);
                 cmds.extend(eval_cmds);
                 let value = value.into_iter().next().unwrap();
 
@@ -4148,7 +4167,7 @@ pub fn compile_instr(
                     }.into());
                 }
                 */
-                let (tmp, val) = eval_operand(value, globals);
+                let (tmp, val) = eval_operand(value, globals, tys);
                 cmds.extend(tmp);
 
                 for (word_idx, val) in val.into_iter().enumerate() {
@@ -4170,7 +4189,7 @@ pub fn compile_instr(
                     );
                 }
             } else if value_size < 4 {
-                let (tmp, val) = eval_operand(value, globals);
+                let (tmp, val) = eval_operand(value, globals, tys);
                 cmds.extend(tmp);
 
                 let val = val.into_iter().next().unwrap();
@@ -4217,18 +4236,19 @@ pub fn compile_instr(
             alignment,
             ..
         }) => {
-            let pointee_type = if let Type::PointerType { pointee_type, .. } = address.get_type() {
+            let addr_ty = address.get_type(tys);
+            let pointee_type = if let Type::PointerType { pointee_type, .. } = &*addr_ty {
                 pointee_type
             } else {
                 unreachable!()
             };
 
-            let (mut cmds, addr) = eval_operand(address, globals);
+            let (mut cmds, addr) = eval_operand(address, globals, tys);
 
             assert_eq!(addr.len(), 1, "multiword address {:?}", address);
             let addr = addr[0].clone();
 
-            let pointee_layout = type_layout(&pointee_type);
+            let pointee_layout = type_layout(&pointee_type, tys);
 
             let dest = ScoreHolder::from_local_name(dest.clone(), pointee_layout.size());
 
@@ -4311,39 +4331,39 @@ pub fn compile_instr(
             operand1,
             dest,
             ..
-        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::AddAssign, globals),
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::AddAssign, globals, tys),
         Instruction::Sub(Sub {
             operand0,
             operand1,
             dest,
             ..
-        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::SubAssign, globals),
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::SubAssign, globals, tys),
         Instruction::Mul(Mul {
             operand0,
             operand1,
             dest,
             ..
-        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::MulAssign, globals),
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::MulAssign, globals, tys),
         Instruction::SDiv(SDiv {
             operand0,
             operand1,
             dest,
             ..
-        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::DivAssign, globals),
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::DivAssign, globals, tys),
         Instruction::SRem(SRem {
             operand0,
             operand1,
             dest,
             ..
-        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::ModAssign, globals),
+        }) => compile_arithmetic(operand0, operand1, dest, ScoreOpKind::ModAssign, globals, tys),
         Instruction::UDiv(UDiv {
             operand0,
             operand1,
             dest,
             ..
         }) => {
-            let (mut cmds, source0) = eval_operand(operand0, globals);
-            let (tmp, source1) = eval_operand(operand1, globals);
+            let (mut cmds, source0) = eval_operand(operand0, globals, tys);
+            let (tmp, source1) = eval_operand(operand1, globals, tys);
             cmds.extend(tmp.into_iter());
 
             // FIXME: THIS DOES AN SREM
@@ -4357,21 +4377,21 @@ pub fn compile_instr(
 
             let dest = ScoreHolder::from_local_name(
                 dest.clone(),
-                type_layout(&operand0.get_type()).size(),
+                type_layout(&operand0.get_type(tys), tys).size(),
             );
 
             if let Type::VectorType {
                 element_type,
                 num_elements,
-            } = operand0.get_type()
+            } = &*operand0.get_type(tys)
             {
-                if !matches!(&*element_type, Type::IntegerType { bits: 32 }) {
+                if !matches!(&**element_type, Type::IntegerType { bits: 32 }) {
                     todo!("{:?}", element_type)
                 }
 
-                assert_eq!(source0.len(), num_elements);
-                assert_eq!(source1.len(), num_elements);
-                assert_eq!(dest.len(), num_elements);
+                assert_eq!(source0.len(), *num_elements);
+                assert_eq!(source1.len(), *num_elements);
+                assert_eq!(dest.len(), *num_elements);
             } else {
                 assert_eq!(source0.len(), 1);
                 assert_eq!(source1.len(), 1);
@@ -4402,8 +4422,8 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let (mut cmds, source0) = eval_operand(operand0, globals);
-            let (tmp, source1) = eval_operand(operand1, globals);
+            let (mut cmds, source0) = eval_operand(operand0, globals, tys);
+            let (tmp, source1) = eval_operand(operand1, globals, tys);
             cmds.extend(tmp.into_iter());
 
             // FIXME: THIS DOES AN SREM
@@ -4417,21 +4437,21 @@ pub fn compile_instr(
 
             let dest = ScoreHolder::from_local_name(
                 dest.clone(),
-                type_layout(&operand0.get_type()).size(),
+                type_layout(&operand0.get_type(tys), tys).size(),
             );
 
             if let Type::VectorType {
                 element_type,
                 num_elements,
-            } = operand0.get_type()
+            } = &*operand0.get_type(tys)
             {
-                if !matches!(&*element_type, Type::IntegerType { bits: 32 }) {
+                if !matches!(&**element_type, Type::IntegerType { bits: 32 }) {
                     todo!("{:?}", element_type)
                 }
 
-                assert_eq!(source0.len(), num_elements);
-                assert_eq!(source1.len(), num_elements);
-                assert_eq!(dest.len(), num_elements);
+                assert_eq!(source0.len(), *num_elements);
+                assert_eq!(source1.len(), *num_elements);
+                assert_eq!(dest.len(), *num_elements);
             } else {
                 assert_eq!(source0.len(), 1);
                 assert_eq!(source1.len(), 1);
@@ -4469,12 +4489,12 @@ pub fn compile_instr(
             operand1,
             dest,
             ..
-        }) if operand0.get_type() == Type::IntegerType { bits: 64 } => {
+        }) if operand0.get_type(tys).as_ref() == &Type::IntegerType { bits: 64 } => {
             let is_eq = pred == &IntPredicate::EQ;
 
             // TODO: When operand1 is a constant, we can optimize the direct comparison into a `matches`
-            let (mut cmds, op0) = eval_operand(operand0, globals);
-            let (tmp_cmds, op1) = eval_operand(operand1, globals);
+            let (mut cmds, op0) = eval_operand(operand0, globals, tys);
+            let (tmp_cmds, op1) = eval_operand(operand1, globals, tys);
             cmds.extend(tmp_cmds);
 
             let dest = ScoreHolder::from_local_name(dest.clone(), 1)
@@ -4517,20 +4537,20 @@ pub fn compile_instr(
             ..
         }) => {
             // TODO: When operand1 is a constant, we can optimize the direct comparison into a `matches`
-            let (mut cmds, target) = eval_operand(operand0, globals);
-            let (tmp_cmds, source) = eval_operand(operand1, globals);
+            let (mut cmds, target) = eval_operand(operand0, globals, tys);
+            let (tmp_cmds, source) = eval_operand(operand1, globals, tys);
             cmds.extend(tmp_cmds);
 
-            match operand0.get_type() {
+            match &*operand0.get_type(tys) {
                 Type::VectorType {
                     element_type,
                     num_elements,
-                } if matches!(*element_type, Type::IntegerType { bits: 32 }) => {
-                    if num_elements > 4 {
+                } if matches!(&**element_type, Type::IntegerType { bits: 32 }) => {
+                    if *num_elements > 4 {
                         todo!()
                     }
 
-                    let dest = ScoreHolder::from_local_name(dest.clone(), num_elements)
+                    let dest = ScoreHolder::from_local_name(dest.clone(), *num_elements)
                         .into_iter()
                         .next()
                         .unwrap();
@@ -4547,7 +4567,7 @@ pub fn compile_instr(
                 Type::VectorType {
                     element_type,
                     num_elements: 4,
-                } if matches!(*element_type, Type::IntegerType { bits: 8 }) => {
+                } if matches!(&**element_type, Type::IntegerType { bits: 8 }) => {
                     let dest = ScoreHolder::from_local_name(dest.clone(), 4)
                         .into_iter()
                         .next()
@@ -4616,7 +4636,7 @@ pub fn compile_instr(
             to_type,
             ..
         }) => {
-            let to_type_size = type_layout(to_type).size();
+            let to_type_size = type_layout(to_type, tys).size();
 
             let dst = ScoreHolder::from_local_name(dest.clone(), to_type_size);
 
@@ -4636,7 +4656,7 @@ pub fn compile_instr(
                     block, value
                 )));
 
-                let (tmp, val) = eval_operand(value, globals);
+                let (tmp, val) = eval_operand(value, globals, tys);
                 cmds.extend(tmp);
 
                 assert_eq!(val.len(), dst.len());
@@ -4655,14 +4675,14 @@ pub fn compile_instr(
 
             cmds
         }
-        Instruction::Call(call) => return compile_call(call, globals),
+        Instruction::Call(call) => return compile_call(call, globals, tys),
         Instruction::BitCast(BitCast {
             operand,
             dest,
             to_type,
             ..
         }) => {
-            let (mut cmds, source) = eval_operand(operand, globals);
+            let (mut cmds, source) = eval_operand(operand, globals, tys);
 
             if source.len() != 1 {
                 todo!("multiword source {:?}", source);
@@ -4670,7 +4690,7 @@ pub fn compile_instr(
 
             let source = source[0].clone();
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(to_type).size());
+            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(to_type, tys).size());
 
             if dest.len() != 1 {
                 todo!("multiword dest {:?}", dest);
@@ -4684,15 +4704,15 @@ pub fn compile_instr(
         }
         Instruction::Trunc(Trunc {
             operand,
-            to_type: Type::IntegerType { bits: 32 },
+            to_type,
             dest,
             ..
-        }) => {
-            if !matches!(operand.get_type(), Type::IntegerType { bits: 64 }) {
+        }) if to_type.as_ref() == &Type::IntegerType { bits: 32 } => {
+            if !matches!(&*operand.get_type(tys), Type::IntegerType { bits: 64 }) {
                 todo!("{:?}", operand);
             }
 
-            let (mut cmds, op) = eval_operand(operand, globals);
+            let (mut cmds, op) = eval_operand(operand, globals, tys);
 
             let dest = ScoreHolder::from_local_name(dest.clone(), 4)[0].clone();
 
@@ -4702,47 +4722,11 @@ pub fn compile_instr(
         }
         Instruction::Trunc(Trunc {
             operand,
-            to_type: Type::IntegerType { bits: 1 },
-            dest,
-            ..
-        }) => {
-            let (mut cmds, op) = eval_operand(operand, globals);
-
-            assert_eq!(op.len(), 1);
-            let op = op[0].clone();
-            let dest = ScoreHolder::from_local_name(dest.clone(), 1)[0].clone();
-
-            cmds.push(assign(dest.clone(), op));
-            cmds.push(
-                ScoreOp {
-                    target: dest.clone().into(),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::MulAssign,
-                    source: ScoreHolder::new("%%31BITSHIFT".to_string()).unwrap().into(),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-            cmds.push(
-                ScoreOp {
-                    target: dest.into(),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::DivAssign,
-                    source: ScoreHolder::new("%%31BITSHIFT".to_string()).unwrap().into(),
-                    source_obj: OBJECTIVE.to_string(),
-                }
-                .into(),
-            );
-
-            cmds
-        }
-        Instruction::Trunc(Trunc {
-            operand,
             to_type,
             dest,
             ..
         }) => {
-            let (mut cmds, op) = eval_operand(operand, globals);
+            let (mut cmds, op) = eval_operand(operand, globals, tys);
 
             let dest = ScoreHolder::from_local_name(dest.clone(), 1)
                 .into_iter()
@@ -4751,13 +4735,18 @@ pub fn compile_instr(
 
             cmds.push(assign(dest.clone(), op[0].clone()));
 
-            let result_size = match to_type {
-                Type::IntegerType { bits: 24 } => 3,
-                Type::IntegerType { bits: 16 } => 2,
-                Type::IntegerType { bits: 8 } => 1,
-                _ => todo!("{:?}", to_type),
+            let bits = if let Type::IntegerType { bits } = &**to_type {
+                *bits
+            } else {
+                todo!("{:?}", to_type)
             };
-            cmds.extend(truncate_to(dest, result_size));
+
+            if bits >= 31 {
+                todo!()
+            }
+
+            // FIXME: Is this (and the other one) valid?
+            cmds.push(make_op_lit(dest, "%=", 1 << bits));
 
             cmds
         }
@@ -4767,7 +4756,7 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let (mut cmds, aggr) = eval_operand(aggregate, globals);
+            let (mut cmds, aggr) = eval_operand(aggregate, globals, tys);
 
             if indices.len() != 1 {
                 todo!("{:?}", indices)
@@ -4776,12 +4765,12 @@ pub fn compile_instr(
             if let Type::StructType {
                 element_types,
                 is_packed,
-            } = aggregate.get_type()
+            } = &*aggregate.get_type(tys)
             {
                 let result_type = &element_types[indices[0] as usize];
-                let size = type_layout(result_type).size();
+                let size = type_layout(result_type, tys).size();
 
-                let offset = offset_of(&element_types, is_packed, indices[0]);
+                let offset = offset_of(element_types, *is_packed, indices[0], tys);
 
                 let dest = ScoreHolder::from_local_name(dest.clone(), size);
 
@@ -4824,7 +4813,8 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let aggr_layout = type_layout(&aggregate.get_type());
+            let aggr_ty = aggregate.get_type(tys);
+            let aggr_layout = type_layout(&aggr_ty, tys);
 
             if indices.len() != 1 {
                 todo!("indices {:?}", indices)
@@ -4834,20 +4824,20 @@ pub fn compile_instr(
             let (element_types, is_packed) = if let Type::StructType {
                 element_types,
                 is_packed,
-            } = aggregate.get_type()
+            } = &*aggr_ty
             {
-                (element_types, is_packed)
+                (element_types, *is_packed)
             } else {
-                todo!("{:?}", aggregate.get_type())
+                todo!("{:?}", aggr_ty)
             };
 
-            let (mut cmds, aggr) = eval_operand(aggregate, globals);
-            let (tmp, elem) = eval_operand(element, globals);
+            let (mut cmds, aggr) = eval_operand(aggregate, globals, tys);
+            let (tmp, elem) = eval_operand(element, globals, tys);
             cmds.extend(tmp);
 
             let elem = elem[0].clone();
 
-            let offset = offset_of(&element_types, is_packed, index);
+            let offset = offset_of(&element_types, is_packed, index, tys);
 
             if offset % 4 != 0 {
                 todo!("{:?}", offset);
@@ -4865,9 +4855,9 @@ pub fn compile_instr(
                 cmds.push(assign(dest_word.clone(), aggr_word.clone()));
             }
 
-            if type_layout(&element.get_type()).size() == 4 && offset % 4 == 0 {
+            if type_layout(&element.get_type(tys), tys).size() == 4 && offset % 4 == 0 {
                 cmds.push(assign(dest[insert_idx].clone(), elem));
-            } else if type_layout(&element.get_type()).size() == 1 {
+            } else if type_layout(&element.get_type(tys), tys).size() == 1 {
                 cmds.push(mark_assertion_matches(true, dest[insert_idx].clone(), 0..=255));
 
                 if index == 0 {
@@ -4893,9 +4883,9 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let (mut cmds, op) = eval_operand(operand, globals);
+            let (mut cmds, op) = eval_operand(operand, globals, tys);
 
-            if matches!(to_type, Type::IntegerType { bits: 32 }) {
+            if matches!(&**to_type, Type::IntegerType { bits: 32 }) {
                 let op = op.into_iter().next().unwrap();
 
                 let dest = ScoreHolder::from_local_name(dest.clone(), 4)
@@ -4903,7 +4893,7 @@ pub fn compile_instr(
                     .next()
                     .unwrap();
 
-                if matches!(operand.get_type(), Type::IntegerType { bits: 1 }) {
+                if matches!(&*operand.get_type(tys), Type::IntegerType { bits: 1 }) {
                     let cond = ExecuteCondition::Score {
                         target: op.into(),
                         target_obj: OBJECTIVE.into(),
@@ -4923,12 +4913,12 @@ pub fn compile_instr(
                     cmds
                 } else {
                     let (range, to_add, modu) =
-                        if matches!(operand.get_type(), Type::IntegerType { bits: 8 }) {
+                        if matches!(&*operand.get_type(tys), Type::IntegerType { bits: 8 }) {
                             (128..=255, -256, 256)
-                        } else if matches!(operand.get_type(), Type::IntegerType { bits: 16 }) {
+                        } else if matches!(&*operand.get_type(tys), Type::IntegerType { bits: 16 }) {
                             (32768..=65535, -65536, 65536)
                         } else {
-                            todo!("{:?}", operand.get_type());
+                            todo!("{:?}", operand.get_type(tys));
                         };
 
                     cmds.push(assign(dest.clone(), op));
@@ -4948,10 +4938,10 @@ pub fn compile_instr(
 
                     cmds
                 }
-            } else if matches!(to_type, Type::IntegerType { bits: 64 }) {
+            } else if matches!(&**to_type, Type::IntegerType { bits: 64 }) {
                 let dest = ScoreHolder::from_local_name(dest.clone(), 8);
 
-                if matches!(operand.get_type(), Type::IntegerType { bits: 32 }) {
+                if matches!(&*operand.get_type(tys), Type::IntegerType { bits: 32 }) {
                     let op = op.into_iter().next().unwrap();
                     cmds.push(assign(dest[0].clone(), op));
                     cmds.push(assign_lit(dest[1].clone(), 0));
@@ -4979,23 +4969,23 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let (mut cmds, op) = eval_operand(operand, globals);
+            let (mut cmds, op) = eval_operand(operand, globals, tys);
 
-            let to_size = type_layout(to_type).size();
+            let to_size = type_layout(to_type, tys).size();
 
             let dst = ScoreHolder::from_local_name(dest.clone(), to_size);
 
             if op.len() == 1 {
                 cmds.push(assign(dst[0].clone(), op[0].clone()));
 
-                match operand.get_type() {
+                match &*operand.get_type(tys) {
                     Type::IntegerType { bits } => {
-                        if bits < 32 {
+                        if *bits < 32 {
                             cmds.push(make_op_lit(dst[0].clone(), "%=", 1 << bits));
                         }
                     }
-                    Type::VectorType { element_type, num_elements: 4 } if matches!(&*element_type, Type::IntegerType { bits: 1 }) => {
-                        let elem_ty = if let Type::VectorType { element_type, num_elements: 4 } = to_type {
+                    Type::VectorType { element_type, num_elements: 4 } if matches!(&**element_type, Type::IntegerType { bits: 1 }) => {
+                        let elem_ty = if let Type::VectorType { element_type, num_elements: 4 } = &**to_type {
                             element_type
                         } else {
                             panic!("{:?}", to_type)
@@ -5025,9 +5015,9 @@ pub fn compile_instr(
                 cmds.push(assign(dst[0].clone(), op[0].clone()));
                 cmds.push(assign(dst[1].clone(), op[1].clone()));
 
-                if let Type::IntegerType { bits } = operand.get_type() {
-                    if bits < 64 {
-                        assert!(bits > 32);
+                if let Type::IntegerType { bits } = &*operand.get_type(tys) {
+                    if *bits < 64 {
+                        assert!(*bits > 32);
                         cmds.push(make_op_lit(dst[1].clone(), "%=", 1 << (bits - 32)));
                     }
                 } else {
@@ -5049,15 +5039,15 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            assert_eq!(operand0.get_type(), operand1.get_type());
+            assert_eq!(operand0.get_type(tys), operand1.get_type(tys));
 
-            let (mut cmds, op0) = eval_operand(operand0, globals);
+            let (mut cmds, op0) = eval_operand(operand0, globals, tys);
 
-            let (tmp, op1) = eval_operand(operand1, globals);
+            let (tmp, op1) = eval_operand(operand1, globals, tys);
 
             cmds.extend(tmp);
 
-            match operand0.get_type() {
+            match &*operand0.get_type(tys) {
                 Type::IntegerType { bits: 1 } => {
                     let op0 = op0.into_iter().next().unwrap();
                     let op1 = op1.into_iter().next().unwrap();
@@ -5086,7 +5076,7 @@ pub fn compile_instr(
                     cmds
                 }
                 _ => {
-                    compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::Or, globals)
+                    compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::Or, globals, tys)
                 }
             }
         }
@@ -5096,15 +5086,15 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            assert_eq!(operand0.get_type(), operand1.get_type());
+            assert_eq!(operand0.get_type(tys), operand1.get_type(tys));
 
-            let (mut cmds, op0) = eval_operand(operand0, globals);
-            let (tmp, op1) = eval_operand(operand1, globals);
+            let (mut cmds, op0) = eval_operand(operand0, globals, tys);
+            let (tmp, op1) = eval_operand(operand1, globals, tys);
             cmds.extend(tmp);
 
-            let layout = type_layout(&operand0.get_type());
+            let layout = type_layout(&operand0.get_type(tys), tys);
 
-            match operand0.get_type() {
+            match &*operand0.get_type(tys) {
                 Type::IntegerType { bits: 1 } => {
                     let dest = ScoreHolder::from_local_name(dest.clone(), layout.size());
                     let dest = dest.into_iter().next().unwrap();
@@ -5129,24 +5119,24 @@ pub fn compile_instr(
                     cmds
                 }
                 _ => {
-                    compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::And, globals)
+                    compile_bitwise_word(operand0, operand1, dest.clone(), BitOp::And, globals, tys)
                 }
             }
         }
-        Instruction::Xor(xor) => compile_xor(xor, globals),
-        Instruction::Shl(shl) => compile_shl(shl, globals),
-        Instruction::LShr(lshr) => compile_lshr(lshr, globals),
+        Instruction::Xor(xor) => compile_xor(xor, globals, tys),
+        Instruction::Shl(shl) => compile_shl(shl, globals, tys),
+        Instruction::LShr(lshr) => compile_lshr(lshr, globals, tys),
         Instruction::PtrToInt(PtrToInt {
             operand,
-            to_type: Type::IntegerType { bits: 32 },
+            to_type,
             dest,
             ..
-        }) => {
-            if !matches!(operand.get_type(), Type::PointerType{ .. }) {
+        }) if to_type.as_ref() == &Type::IntegerType { bits: 32 } => {
+            if !matches!(&*operand.get_type(tys), Type::PointerType{ .. }) {
                 todo!("{:?}", operand)
             }
 
-            let (mut cmds, op) = eval_operand(operand, globals);
+            let (mut cmds, op) = eval_operand(operand, globals, tys);
             let op = op.into_iter().next().unwrap();
 
             let dest = ScoreHolder::from_local_name(dest.clone(), 4)
@@ -5164,13 +5154,13 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            assert_eq!(operand.get_type(), Type::IntegerType { bits: 32 });
+            assert_eq!(operand.get_type(tys).as_ref(), &Type::IntegerType { bits: 32 });
 
-            if !matches!(to_type.get_type(), Type::PointerType{ .. }) {
+            if !matches!(&*to_type.get_type(tys), Type::PointerType{ .. }) {
                 todo!("{:?}", operand)
             }
 
-            let (mut cmds, op) = eval_operand(operand, globals);
+            let (mut cmds, op) = eval_operand(operand, globals, tys);
             let op = op.into_iter().next().unwrap();
 
             let dest = ScoreHolder::from_local_name(dest.clone(), 4)
@@ -5189,27 +5179,31 @@ pub fn compile_instr(
             mask,
             ..
         }) => {
-            let (mut cmds, op0) = eval_operand(operand0, globals);
-            let (tmp, op1) = eval_operand(operand1, globals);
+            let (mut cmds, op0) = eval_operand(operand0, globals, tys);
+            let (tmp, op1) = eval_operand(operand1, globals, tys);
             cmds.extend(tmp);
 
-            let element_type = if let Type::VectorType { element_type, .. } = operand0.get_type() {
+            let op0_ty = operand0.get_type(tys);
+            let element_type = if let Type::VectorType { element_type, .. } = &*op0_ty {
                 element_type
             } else {
                 unreachable!()
             };
 
-            let op0_len = if let Type::VectorType { num_elements, .. } = mask.get_type() {
-                num_elements
+            let op0_len = if let Type::VectorType { num_elements, .. } = &*mask.get_type(tys) {
+                *num_elements
             } else {
                 unreachable!()
             };
 
-            let mask_vals = match mask {
-                Constant::AggregateZero(Type::VectorType {
-                    element_type: _,
-                    num_elements,
-                }) => vec![Constant::Int { bits: 32, value: 0 }; *num_elements],
+            let mask_vals = match &**mask {
+                Constant::AggregateZero(t) => {
+                    if let Type::VectorType { element_type: _, num_elements } = &**t {
+                        vec![ConstantRef::new(Constant::Int { bits: 32, value: 0 }); *num_elements]
+                    } else {
+                        unreachable!()
+                    }
+                }
                 Constant::Vector(v) => v.clone(),
                 _ => unreachable!("mask: {:?}", mask),
             };
@@ -5219,17 +5213,17 @@ pub fn compile_instr(
                 num_elements: mask_vals.len(),
             };
 
-            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&dest_type).size());
+            let dest = ScoreHolder::from_local_name(dest.clone(), type_layout(&dest_type, tys).size());
 
-            match &*element_type {
+            match &**element_type {
                 Type::IntegerType { bits: 32 } => {
                     for (dest, mask_idx) in dest.into_iter().zip(mask_vals.into_iter()) {
-                        match mask_idx {
+                        match &*mask_idx {
                             Constant::Undef(_) => {
                                 // Should we mark it as `undef` for the interpreter?
                             }
                             Constant::Int { bits: 32, value } => {
-                                let value = value as usize;
+                                let value = *value as usize;
 
                                 let source = if value > op0_len {
                                     &op1[value - op0_len]
@@ -5254,10 +5248,10 @@ pub fn compile_instr(
 
                     let dest_byte = get_unique_holder();
                     for (dest_byte_idx, mask_idx) in mask_vals.into_iter().enumerate() {
-                        match mask_idx {
+                        match &*mask_idx {
                             Constant::Undef(_) => {}
                             Constant::Int { bits: 32, value } => {
-                                let value = value as usize;
+                                let value = *value as usize;
 
                                 if op0_len != 4 {
                                     todo!()
@@ -5295,18 +5289,18 @@ pub fn compile_instr(
             dest,
             ..
         }) => {
-            let element_type = if let Type::VectorType { element_type, .. } = vector.get_type() {
-                element_type
+            let element_type = if let Type::VectorType { element_type, .. } = &*vector.get_type(tys) {
+                (*element_type).clone()
             } else {
                 unreachable!()
             };
 
             let dest =
-                ScoreHolder::from_local_name(dest.clone(), type_layout(&element_type).size());
+                ScoreHolder::from_local_name(dest.clone(), type_layout(&element_type, tys).size());
 
-            let (mut cmds, vec) = eval_operand(vector, globals);
+            let (mut cmds, vec) = eval_operand(vector, globals, tys);
 
-            match eval_maybe_const(index, globals) {
+            match eval_maybe_const(index, globals, tys) {
                 MaybeConst::Const(c) => {
                     let c = c as usize;
                     match &*element_type {
@@ -5336,8 +5330,8 @@ pub fn compile_instr(
             dest,
             debugloc: _,
         }) => {
-            let element_type = if let Type::VectorType { element_type, .. } = vector.get_type() {
-                element_type
+            let element_type = if let Type::VectorType { element_type, .. } = &*vector.get_type(tys) {
+                (*element_type).clone()
             } else {
                 unreachable!()
             };
@@ -5347,17 +5341,17 @@ pub fn compile_instr(
             }
 
             let dest =
-                ScoreHolder::from_local_name(dest.clone(), type_layout(&vector.get_type()).size());
+                ScoreHolder::from_local_name(dest.clone(), type_layout(&vector.get_type(tys), tys).size());
 
-            let (mut cmds, vec) = eval_operand(vector, globals);
+            let (mut cmds, vec) = eval_operand(vector, globals, tys);
 
-            let (tmp, elem) = eval_operand(element, globals);
+            let (tmp, elem) = eval_operand(element, globals, tys);
             cmds.extend(tmp);
 
             assert_eq!(elem.len(), 1);
             let elem = elem.into_iter().next().unwrap();
 
-            match eval_maybe_const(index, globals) {
+            match eval_maybe_const(index, globals, tys) {
                 MaybeConst::Const(c) => {
                     for (word_idx, (src_word, dest_word)) in
                         vec.into_iter().zip(dest.into_iter()).enumerate()
@@ -5400,6 +5394,7 @@ impl MaybeConst {
 pub fn eval_constant(
     con: &Constant,
     globals: &GlobalVarList,
+    tys: &Types,
 ) -> MaybeConst {
     match con {
         Constant::GlobalReference { name, .. } => {
@@ -5410,7 +5405,7 @@ pub fn eval_constant(
 
             if addr == u32::MAX {
                 let mut name = if let Name::Name(name) = name {
-                    name.clone()
+                    (**name).clone()
                 } else {
                     todo!()
                 };
@@ -5422,18 +5417,19 @@ pub fn eval_constant(
             }
         }
         Constant::PtrToInt(tmp) => {
-            if let llvm_ir::constant::PtrToInt {
-                operand: Constant::GlobalReference { name, .. },
+            let llvm_ir::constant::PtrToInt {
+                operand,
                 ..
-            } = &**tmp
-            {
+            } = &*tmp;
+
+            if let Constant::GlobalReference { name, .. } = &**operand {
                 let addr = globals
                     .get(name)
                     .unwrap_or_else(|| panic!("failed to get {:?}", name))
                     .0;
                 MaybeConst::Const(addr as i32)
             } else {
-                todo!("{:?}", tmp)
+                todo!("{:?}", operand)
             }
         }
         Constant::Int { bits: 1, value } => MaybeConst::Const(*value as i32),
@@ -5458,10 +5454,10 @@ pub fn eval_constant(
             MaybeConst::NonConst(cmds, vec![lo_word, hi_word])
         }
         Constant::Struct { values, is_packed: _, name: _ } => {
-            if values.iter().all(|v| matches!(v.get_type(), Type::IntegerType { bits: 32 })) {
+            if values.iter().all(|v| matches!(&*v.get_type(tys), Type::IntegerType { bits: 32 })) {
                 let (cmds, words) = values
                     .iter()
-                    .map(|v| eval_constant(v, globals).force_eval())
+                    .map(|v| eval_constant(v, globals, tys).force_eval())
                     .map(|(c, w)| {
                         assert_eq!(c.len(), 1);
                         assert_eq!(w.len(), 1);
@@ -5474,11 +5470,11 @@ pub fn eval_constant(
                 todo!("{:?}", values);
             }
         }
-        Constant::BitCast(bitcast) => eval_constant(&bitcast.operand, globals),
+        Constant::BitCast(bitcast) => eval_constant(&bitcast.operand, globals, tys),
         Constant::Undef(ty) => {
             // TODO: This can literally be *anything* you want it to be
 
-            let len = type_layout(ty).size();
+            let len = type_layout(ty, tys).size();
 
             let num = get_unique_num();
 
@@ -5491,26 +5487,27 @@ pub fn eval_constant(
 
             MaybeConst::NonConst(cmds, holders)
         }
-        Constant::GetElementPtr(g) => MaybeConst::Const(getelementptr_const(&g, globals) as i32),
+        Constant::GetElementPtr(g) => MaybeConst::Const(getelementptr_const(&g, globals, tys) as i32),
         Constant::Null(_) => MaybeConst::Const(0),
-        Constant::AggregateZero(Type::VectorType {
-            element_type,
-            num_elements,
-        }) => {
-            let size = type_layout(&element_type).size() * num_elements;
-            if size % 4 == 0 {
-                let num = get_unique_num();
+        Constant::AggregateZero(t) => {
+            if let Type::VectorType { element_type, num_elements } = &**t {
+                let size = type_layout(&element_type, tys).size() * num_elements;
+                if size % 4 == 0 {
+                    let num = get_unique_num();
 
-                let (cmds, holders) = (0..(size / 4))
-                    .map(|idx| {
-                        let holder = ScoreHolder::new(format!("%temp{}%{}", num, idx)).unwrap();
-                        (assign_lit(holder.clone(), 0), holder)
-                    })
-                    .unzip();
+                    let (cmds, holders) = (0..(size / 4))
+                        .map(|idx| {
+                            let holder = ScoreHolder::new(format!("%temp{}%{}", num, idx)).unwrap();
+                            (assign_lit(holder.clone(), 0), holder)
+                        })
+                        .unzip();
 
-                MaybeConst::NonConst(cmds, holders)
+                    MaybeConst::NonConst(cmds, holders)
+                } else {
+                    todo!("{:?} {}", element_type, num_elements)
+                }
             } else {
-                todo!("{:?} {}", element_type, num_elements)
+                todo!("{:?}", t)
             }
         }
         Constant::Vector(elems) => {
@@ -5519,7 +5516,7 @@ pub fn eval_constant(
             let as_8 = elems
                 .iter()
                 .map(|e| {
-                    if let Constant::Int { bits: 8, value } = e {
+                    if let Constant::Int { bits: 8, value } = &**e {
                         Some(*value as u8)
                     } else {
                         None
@@ -5530,7 +5527,7 @@ pub fn eval_constant(
             let as_32 = elems
                 .iter()
                 .map(|e| {
-                    if let Constant::Int { bits: 32, value } = e {
+                    if let Constant::Int { bits: 32, value } = &**e {
                         Some(*value as i32)
                     } else {
                         None
@@ -5541,7 +5538,7 @@ pub fn eval_constant(
             let as_64 = elems
                 .iter()
                 .map(|e| {
-                    if let Constant::Int { bits: 64, value } = e {
+                    if let Constant::Int { bits: 64, value } = &**e {
                         Some(*value)
                     } else {
                         None
@@ -5604,9 +5601,9 @@ pub fn eval_constant(
                 predicate,
                 operand0,
                 operand1,
-            } = &**icmp;
-            if let MaybeConst::Const(op0) = eval_constant(operand0, globals) {
-                if let MaybeConst::Const(op1) = eval_constant(operand1, globals) {
+            } = &*icmp;
+            if let MaybeConst::Const(op0) = eval_constant(&operand0, globals, tys) {
+                if let MaybeConst::Const(op1) = eval_constant(&operand1, globals, tys) {
                     let result = match predicate {
                         IntPredicate::NE => op0 != op1,
                         _ => todo!("{:?}", predicate),
@@ -5624,22 +5621,18 @@ pub fn eval_constant(
                 condition,
                 true_value,
                 false_value,
-            } = &**s;
-            let condition = match condition {
+            } = &*s;
+            let condition = match &**condition {
                 Constant::ICmp(i) => {
                     let ICmpConst {
                         predicate,
                         operand0,
                         operand1,
-                    } = &**i;
-                    if let Constant::BitCast(bc) = operand0 {
-                        if let BitCastConst {
-                            operand: Constant::GlobalReference { name, .. },
-                            ..
-                        } = &**bc
-                        {
+                    } = &*i;
+                    if let Constant::BitCast(BitCastConst { operand, .. }) = &**operand0 {
+                        if let Constant::GlobalReference { name, .. } = &**operand {
                             let value = globals.get(name).unwrap().0;
-                            if let Constant::Null(_) = operand1 {
+                            if let Constant::Null(_) = &**operand1 {
                                 #[allow(clippy::absurd_extreme_comparisons)]
                                 match predicate {
                                     IntPredicate::ULE => (value as u32) <= 0,
@@ -5650,7 +5643,7 @@ pub fn eval_constant(
                                 todo!("{:?}", operand1)
                             }
                         } else {
-                            todo!("{:?}", bc)
+                            todo!("{:?}", operand)
                         }
                     } else {
                         todo!("{:?}", operand0)
@@ -5659,9 +5652,9 @@ pub fn eval_constant(
                 _ => todo!("{:?}", condition),
             };
             if condition {
-                eval_constant(true_value, globals)
+                eval_constant(&true_value, globals, tys)
             } else {
-                eval_constant(false_value, globals)
+                eval_constant(&false_value, globals, tys)
             }
         }
         _ => todo!("evaluate constant {:?}", con),
@@ -5670,26 +5663,28 @@ pub fn eval_constant(
 
 pub fn eval_maybe_const(
     op: &Operand,
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    globals: &GlobalVarList,
+    tys: &Types,
 ) -> MaybeConst {
     match op {
         Operand::LocalOperand { name, ty } => {
-            let len = type_layout(ty).size();
+            let len = type_layout(ty, tys).size();
 
             let holders = ScoreHolder::from_local_name(name.clone(), len);
 
             MaybeConst::NonConst(Vec::new(), holders)
         }
-        Operand::ConstantOperand(con) => eval_constant(con, globals),
+        Operand::ConstantOperand(con) => eval_constant(con, globals, tys),
         _ => todo!("operand {:?}", op),
     }
 }
 
 pub fn eval_operand(
     op: &Operand,
-    globals: &HashMap<&Name, (u32, Option<Constant>)>,
+    globals: &GlobalVarList,
+    tys: &Types,
 ) -> (Vec<Command>, Vec<ScoreHolder>) {
-    eval_maybe_const(op, globals).force_eval()
+    eval_maybe_const(op, globals, tys).force_eval()
 }
 
 lazy_static! {
@@ -5764,25 +5759,29 @@ mod test {
 
     #[test]
     fn vector_layout() {
+        let tys = Types::blank_for_testing();
+
         let ty = Type::VectorType {
-            element_type: Box::new(Type::IntegerType { bits: 8 }),
+            element_type: tys.get_for_type(&Type::IntegerType { bits: 8 }),
             num_elements: 4,
         };
 
-        assert_eq!(type_layout(&ty), Layout::from_size_align(4, 4).unwrap());
+        assert_eq!(type_layout(&ty, &tys), Layout::from_size_align(4, 4).unwrap());
     }
 
     #[test]
     fn struct_offset() {
+        let tys = Types::blank_for_testing();
+
         // TODO: More comprehensive test
         let element_types = vec![
-            Type::IntegerType { bits: 32 },
-            Type::IntegerType { bits: 32 },
+            tys.get_for_type(&Type::IntegerType { bits: 32 }),
+            tys.get_for_type(&Type::IntegerType { bits: 32 }),
         ];
 
-        assert_eq!(offset_of(&element_types, false, 0), 0);
-        assert_eq!(offset_of(&element_types, false, 1), 4);
-        assert_eq!(offset_of(&element_types, true, 0), 0);
-        assert_eq!(offset_of(&element_types, true, 1), 4);
+        assert_eq!(offset_of(&element_types, false, 0, &tys), 0);
+        assert_eq!(offset_of(&element_types, false, 1, &tys), 4);
+        assert_eq!(offset_of(&element_types, true, 0, &tys), 0);
+        assert_eq!(offset_of(&element_types, true, 1, &tys), 4);
     }
 }

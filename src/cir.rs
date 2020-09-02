@@ -120,7 +120,7 @@ impl ScoreHolder {
     pub fn from_local_name(name: llvm_ir::Name, type_size: usize) -> Vec<Self> {
         let prefix = match name {
             llvm_ir::Name::Number(n) => format!("%{}", n),
-            llvm_ir::Name::Name(n) => n,
+            llvm_ir::Name::Name(n) => *n,
         };
 
         (0..((type_size + 3) / 4))
@@ -434,8 +434,8 @@ impl FunctionId {
         name = name.to_ascii_lowercase();
 
         if let Name::Name(n) = &mut block {
-            *n = n.replace(|c| c == '$' || c == '.' || c == '-', "_");
-            *n = n.to_ascii_lowercase();
+            **n = n.replace(|c| c == '$' || c == '.' || c == '-', "_");
+            **n = n.to_ascii_lowercase();
         }
 
         FunctionId { name, block, sub }
@@ -490,7 +490,7 @@ impl FromStr for FunctionId {
             let block = if let Ok(num) = s[idx + 6..].parse() {
                 Name::Number(num)
             } else {
-                Name::Name(s[idx + 6..].to_owned())
+                Name::Name(Box::new(s[idx + 6..].to_owned()))
             };
             s = &s[..idx];
             block

@@ -50,11 +50,15 @@ impl AbstractBlock {
     pub fn get_cond_dest(&self) -> Option<(ScoreHolder, FunctionId, FunctionId)> {
         match self.term.as_ref()? {
             BlockEnd::Normal(Terminator::CondBr(CondBr { condition, true_dest, false_dest, debugloc: _ })) => {
-                if let llvm_ir::Operand::LocalOperand { name, ty: llvm_ir::Type::IntegerType { bits: 1 } } = condition {
-                    let cond = ScoreHolder::from_local_name(name.clone(), 1).into_iter().next().unwrap();
-                    let true_dest = FunctionId::new_block(&self.parent.name, true_dest.clone());
-                    let false_dest = FunctionId::new_block(&self.parent.name, false_dest.clone());
-                    Some((cond, true_dest, false_dest))
+                if let llvm_ir::Operand::LocalOperand { name, ty } = condition {
+                    if matches!(&**ty, llvm_ir::Type::IntegerType { bits: 1 }) {
+                        let cond = ScoreHolder::from_local_name(name.clone(), 1).into_iter().next().unwrap();
+                        let true_dest = FunctionId::new_block(&self.parent.name, true_dest.clone());
+                        let false_dest = FunctionId::new_block(&self.parent.name, false_dest.clone());
+                        Some((cond, true_dest, false_dest))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }

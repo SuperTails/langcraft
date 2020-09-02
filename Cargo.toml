@@ -16,7 +16,7 @@ path = "src/bin/main.rs"
 
 [dependencies]
 lazy_static = "1.4.0"
-llvm-ir = "0.5.3"
+llvm-ir = { version = "0.7", features = ["llvm-9"] }
 either = "1.5"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }

@@ -17,9 +17,9 @@ checksum = "f8aac770f1885fd7e387acedd76065302551364496e46b3dd00860b2f8359b9d"
 
 [[package]]
 name = "cc"
-version = "1.0.55"
+version = "1.0.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1be3409f94d7bdceeb5f5fac551039d9b3f00e25da7a74fc4d33400a0d96368"
+checksum = "66120af515773fb005778dc07c261bd201ec8ce50bd6e7144c927753fe013381"
 
 [[package]]
 name = "cfg-if"
@@ -85,15 +85,15 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.71"
+version = "0.2.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9457b06509d27052635f90d6466700c65095fdf75409b3fbdd903e988b886f49"
+checksum = "755456fae044e6fa1ebbbd1b3e902ae19e73097ed4ed87bb79934a867c007bc3"
 
 [[package]]
 name = "llvm-ir"
-version = "0.5.3"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d64af7c966d3005de8541383ea52edaed0fd8671e1a1628ab71215d327446467"
+checksum = "29c12f0a1e63b3ced1d655ae8a71dd5aea29b7858901b7ed1814c4f4de4fbf1b"
 dependencies = [
  "either",
  "llvm-sys",
@@ -102,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "llvm-sys"
-version = "90.0.0"
+version = "90.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "191f83195c348af813546379e057429b13f5f2009896d45c52a1235ede6d2b84"
+checksum = "fcf10a6da27c5faee5e3eaa82a0248b8211237bad4250cbe66dfaa86912a8b85"
 dependencies = [
  "cc",
  "lazy_static",
