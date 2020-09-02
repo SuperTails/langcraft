@@ -340,6 +340,13 @@ pub fn assign_lit(target: ScoreHolder, score: i32) -> Command {
     .into()
 }
 
+pub fn invert(target: ScoreHolder) -> Vec<Command> {
+    vec![
+        make_op_lit(target.clone(), "+=", 1),
+        make_op_lit(target, "*=", -1),
+    ]
+}
+
 pub fn get_index(x: i32, y: i32, z: i32) -> Result<i32, InterpError> {
     if 0 <= x && x < 128 && 0 <= y && y < 16 && 0 <= z && z < 16 {
         Ok((x * 16 * 16 + y * 16 + z) * 4)
@@ -2182,30 +2189,51 @@ fn compile_call(
 
                 assert!(dest.is_none());
 
-                let mc_block =
-                    if let MaybeConst::Const(c) = eval_maybe_const(&arguments[0].0, globals, tys) {
-                        c
-                    } else {
-                        todo!("non-constant block {:?}", &arguments[0].0)
-                    };
+                let mut cmds = vec![Command::Comment("call to turtle_set".to_string())];
 
-                let mc_block = McBlock::try_from(mc_block).unwrap();
+                match eval_maybe_const(&arguments[0].0, globals, tys) {
+                    MaybeConst::Const(mc_block) => {
+                        let mc_block = McBlock::try_from(mc_block).unwrap();
 
-                let mut cmd = Execute::new();
-                cmd.with_at(Target::Selector(cir::Selector {
-                    var: cir::SelectorVariable::AllEntities,
-                    args: vec![cir::SelectorArg("tag=turtle".to_string())],
-                }));
-                cmd.with_run(SetBlock {
-                    block: mc_block.to_string(),
-                    pos: "~ ~ ~".to_string(),
-                    kind: SetBlockKind::Replace,
-                });
+                        let mut cmd = Execute::new();
+                        cmd.with_at(Target::Selector(cir::Selector {
+                            var: cir::SelectorVariable::AllEntities,
+                            args: vec![cir::SelectorArg("tag=turtle".to_string())],
+                        }));
+                        cmd.with_run(SetBlock {
+                            block: mc_block.to_string(),
+                            pos: "~ ~ ~".to_string(),
+                            kind: SetBlockKind::Replace,
+                        });
+                        cmds.push(cmd.into())
+                    }
+                    MaybeConst::NonConst(tmp, mc_block) => {
+                        cmds.extend(tmp);
 
-                let cmds = vec![
-                    Command::Comment("call to turtle_set".to_string()),
-                    cmd.into(),
-                ];
+                        let mc_block = mc_block.into_iter().next().unwrap();
+
+                        // TODO: Check for an invalid argument
+
+                        for possible in MC_BLOCKS.iter().copied() {
+                            let mut cmd = Execute::new();
+                            cmd.with_if(ExecuteCondition::Score {
+                                target: mc_block.clone().into(),
+                                target_obj: OBJECTIVE.into(),
+                                kind: ExecuteCondKind::Matches((possible as i32..=possible as i32).into()),
+                            });
+                            cmd.with_at(Target::Selector(cir::Selector {
+                                var: cir::SelectorVariable::AllEntities,
+                                args: vec![cir::SelectorArg("tag=turtle".to_string())],
+                            }));
+                            cmd.with_run(SetBlock {
+                                block: mc_block.to_string(),
+                                pos: "~ ~ ~".to_string(),
+                                kind: SetBlockKind::Replace,
+                            });
+                            cmds.push(cmd.into())
+                        }
+                    }
+                }
 
                 (cmds, None)
             }
@@ -3338,6 +3366,32 @@ pub fn compile_arithmetic(
         match kind {
             ScoreOpKind::AddAssign => {
                 cmds.extend(add_64_bit(op0_lo, op0_hi, op1_lo, op1_hi, dest.clone()));
+            }
+            ScoreOpKind::SubAssign => {
+                let op1_inv_lo = get_unique_holder();
+                let op1_inv_hi = get_unique_holder();
+
+                cmds.push(assign(op1_inv_lo.clone(), op1_lo));
+                cmds.push(assign(op1_inv_hi.clone(), op1_hi));
+
+                cmds.extend(invert(op1_inv_lo.clone()));
+                cmds.extend(invert(op1_inv_hi.clone()));
+
+                let op1_neg_name = Name::from(format!("%%temp_neg_{}", get_unique_num()));
+
+                cmds.extend(add_64_bit(
+                    op1_inv_lo, 
+                    op1_inv_hi,
+                    ScoreHolder::new("%%1".into()).unwrap(),
+                    ScoreHolder::new("%%0".into()).unwrap(),
+                    op1_neg_name.clone()
+                ));
+
+                let mut tmp = ScoreHolder::from_local_name(op1_neg_name, 8).into_iter();
+                let op1_neg_lo = tmp.next().unwrap();
+                let op1_neg_hi = tmp.next().unwrap();
+
+                cmds.extend(add_64_bit(op0_lo, op0_hi, op1_neg_lo, op1_neg_hi, dest.clone()));
             }
             ScoreOpKind::MulAssign => {
                 cmds.extend(mul_64_bit(op0_lo, op0_hi, op1_lo, op1_hi, dest.clone()));
@@ -4542,6 +4596,57 @@ pub fn compile_instr(
             cmds.extend(tmp_cmds);
 
             match &*operand0.get_type(tys) {
+                Type::IntegerType { bits: 64 } => {
+                    let dest = ScoreHolder::from_local_name(dest.clone(), 1).into_iter().next().unwrap();
+
+                    let mut target = target.into_iter();
+                    let target_lo = target.next().unwrap();
+                    let target_hi = target.next().unwrap();
+
+                    let mut source = source.into_iter();
+                    let source_lo = source.next().unwrap();
+                    let source_hi = source.next().unwrap();
+
+                    match predicate {
+                        IntPredicate::UGT => {
+                            let hi_is_gt = get_unique_holder();
+                            let hi_is_eq = get_unique_holder();
+                            let lo_is_gt = get_unique_holder();
+
+                            cmds.extend(compile_unsigned_cmp(target_hi.clone(), source_hi.clone(), hi_is_gt.clone(), cir::Relation::GreaterThan));
+                            cmds.extend(compile_unsigned_cmp(target_lo, source_lo, lo_is_gt.clone(), cir::Relation::GreaterThan));
+                            cmds.push(compile_signed_cmp(target_hi, source_hi, hi_is_eq.clone(), cir::Relation::Eq, true));
+
+                            cmds.push(assign_lit(dest.clone(), 0));
+                            
+                            let mut hi_gt_check = Execute::new();
+                            hi_gt_check.with_if(ExecuteCondition::Score {
+                                target: hi_is_gt.into(),
+                                target_obj: OBJECTIVE.into(),
+                                kind: ExecuteCondKind::Matches((1..=1).into()),
+                            });
+                            hi_gt_check.with_run(assign_lit(dest.clone(), 1));
+                            cmds.push(hi_gt_check.into());
+
+                            let mut lo_gt_check = Execute::new();
+                            lo_gt_check.with_if(ExecuteCondition::Score {
+                                target: hi_is_eq.into(),
+                                target_obj: OBJECTIVE.into(),
+                                kind: ExecuteCondKind::Matches((1..=1).into()),
+                            });
+                            lo_gt_check.with_if(ExecuteCondition::Score {
+                                target: lo_is_gt.into(),
+                                target_obj: OBJECTIVE.into(),
+                                kind: ExecuteCondKind::Matches((1..=1).into()),
+                            });
+                            lo_gt_check.with_run(assign_lit(dest, 1));
+                            cmds.push(lo_gt_check.into());
+                        }
+                        p => todo!("{:?}", p),
+                    }
+
+                    cmds
+                }
                 Type::VectorType {
                     element_type,
                     num_elements,
@@ -4610,14 +4715,14 @@ pub fn compile_instr(
                     cmds
                 }
                 ty @ Type::VectorType { .. } => todo!("{:?}", ty),
-                _ => {
+                ty => {
                     let dest = ScoreHolder::from_local_name(dest.clone(), 1)
                         .into_iter()
                         .next()
                         .unwrap();
 
                     if target.len() != 1 || source.len() != 1 {
-                        println!("Target len is {}, source len is {}",target.len(),source.len());
+                        println!("Target len is {}, source len is {} and ty is {:?} and predicate is {:?}",target.len(),source.len(), ty, predicate);
                         todo!()
                     }
 
@@ -5516,8 +5621,12 @@ pub fn eval_constant(
             let as_8 = elems
                 .iter()
                 .map(|e| {
-                    if let Constant::Int { bits: 8, value } = &**e {
-                        Some(*value as u8)
+                    if e.get_type(tys) == tys.i8() {
+                        if let Constant::Int { bits: 8, value } = &**e {
+                            Some(*value as u8)
+                        } else {
+                            todo!()
+                        }
                     } else {
                         None
                     }
@@ -5527,8 +5636,12 @@ pub fn eval_constant(
             let as_32 = elems
                 .iter()
                 .map(|e| {
-                    if let Constant::Int { bits: 32, value } = &**e {
-                        Some(*value as i32)
+                    if e.get_type(tys) == tys.i32() {
+                        if let MaybeConst::Const(c) = eval_constant(e, globals, tys) {
+                            Some(c)
+                        } else {
+                            todo!("{:?}", e)
+                        }
                     } else {
                         None
                     }
@@ -5538,8 +5651,12 @@ pub fn eval_constant(
             let as_64 = elems
                 .iter()
                 .map(|e| {
-                    if let Constant::Int { bits: 64, value } = &**e {
-                        Some(*value)
+                    if e.get_type(tys) == tys.i64() {
+                        if let Constant::Int { bits: 64, value } = &**e {
+                            Some(*value)
+                        } else {
+                            todo!()
+                        }
                     } else {
                         None
                     }

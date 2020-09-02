@@ -261,9 +261,9 @@ pub(crate) struct ChainNode<'a> {
     pub depth: usize,
 }
 
-static MAX_INLINE_COMMANDS: usize = 10_000;
+static MAX_INLINE_COMMANDS: usize = 10;
 
-static MAX_TREE_DEPTH: usize = 10;
+static MAX_TREE_DEPTH: usize = 1;
 
 // this returns a tree, but petgraph is really nice
 fn build_call_chain<'a>(funcs: &HashMap<&FunctionId, &'a AbstractBlock>, block: &'a AbstractBlock, func_starts: &HashMap<String, FunctionId>, counts: &CountList) -> BlockTree<'a> {
