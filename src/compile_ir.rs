@@ -1,4 +1,4 @@
-use crate::analysis::{AbstractBlock, BlockEdge, BlockEnd, ChainNode, self};
+use crate::analysis::{AbstractBlock, BlockEdge, BlockEnd};
 use crate::cir::FuncCall as McFuncCall;
 use crate::cir::Function as McFunction;
 use crate::cir::FunctionId as McFuncId;
@@ -31,7 +31,6 @@ use std::alloc::Layout;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::{TryFrom, TryInto};
 use std::sync::Mutex;
-use petgraph::prelude::{DiGraph, NodeIndex};
 
 // FIXME: Alignment for Alloca, functions, and global variables
 
@@ -92,6 +91,18 @@ pub fn pos_to_func_idx(x: i32, z: i32) -> usize {
 
 pub fn func_idx_to_pos(f: usize) -> (i32, i32) {
     (-2 - (f / ROW_SIZE) as i32, (f % ROW_SIZE) as i32)
+}
+
+pub fn temp_fn_ptr() -> ScoreHolder {
+    ScoreHolder::new("%%tempfuncptr".to_string()).unwrap()
+}
+
+pub fn cmd_count() -> ScoreHolder {
+    ScoreHolder::new("%%cmdcount".to_string()).unwrap()
+}
+
+pub fn cmd_limit() -> ScoreHolder {
+    ScoreHolder::new("%%CMD_LIMIT".to_string()).unwrap()
 }
 
 pub const COND_STACK_BYTES: usize = 500;
@@ -554,6 +565,110 @@ fn compile_module_abstract(module: &Module, options: &BuildOptions, globals: &Gl
     (funcs, clobber_list, func_starts)
 }
 
+pub fn create_return_func() -> McFunction {
+    let mut cmds = Vec::new();
+
+    cmds.extend(pop(temp_fn_ptr()));
+
+    cmds.push(McFuncCall { id: McFuncId::new("rust:__langcraft_call") }.into());
+
+    McFunction {
+        id: McFuncId::new("rust:__langcraft_return"),
+        cmds,
+    }
+}
+
+pub fn create_call_func(others: &[McFunction]) -> McFunction {
+    let mut cmds = Vec::new();
+
+    // TODO: Make this a build option
+    /*let mut t = cir::TextBuilder::new();
+    t.append_text("func ptr: ".to_string());
+    t.append_score(temp_fn_ptr(), OBJECTIVE.into(), None);
+
+    cmds.push(
+        Tellraw {
+            target: cir::Selector {
+                var: cir::SelectorVariable::AllPlayers,
+                args: Vec::new(),
+            }
+            .into(),
+            message: t.build(),
+        }
+        .into()
+    );*/
+
+    let mut cmd = Execute::new();       
+    cmd.with_if(ExecuteCondition::Score {
+        target: temp_fn_ptr().into(),
+        target_obj: OBJECTIVE.into(),
+        kind: ExecuteCondKind::Matches((-1..=-1).into()),
+    });
+    cmd.with_run(SetBlock {
+        pos: "~ ~ ~".into(),
+        block: "minecraft:air".into(),
+        kind: cir::SetBlockKind::Replace,
+    });
+    cmds.push(cmd.into());
+
+    // This could be improved with a binary search, but eh, whatever
+    for (idx, dest) in others.iter().enumerate() {
+        let mut cmd = Execute::new();       
+        cmd.with_if(ExecuteCondition::Score {
+            target: temp_fn_ptr().into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Matches((idx as i32..=idx as i32).into()),
+        });
+        cmd.with_run(Data {
+            target: DataTarget::Block("~ ~ ~".to_string()),
+            kind: cir::DataKind::Modify {
+                path: "Command".to_string(),
+                kind: cir::DataModifyKind::Set,
+                source: cir::DataModifySource::ValueString(McFuncCall { id: dest.id.clone() }.to_string()),
+            },
+        });
+        cmds.push(cmd.into());
+    }
+
+    let mut on_invalid_1 = Execute::new();
+    on_invalid_1.with_unless(ExecuteCondition::Score {
+        target: temp_fn_ptr().into(),
+        target_obj: OBJECTIVE.into(),
+        kind: ExecuteCondKind::Matches((-1..=others.len() as i32 - 1).into()),
+    });
+    on_invalid_1.with_run(SetBlock {
+        pos: "~ ~ ~".into(),
+        block: "minecraft:air".into(),
+        kind: cir::SetBlockKind::Replace,
+    });
+    cmds.push(on_invalid_1.into());
+
+    let mut on_invalid_2 = Execute::new();
+    on_invalid_2.with_unless(ExecuteCondition::Score {
+        target: temp_fn_ptr().into(),
+        target_obj: OBJECTIVE.into(),
+        kind: ExecuteCondKind::Matches((-1..=others.len() as i32 - 1).into()),
+    });
+    on_invalid_2.with_run(SetBlock {
+        pos: "-2 0 0".into(),
+        block: "minecraft:air".into(),
+        kind: cir::SetBlockKind::Replace,
+    });
+    cmds.push(on_invalid_2.into());
+
+    McFunction {
+        id: McFuncId::new("rust:__langcraft_call"),
+        cmds,
+    }
+}
+
+lazy_static! {
+    pub static ref ON_TICK: McFunction = McFunction::from_str(
+        McFuncId::new("__langcraft_on_tick"),
+        include_str!("__langcraft_on_tick.mcfunction")
+    ).unwrap();
+}
+
 pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction> {
     // Steps in compiling a module:
     // 1. Lay out global variables
@@ -576,17 +691,11 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
         }
     }
 
-    // Step 3
-    let funcs = analysis::build_call_chains(&funcs, &func_starts);
-
-    let mut inline_id = 0;
     // Step 4: Reify call graph to MC functions
     let mut funcs = funcs
         .into_iter()
-        .flat_map(|(block, root)| {
-            let (start, mut others) = reify_block(&block, root, &clobber_list, &globals, &module.types, &mut inline_id);
-            others.push(start);
-            others
+        .map(|block| {
+            reify_block(block, &clobber_list, &func_starts, &globals, &module.types)
         })
         .collect::<Vec<_>>();
 
@@ -607,7 +716,7 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
     init_cmds.push(set_memory(-1, main_return as i32));
     init_cmds.push(assign_lit(stackptr(), alloc.reserve(4) as i32));
     init_cmds.push(assign_lit(stackbaseptr(), 0));
-    init_cmds.extend(make_build_cmds(&funcs));
+    init_cmds.extend(make_build_cmds(func_starts.get("main").unwrap()));
 
     let mut all_clobbers = BTreeSet::new();
     for c in clobber_list.values() {
@@ -625,27 +734,30 @@ pub fn compile_module(module: &Module, options: &BuildOptions) -> Vec<McFunction
         cmds: init_cmds,
     });
 
-    if let Some(main_id) = func_starts.get("main") {
-        let main_idx = funcs.iter().enumerate().find(|(_, f)| &f.id == main_id).unwrap().0;
-        let (main_x, main_z) = func_idx_to_pos(main_idx);
-        funcs.push(McFunction {
-            id: McFuncId::new("run"),
-            cmds: vec![
-                McFuncCall {
-                    id: McFuncId::new("init"),
-                }
-                .into(),
-                SetBlock {
-                    pos: format!("{} 1 {}", main_x, main_z),
-                    block: "minecraft:redstone_block".to_string(),
-                    kind: SetBlockKind::Replace,
-                }
-                .into(),
-            ],
-        });
-    } else {
-        todo!("support programs without an entry point")
-    }
+    funcs.push(ON_TICK.clone());
+
+    //if let Some(main_id) = func_starts.get("main") {
+        //let main_idx = funcs.iter().position(|f| &f.id == main_id).unwrap();
+        //let (main_x, main_z) = func_idx_to_pos(main_idx);
+    funcs.push(McFunction {
+        id: McFuncId::new("run"),
+        cmds: vec![
+            McFuncCall {
+                id: McFuncId::new("init"),
+            }
+            .into(),
+            SetBlock {
+                pos: "-2 1 0".to_string(),
+                block: "minecraft:redstone_block".to_string(),
+                kind: SetBlockKind::Replace,
+            }
+            .into(),
+        ],
+    });
+
+    //} else {
+    //    todo!("support programs without an entry point")
+    //}
 
     funcs
 }
@@ -658,7 +770,7 @@ fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: 
     let mut funcs = funcs.into_iter().collect::<Vec<_>>();
 
     for (func, func_id) in func_starts.iter() {
-        let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0;
+        let idx = funcs.iter().position(|f| &f.id == func_id).unwrap();
 
         let name = Name::Name(Box::new(func.clone()));
 
@@ -671,6 +783,9 @@ fn do_relocation<T>(funcs: T, func_starts: &HashMap<String, McFuncId>, globals: 
             globals.insert(name, (idx as u32, None));
         }
     }
+
+    funcs.push(create_call_func(&funcs));
+    funcs.push(create_return_func());
 
     apply_fixups(&mut funcs, &func_starts);
 
@@ -688,7 +803,7 @@ fn apply_branch_fixups(funcs: &mut [McFunction]) {
                     let mut id = std::mem::replace(id, McFuncId::new(""));
                     id.name.truncate(id.name.len() - "%%fixup_branch".len());
 
-                    let idx = funcs.iter().enumerate().find(|(_, f)| f.id == id).unwrap().0;
+                    let idx = funcs.iter().position(|f| f.id == id).unwrap();
                     let (x, z) = func_idx_to_pos(idx);
 
                     let pos = format!("{} 1 {}", x, z);
@@ -716,7 +831,7 @@ fn apply_branch_fixups(funcs: &mut [McFunction]) {
                         let mut id = std::mem::replace(id, McFuncId::new(""));
                         id.name.truncate(id.name.len() - "%%fixup_branch".len());
 
-                        let idx = funcs.iter().enumerate().find(|(_, f)| f.id == id).unwrap().0;
+                        let idx = funcs.iter().position(|f| f.id == id).unwrap();
                         let (x, z) = func_idx_to_pos(idx);
                         let pos = format!("{} 1 {}", x, z);
                         let block = "minecraft:redstone_block".to_string();
@@ -759,7 +874,7 @@ fn apply_func_ref_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String,
         assert!(holder.as_ref().ends_with("%%fixup_func_ref"));
         let func_name = &holder.as_ref()[..holder.as_ref().len() - "%%fixup_func_ref".len()];
         let func_id = func_starts.get(func_name).unwrap();
-        funcs.iter().enumerate().find(|(_, f)| &f.id == func_id).unwrap().0
+        funcs.iter().position(|f| &f.id == func_id).unwrap()
     };
 
     for func_idx in 0..funcs.len() {
@@ -844,10 +959,8 @@ fn apply_return_fixups(funcs: &mut [McFunction]) {
 
                         let idx = funcs
                             .iter()
-                            .enumerate()
-                            .find(|(_, f)| f.id == return_id)
-                            .unwrap_or_else(|| panic!("could not find {:?}", return_id))
-                            .0;
+                            .position(|f| f.id == return_id)
+                            .unwrap_or_else(|| panic!("could not find {:?}", return_id));
 
                         let mut cmd = Execute::new();
                         cmd.with_at(Target::Selector(cir::Selector {
@@ -882,7 +995,7 @@ fn apply_call_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McF
                     let name = c["!FIXUPCALL ".len()..].to_owned();
 
                     let call_id = func_starts.get(&name).unwrap_or_else(|| panic!("failed to get {}", name));
-                    let idx = funcs.iter().enumerate().find(|(_, f)| &f.id == call_id).unwrap().0;
+                    let idx = funcs.iter().position(|f| &f.id == call_id).unwrap();
                     let (x, z) = func_idx_to_pos(idx);
 
                     let pos = format!("{} 1 {}", x, z);
@@ -912,6 +1025,7 @@ fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId
     apply_return_fixups(funcs);
     apply_func_ref_fixups(funcs, func_starts);
     apply_call_fixups(funcs, func_starts);
+    apply_cmd_count_fixups(funcs, func_starts);
 
     // Make sure we didn't miss anything
     for func in funcs.iter() {
@@ -924,7 +1038,51 @@ fn apply_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId
     }
 }
 
-fn make_build_cmds(funcs: &[McFunction]) -> Vec<Command> {
+fn apply_cmd_count_fixups(funcs: &mut [McFunction], func_starts: &HashMap<String, McFuncId>) {
+    let list = funcs.iter().map(|f| (f.id.clone(), f)).collect();
+
+    let counts = funcs.iter().map(|f| crate::analysis::estimate_total_count(&list, func_starts, f)).collect::<Vec<_>>();
+    for (func_idx, count) in (0..funcs.len()).zip(counts.into_iter()) {
+        for cmd_idx in 0..funcs[func_idx].cmds.len() {
+            if let Command::Comment(c) = &funcs[func_idx].cmds[cmd_idx] {
+                if c == "%%fixup_update_cmds" {
+                    funcs[func_idx].cmds[cmd_idx] = make_op_lit(cmd_count(), "+=", count.unwrap() as i32);
+                }
+            }
+        }
+    }
+}
+
+fn make_build_cmds(main_id: &McFuncId) -> Vec<Command> {
+    vec![
+        cir::Fill {
+            start: "-2 0 0".to_string(),
+            end: "-2 1 2".to_string(),
+            block: "minecraft:air".to_string(),
+        }
+        .into(),
+        SetBlock {
+            pos: "-2 0 0".to_string(),
+            block: "minecraft:command_block[facing=south]{Command:\"function rust:__langcraft_on_tick\"}".to_string(),
+            kind: cir::SetBlockKind::Replace,
+        }
+        .into(),
+        SetBlock {
+            pos: "-2 1 1".to_string(),
+            block: format!("minecraft:chain_command_block[conditional=true,facing=south]{{UpdateLastExecution:0b,auto:1b,Command:\"{}\"}}", McFuncCall { id: main_id.clone() }),
+            kind: cir::SetBlockKind::Replace,
+        }
+        .into(),
+        SetBlock {
+            pos: "-2 0 2".to_string(),
+            block: "minecraft:chain_command_block[conditional=true,facing=north]{UpdateLastExecution:0b,auto:1b}".into(),
+            kind: cir::SetBlockKind::Replace,
+        }
+        .into(),
+    ]
+}
+
+/*fn make_build_cmds(funcs: &[McFunction]) -> Vec<Command> {
     let mut build_cmds = vec![
         cir::Fill {
             start: "-2 0 0".to_string(),
@@ -956,7 +1114,7 @@ fn make_build_cmds(funcs: &[McFunction]) -> Vec<Command> {
         }));
 
     build_cmds
-}
+}*/
 
 
 
@@ -1064,6 +1222,8 @@ fn compile_global_var_init<'a>(
             1 << value,
         ));
     }
+
+    cmds.push(assign_lit(cmd_count(), 0));
 
     cmds
 }
@@ -2555,92 +2715,7 @@ fn compile_call(
 
             before_cmds.extend(setup_arguments(arguments, globals, tys));
 
-            let temp_z = get_unique_holder();
-            before_cmds.push(assign(temp_z.clone(), func_ptr.clone()));
-            before_cmds.push(make_op_lit(temp_z.clone(), "%=", ROW_SIZE as i32));
-
-            let temp_x = get_unique_holder();
-            before_cmds.push(assign(temp_x.clone(), func_ptr));
-            before_cmds.push(make_op_lit(temp_x.clone(), "/=", ROW_SIZE as i32));
-            before_cmds.push(make_op_lit(temp_x.clone(), "*=", -1));
-
-            // execute as @e[tag=ptr] store result entity @s Pos[2] double 1 run scoreboard players get func_ptr 1
-            // Set the ptr's Z coordinate to `func_ptr`
-            let mut set_z = Execute::new();
-            set_z.with_as(
-                cir::Selector {
-                    var: cir::SelectorVariable::AllEntities,
-                    args: vec![cir::SelectorArg("tag=ptr".into())],
-                }
-                .into(),
-            );
-            set_z.with_subcmd(ExecuteSubCmd::Store {
-                is_success: false,
-                kind: ExecuteStoreKind::Data {
-                    target: DataTarget::Entity(
-                        cir::Selector {
-                            var: cir::SelectorVariable::ThisEntity,
-                            args: Vec::new(),
-                        }
-                        .into(),
-                    ),
-                    path: "Pos[2]".into(),
-                    ty: "double".into(),
-                    scale: 1.0,
-                },
-            });
-            set_z.with_run(ScoreGet {
-                target: temp_z.into(),
-                target_obj: OBJECTIVE.into(),
-            });
-
-            before_cmds.push(set_z.into());
-
-            let mut set_x = Execute::new();
-            set_x.with_as(
-                cir::Selector {
-                    var: cir::SelectorVariable::AllEntities,
-                    args: vec![cir::SelectorArg("tag=ptr".into())],
-                }
-                .into(),
-            );
-            set_x.with_subcmd(ExecuteSubCmd::Store {
-                is_success: false,
-                kind: ExecuteStoreKind::Data {
-                    target: DataTarget::Entity(
-                        cir::Selector {
-                            var: cir::SelectorVariable::ThisEntity,
-                            args: Vec::new(),
-                        }
-                        .into(),
-                    ),
-                    path: "Pos[0]".into(),
-                    ty: "double".into(),
-                    scale: 1.0,
-                },
-            });
-            set_x.with_run(ScoreGet {
-                target: temp_x.into(),
-                target_obj: OBJECTIVE.into(),
-            });
-
-            before_cmds.push(set_x.into());
-
-            let mut set_block = Execute::new();
-            set_block.with_at(
-                cir::Selector {
-                    var: cir::SelectorVariable::AllEntities,
-                    args: vec![cir::SelectorArg("tag=ptr".into())],
-                }
-                .into(),
-            );
-            set_block.with_run(SetBlock {
-                pos: "~-2 1 ~".into(),
-                block: "minecraft:redstone_block".into(),
-                kind: SetBlockKind::Replace,
-            });
-
-            before_cmds.push(set_block.into());
+            before_cmds.push(Command::Comment(format!("!DYNCALL {}", func_ptr)));
 
             let after_cmds = if let Some(dest) = dest {
                 dest.into_iter()
@@ -2660,13 +2735,13 @@ fn compile_call(
     }
 }
 
-pub fn compile_terminator(
+pub(crate) fn compile_terminator(
     parent: &Function,
     term: &Terminator,
     clobbers: BTreeSet<ScoreHolder>,
     globals: &GlobalVarList,
     tys: &Types,
-) -> Vec<Command> {
+) -> (Vec<Command>, Either<Vec<(BlockEdge, McFuncId)>, McFuncId>) {
     let mut cmds = Vec::new();
 
     match &term {
@@ -2678,14 +2753,7 @@ pub fn compile_terminator(
 
             cmds.extend(load_regs(clobbers));
 
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("intrinsic:pop_and_branch"),
-                }
-                .into(),
-            );
-
-            cmds
+            (cmds, Either::Right(McFuncId::new("rust:__langcraft_return")))
         }
         Terminator::Ret(Ret {
             return_operand: Some(operand),
@@ -2703,23 +2771,10 @@ pub fn compile_terminator(
 
             cmds.extend(load_regs(clobbers));
 
-            cmds.push(
-                McFuncCall {
-                    id: McFuncId::new("intrinsic:pop_and_branch"),
-                }
-                .into(),
-            );
-
-            cmds
+            (cmds, Either::Right(McFuncId::new("rust:__langcraft_return")))
         }
         Terminator::Br(Br { dest, .. }) => {
-            let mut id = McFuncId::new_block(&parent.name, dest.clone());
-
-            id.name.push_str("%%fixup_branch");
-
-            cmds.push(McFuncCall { id }.into());
-
-            cmds
+            (Vec::new(), Either::Left(vec![(BlockEdge::None, McFuncId::new_block(&parent.name, dest.clone()))]))
         }
         Terminator::CondBr(CondBr {
             condition,
@@ -2733,13 +2788,15 @@ pub fn compile_terminator(
             assert_eq!(cond.len(), 1);
             let cond = cond[0].clone();
 
-            let mut true_dest = McFuncId::new_block(&parent.name, true_dest.clone());
-            let mut false_dest = McFuncId::new_block(&parent.name, false_dest.clone());
+            let true_dest = McFuncId::new_block(&parent.name, true_dest.clone());
+            let false_dest = McFuncId::new_block(&parent.name, false_dest.clone());
 
-            true_dest.name.push_str("%%fixup_branch");
-            false_dest.name.push_str("%%fixup_branch");
+            (cmds, Either::Left(vec![
+                (BlockEdge::Cond { value: cond.clone(), inverted: false }, true_dest),
+                (BlockEdge::Cond { value: cond,         inverted: true  }, false_dest),
+            ]))
 
-            let mut true_cmd = Execute::new();
+            /*let mut true_cmd = Execute::new();
             true_cmd
                 .with_if(ExecuteCondition::Score {
                     target: Target::Uuid(cond.clone()),
@@ -2760,7 +2817,7 @@ pub fn compile_terminator(
             cmds.push(true_cmd.into());
             cmds.push(false_cmd.into());
 
-            cmds
+            cmds*/
         }
         Terminator::Switch(Switch {
             operand,
@@ -2768,61 +2825,61 @@ pub fn compile_terminator(
             default_dest,
             ..
         }) => {
-            let (tmp, operand) = eval_operand(operand, globals, tys);
+            let (tmp, op) = eval_operand(operand, globals, tys);
             cmds.extend(tmp);
 
-            if operand.len() != 1 {
-                todo!("multibyte operand in switch {:?}", operand);
+            match &*operand.get_type(tys) {
+                Type::IntegerType { bits: 32 } => {}
+                o => todo!("{:?}", o)
             }
 
-            let operand = operand[0].clone();
+            let operand = op.into_iter().next().unwrap();
 
             let default_tracker = get_unique_holder();
 
-            cmds.push(assign_lit(default_tracker.clone(), 0));
+            let mut edges = dests.iter().map(|(dest_value, dest_name)| {
+                let dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
 
-            for (dest_value, dest_name) in dests.iter() {
-                let dest_value = if let Constant::Int { value, .. } = &**dest_value {
-                    *value as i32
-                } else {
-                    todo!("{:?}", dest_value)
+                let edge = match &*dest_value.get_type(tys) {
+                    Type::IntegerType { bits: 32 } => {
+                        if let MaybeConst::Const(expected) = eval_constant(dest_value, globals, tys) {
+                            BlockEdge::SwitchCond { 
+                                value: operand.clone(),
+                                expected,
+                            }
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    _ => todo!()
                 };
 
-                let mut dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
+                (edge, dest_id)
+            }).collect::<Vec<_>>();
 
-                dest_id.name.push_str("%%fixup_branch");
+            let default_dest_id = McFuncId::new_block(&parent.name, default_dest.clone());
 
-                let mut branch_cmd = Execute::new();
-                branch_cmd.with_if(ExecuteCondition::Score {
-                    target: Target::Uuid(operand.clone()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ExecuteCondKind::Matches(cir::McRange::Between(dest_value..=dest_value)),
-                });
+            let not_expected = dests.iter().map(|(dest_value, _)| {
+                match &*dest_value.get_type(tys) {
+                    Type::IntegerType { bits: 32 } => {
+                        if let MaybeConst::Const(ne) = eval_constant(dest_value, globals, tys) {
+                            ne
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    _ => todo!()
+                }
+            }).collect();
 
-                let mut add_cmd = branch_cmd.clone();
+            let default_edge = BlockEdge::SwitchDefault {
+                value: operand,
+                not_expected,
+            };
 
-                add_cmd.with_run(assign_lit(default_tracker.clone(), 1));
-                branch_cmd.with_run(McFuncCall { id: dest_id });
+            edges.push((default_edge, default_dest_id));
 
-                cmds.push(add_cmd.into());
-                cmds.push(branch_cmd.into());
-            }
-
-            let mut default_dest = McFuncId::new_block(&parent.name, default_dest.clone());
-
-            default_dest.name.push_str("%%fixup_branch");
-
-            let mut default_cmd = Execute::new();
-            default_cmd.with_if(ExecuteCondition::Score {
-                target: default_tracker.into(),
-                target_obj: OBJECTIVE.to_string(),
-                kind: ExecuteCondKind::Matches(cir::McRange::Between(0..=0)),
-            });
-            default_cmd.with_run(McFuncCall { id: default_dest });
-
-            cmds.push(default_cmd.into());
-
-            cmds
+            (cmds, Either::Left(edges))
         }
         Terminator::Unreachable(Unreachable { .. }) => {
             cmds.push(mark_unreachable());
@@ -2840,7 +2897,7 @@ pub fn compile_terminator(
                 .into(),
             );
 
-            cmds
+            (cmds, Either::Left(Vec::new()))
         }
         Terminator::Resume(_) => {
             cmds.push(mark_todo());
@@ -2861,16 +2918,14 @@ pub fn compile_terminator(
                 .into(),
             );
 
-            cmds
+            (cmds, Either::Left(Vec::new()))
         }
         term => todo!("terminator {:?}", term),
     }
 }
 
 #[allow(clippy::reversed_empty_ranges)]
-fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, globals: &GlobalVarList, tys: &Types, inline_id: &mut usize) -> (McFunction, Vec<McFunction>) {
-    let AbstractBlock { needs_prolog, mut body, term, parent } = graph[root].block.clone();
-
+fn reify_block(AbstractBlock { needs_prolog, mut body, term, parent }: AbstractBlock, clobber_list: &HashMap<String, BTreeSet<ScoreHolder>>, func_starts: &HashMap<String, McFuncId>, globals: &GlobalVarList, tys: &Types) -> McFunction {
     let mut clobbers = clobber_list.get(&body.id.name).unwrap().clone();
 
     for arg in parent.parameters.iter() {
@@ -2879,7 +2934,7 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
     }
 
     if needs_prolog {
-        let mut prolog = Vec::new();
+        let mut prolog = save_regs(clobbers.clone());
 
         for (idx, arg) in parent.parameters.iter().enumerate() {
             let arg_size = type_layout(&arg.ty, tys).size();
@@ -2893,113 +2948,209 @@ fn reify_block(graph: &DiGraph<ChainNode, BlockEdge>, root: NodeIndex<u32>, clob
             }
         }
 
-        prolog.splice(0..0, save_regs(clobbers.clone()));
+        body.cmds.splice(0..0, prolog);
 
-        body.cmds.splice(1..1, prolog);
+        // FIXME: When `trace-bbs` is enabled this puts them at the correct place
+        // body.cmds.splice(1..1, prolog);
     }
 
-    let children = graph
-        .neighbors_directed(root, petgraph::Outgoing)
-        .map(|n| (n, graph.edge_weight(graph.find_edge(root, n).unwrap()).unwrap()))
-        .collect::<Vec<_>>();
+    body.cmds.extend(compile_block_end(&term.unwrap(), body.cmds.len(), &parent, clobbers, &func_starts, globals, tys));
 
-    match children[..] {
-        [(ab1, edge1), (ab2, edge2)] => {
-            let (true_dest, false_dest, value) = if let BlockEdge::Cond { value, inverted: false } = edge1 {
-                let expected = BlockEdge::Cond { value: value.clone(), inverted: true };
-                assert_eq!(edge2, &expected);
-                (ab1, ab2, value)
-            } else if let BlockEdge::Cond { value, inverted: true } = edge1 {
-                let expected = BlockEdge::Cond { value: value.clone(), inverted: false };
-                assert_eq!(edge2, &expected);
-                (ab2, ab1, value)
-            } else {
+    body
+}
+
+static RESUME_BLOCK_POS: &str = "-2 1 1";
+static ACTIVATE_BLOCK_POS: &str = "-2 1 0";
+
+fn compile_block_end(block_end: &BlockEnd, body_cmds: usize, parent: &Function, clobbers: BTreeSet<ScoreHolder>, func_starts: &HashMap<String, McFuncId>, globals: &GlobalVarList, tys: &Types) -> Vec<Command> {
+    let mut cmds = Vec::new();
+
+    let dests: Either<Vec<(BlockEdge, McFuncId)>, McFuncId> = match block_end {
+        BlockEnd::StaticCall(func_name) => {
+            if func_name == "!FIXUPCALL intrinsic:memcpy" {
                 todo!()
-            };
-
-            let mut others = Vec::new();
-
-            let (mut true_dest, tmp) = reify_block(graph, true_dest, clobber_list, globals, tys, inline_id);
-            *inline_id += 1;
-            true_dest.id.name.push_str(&format!("-inline{}", *inline_id));
-            others.extend(tmp);
-
-            let (mut false_dest, tmp) = reify_block(graph, false_dest, clobber_list, globals, tys, inline_id);
-            *inline_id += 1;
-            false_dest.id.name.push_str(&format!("-inline{}", *inline_id));
-            others.extend(tmp);
-
-            let cond_tmp = condtempholder();
-            body.cmds.push(assign(cond_tmp.clone(), value.clone()));
-
-            let mut true_cmd = Execute::new();
-            true_cmd
-                .with_if(ExecuteCondition::Score {
-                    target: Target::Uuid(cond_tmp.clone()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
-                })
-                .with_run(McFuncCall { id: true_dest.id.clone() });
-
-            let mut false_cmd = Execute::new();
-            false_cmd
-                .with_unless(ExecuteCondition::Score {
-                    target: Target::Uuid(cond_tmp.clone()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ExecuteCondKind::Matches(cir::McRange::Between(1..=1)),
-                })
-                .with_run(McFuncCall { id: false_dest.id.clone() });
-
-            body.cmds.extend(push_cond_stack(cond_tmp.clone()));
-            body.cmds.push(true_cmd.into());
-            body.cmds.extend(pop_cond_stack(cond_tmp));
-            body.cmds.push(false_cmd.into());
-
-            others.push(true_dest);
-            others.push(false_dest);
-
-            (body, others)
-        }
-        [(ab, edge)] => {
-            assert_eq!(edge, &BlockEdge::None);
-
-            body.cmds.push(Command::Comment(format!("===== Begin block {} =====", graph[ab].block.body.id)));
-            let (inner, others) = reify_block(graph, ab, clobber_list, globals, tys, inline_id);
-            body.cmds.extend(inner.cmds);
-            (body, others)
-        }
-        [] => {
-            match term.unwrap() {
-                BlockEnd::StaticCall(id) => {
-                    body.cmds.push(Command::Comment(id))
-                }
-                BlockEnd::DynCall => {
-                    // FIXME: This is identical to the one at the end of `compile_call`
-                    let mut set_block = Execute::new();
-                    set_block.with_at(
-                        cir::Selector {
-                            var: cir::SelectorVariable::AllEntities,
-                            args: vec![cir::SelectorArg("tag=ptr".into())],
-                        }
-                        .into(),
-                    );
-                    set_block.with_run(SetBlock {
-                        pos: "~-2 1 ~".into(),
-                        block: "minecraft:redstone_block".into(),
-                        kind: SetBlockKind::Replace,
-                    });
-
-                    body.cmds.push(set_block.into());
-                }
-                BlockEnd::Normal(t) => {
-                    body.cmds.extend(compile_terminator(&parent, &t, clobbers, globals, tys));
-                }
+            } else {
+                assert!(func_name.starts_with("!FIXUPCALL "));
+                let func_name = &func_name["!FIXUPCALL ".len()..];
+                let func_id = func_starts.get(func_name).unwrap().clone();
+                Either::Left(vec![(BlockEdge::None, func_id)])
             }
-
-            (body, Vec::new())
         }
-        _ => todo!()
+        BlockEnd::DynCall(func_ptr) => {
+            cmds.push(assign(temp_fn_ptr(), func_ptr.clone()));
+            Either::Right(McFuncId::new("rust:__langcraft_call"))
+
+            /*
+            // FIXME: This is identical to the one at the end of `compile_call`
+            let mut set_block = Execute::new();
+            set_block.with_at(
+                cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=ptr".into())],
+                }
+                .into(),
+            );
+            set_block.with_run(SetBlock {
+                pos: "~-2 1 ~".into(),
+                block: "minecraft:redstone_block".into(),
+                kind: SetBlockKind::Replace,
+            });
+
+            body.cmds.push(set_block.into());
+            */
+        }
+        BlockEnd::Normal(t) => {
+            let (tmp, dests) = compile_terminator(&parent, &t, clobbers, globals, tys);
+            cmds.extend(tmp);
+            dests
+        }
+    };
+
+    if let Either::Left(l) = &dests {
+        if l.is_empty() {
+            todo!()
+        }
     }
+
+    // FIXME: Actually figure out how many commands are added by this method correctly
+    // Update command count
+    cmds.push(make_op_lit(cmd_count(), "+=", body_cmds as i32 + 10));
+
+    // All commands used when under the threshold share the same prefix
+    let under_thresh_base = {
+        let mut tmp = Execute::new();
+        tmp.with_if(ExecuteCondition::Score {
+            target: cmd_count().into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Relation {
+                relation: cir::Relation::LessThan,
+                source: cmd_limit().into(),
+                source_obj: OBJECTIVE.into(),
+            }
+        });
+        tmp
+    };
+
+    // If command count < threshold:
+    //  modify the next command block
+    //  set the next pointer to the current command block
+
+    match &dests {
+        Either::Left(dests) => {
+            for (edge, dest) in dests.iter().cloned() {
+                let mut modify_next = under_thresh_base.clone();
+                modify_next.with_at(cir::Selector {
+                    var: cir::SelectorVariable::AllEntities,
+                    args: vec![cir::SelectorArg("tag=next".into())],
+                }.into());
+                for (cond, is_unless) in edge.into_conds() {
+                    modify_next.with_subcmd(ExecuteSubCmd::Condition { is_unless, cond });
+                }
+                modify_next.with_run(Data {
+                    target: DataTarget::Block("~ ~ ~".to_string()),
+                    kind: cir::DataKind::Modify {
+                        path: "Command".to_string(),
+                        kind: cir::DataModifyKind::Set,
+                        source: cir::DataModifySource::ValueString(McFuncCall { id: dest }.to_string()),
+                    },
+                });
+
+                cmds.push(modify_next.into());
+            }
+        }
+        Either::Right(id) => {
+            let mut modify_next = under_thresh_base.clone();
+            modify_next.with_at(cir::Selector {
+                var: cir::SelectorVariable::AllEntities,
+                args: vec![cir::SelectorArg("tag=next".into())],
+            }.into());
+            modify_next.with_run(McFuncCall { id: id.clone() });
+            cmds.push(modify_next.into());
+        }
+    }
+    let mut set_next_ptr = under_thresh_base;
+    set_next_ptr.with_run(cir::Teleport {
+        target: cir::Selector {
+            var: cir::SelectorVariable::AllEntities,
+            args: vec![cir::SelectorArg("tag=next".into())],
+        }.into(),
+        pos: "~ ~ ~".to_string(),
+    });
+    cmds.push(set_next_ptr.into());
+
+    // If command count >= threshold:
+    //  set resume command
+    //  clear the next command block
+    //  activate starting command block
+    //  reset command count
+
+    // All commands used when over the threshold share the same prefix
+    let over_thresh_base = {
+        let mut tmp = Execute::new();
+        tmp.with_if(ExecuteCondition::Score {
+            target: cmd_count().into(),
+            target_obj: OBJECTIVE.into(),
+            kind: ExecuteCondKind::Relation {
+                relation: cir::Relation::GreaterThanEq,
+                source: cmd_limit().into(),
+                source_obj: OBJECTIVE.into(),
+            }
+        });
+        tmp
+    };
+
+    match &dests {
+        Either::Left(dests) => {
+            for (edge, dest) in dests.iter().cloned() {
+                let mut modify_resume = over_thresh_base.clone();
+                for (cond, is_unless) in edge.into_conds() {
+                    modify_resume.with_subcmd(ExecuteSubCmd::Condition { is_unless, cond });
+                }
+                modify_resume.with_run(Data {
+                    target: DataTarget::Block(RESUME_BLOCK_POS.into()),
+                    kind: cir::DataKind::Modify {
+                        path: "Command".to_string(),
+                        kind: cir::DataModifyKind::Set,
+                        source: cir::DataModifySource::ValueString(McFuncCall { id: dest }.to_string()),
+                    },
+                });
+
+                cmds.push(modify_resume.into());
+            }
+        }
+        Either::Right(id) => {
+            let mut modify_resume = over_thresh_base.clone();
+            modify_resume.with_positioned(RESUME_BLOCK_POS.into());
+            modify_resume.with_run(McFuncCall { id: id.clone() });
+            cmds.push(modify_resume.into());
+        }
+    }
+
+    let mut clear_next = over_thresh_base.clone();
+    clear_next.with_at(cir::Selector {
+        var: cir::SelectorVariable::AllEntities,
+        args: vec![cir::SelectorArg("tag=next".into())],
+    }.into());
+    clear_next.with_run(SetBlock {
+        pos: "~ ~ ~".into(),
+        block: "minecraft:air".into(),
+        kind: cir::SetBlockKind::Replace,
+    });
+    cmds.push(clear_next.into());
+
+    let mut activate_next = over_thresh_base.clone();
+    activate_next.with_run(SetBlock {
+        block: "minecraft:redstone_block".to_string(),
+        pos: ACTIVATE_BLOCK_POS.into(),
+        kind: SetBlockKind::Replace,
+    });
+    cmds.push(activate_next.into());
+
+    let mut reset_count = over_thresh_base;
+    reset_count.with_run(assign_lit(cmd_count(), 0));
+    cmds.push(reset_count.into());
+
+    cmds
 }
 
 fn compile_function(
@@ -3054,8 +3205,9 @@ fn compile_function(
                         Command::Comment(c) if c.starts_with("!FIXUPCALL") => {
                             BlockEnd::StaticCall(c)
                         }
-                        cmd if cmd.to_string() == "execute at @e[tag=ptr] run setblock ~-2 1 ~ minecraft:redstone_block replace" => {
-                            BlockEnd::DynCall
+                        Command::Comment(c) if c.starts_with("!DYNCALL ") => {
+                            let holder = ScoreHolder::new(c["!DYNCALL ".len()..].to_string()).unwrap();
+                            BlockEnd::DynCall(holder)
                         }
                         b => todo!("{:?}", b),
                     };
@@ -3088,7 +3240,7 @@ fn compile_function(
                 term: Some(BlockEnd::Normal(block.term.clone())),
             });
 
-            for sub_block in result.iter_mut() {
+            /*for sub_block in result.iter_mut() {
                 sub_block.body.cmds.insert(
                     0,
                     SetBlock {
@@ -3098,7 +3250,7 @@ fn compile_function(
                     }
                     .into(),
                 );
-            }
+            }*/
 
             result
         })
@@ -4751,10 +4903,8 @@ pub fn compile_instr(
                 let block_idx = parent
                     .basic_blocks
                     .iter()
-                    .enumerate()
-                    .find(|(_, b)| &b.name == block)
-                    .unwrap()
-                    .0 as i32;
+                    .position(|b| &b.name == block)
+                    .unwrap() as i32;
 
                 cmds.push(Command::Comment(format!(
                     "block {}\nvalue {:?}",

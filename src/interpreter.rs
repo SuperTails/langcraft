@@ -1,5 +1,5 @@
 use crate::cir::*;
-use crate::compile_ir::{get_index, pos_to_func_idx, OBJECTIVE};
+use crate::compile_ir::{get_index, pos_to_func_idx, func_idx_to_pos, OBJECTIVE};
 use crate::Datapack;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -44,6 +44,50 @@ impl std::fmt::Display for InterpError {
     }
 }
 
+type RelPos = ((i32, bool), (i32, bool), (i32, bool));
+
+fn add_rel_pos(base: (i32, i32, i32), rel: RelPos) -> (i32, i32, i32) {
+    let do_coord = |lhs: i32, (rhs, rel)| -> i32 {
+        if rel {
+            lhs + rhs
+        } else {
+            rhs
+        }
+    };
+
+    (do_coord(base.0, rel.0), do_coord(base.1, rel.1), do_coord(base.2, rel.2))
+}
+
+fn parse_rel_coords(pos: &str) -> Result<RelPos, String> {
+    let mut coords = pos
+        .split_whitespace()
+        .map(|s| -> Result<_, String> {
+            let (st, relative) = if s.starts_with('~') {
+                if s == "~" {
+                    return Ok((0, true))
+                } else {
+                    (&s[1..], true)
+                }
+            } else {
+                (s, false)
+            };
+
+            let st_parsed = st.parse::<i32>().map_err(|_| format!("invalid {}", s))?;
+
+            Ok((st_parsed, relative))
+        });
+
+    let x = coords.next().ok_or("expected x")??;
+    let y = coords.next().ok_or("expected y")??;
+    let z = coords.next().ok_or("expected z")??;
+    
+    if let Some(c) = coords.next() {
+        return Err(format!("trailing data `{:?}`", c))
+    }
+
+    Ok((x, y, z))
+}
+
 impl std::error::Error for InterpError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -53,15 +97,30 @@ pub enum BreakKind {
     Access,
 }
 
+pub enum RunState {
+    Grid {
+        next_pos: Option<(usize, usize)>,
+    },
+    Chain {
+        resume_cmd: Option<Command>,
+        cmd_1: Option<Command>,
+        cmd_2: Option<Command>,
+        /// The index of the currently executing command block in the chain, i.e. the actual top of the call stack
+        idx: Option<usize>,
+        tick_queued: bool,
+        next_pos: (i32, i32, i32),
+    },
+}
+
 pub struct Interpreter {
     pub rust_scores: HashMap<ScoreHolder, i32>,
-    pub(crate) call_stack: Vec<(usize, usize)>,
+    pub(crate) call_stack: Vec<(usize, usize, (i32, i32, i32))>,
     program: Vec<Function>,
     pub memory: [i32; 128 * 16 * 16],
     ptr_pos: (i32, i32, i32),
     turtle_pos: (i32, i32, i32),
+    run_state: RunState,
     letters: HashMap<(i32, i32, i32), char>,
-    next_pos: Option<(usize, usize)>,
     pub output: Vec<String>,
     pub tick: usize,
     commands_run: usize,
@@ -84,12 +143,12 @@ impl Interpreter {
 
         Interpreter {
             program,
-            call_stack: vec![(func_idx, 0)],
+            call_stack: vec![(func_idx, 0, (0, 0, 0))],
             memory: [0; 128 * 16 * 16],
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
-            next_pos: None,
+            run_state: RunState::Chain { resume_cmd: None, cmd_1: None, cmd_2: None, idx: None, tick_queued: false, next_pos: (0, 0, 0) },
             commands_run: 0,
             tick: 0,
             output: Vec::new(),
@@ -119,14 +178,27 @@ impl Interpreter {
             }
         }
 
+        // TODO: Remove
+        let mut rust_scores = HashMap::new();
+        rust_scores.insert(ScoreHolder::new("%%CMD_LIMIT".into()).unwrap(), 10_000);
+        
+
+        let is_chain = datapack.functions[start_idx].cmds.last().unwrap().to_string() == "setblock -2 1 0 minecraft:redstone_block replace";
+
+        let run_state = if is_chain {
+            RunState::Chain { resume_cmd: None, cmd_1: None, cmd_2: None, idx: None, tick_queued: false, next_pos: (0, 0, 0) }
+        } else {
+            RunState::Grid { next_pos: Some((start_idx, 0)) }
+        };
+
         Interpreter {
             program: datapack.functions,
-            call_stack: vec![(start_idx, 0)],
+            call_stack: vec![(start_idx, 0, (0, 0, 0))],
             memory: [0x55_55_55_55; 128 * 16 * 16],
-            rust_scores: HashMap::new(),
+            rust_scores,
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
-            next_pos: None,
+            run_state,
             tick: 0,
             commands_run: 0,
             output: Vec::new(),
@@ -144,7 +216,7 @@ impl Interpreter {
         self.call_stack
             .iter()
             .copied()
-            .map(|(f, c)| (&self.program[f], c))
+            .map(|(f, c, _)| (&self.program[f], c))
             .collect()
     }
 
@@ -155,15 +227,29 @@ impl Interpreter {
         self.memory_points.insert(word_start / 4, kind);
     }
 
+    pub fn take_next_pos(&mut self) -> Option<(usize, usize)> {
+        match &mut self.run_state {
+            RunState::Grid { next_pos } => {
+                std::mem::take(next_pos)
+            }
+            _ => panic!(),
+        }
+    }
+
     pub fn set_next_pos(&mut self, func_idx: usize) -> Result<(), InterpError> {
-        if let Some((f, _)) = self.next_pos {
-            let att = self.program.get(func_idx).map(|f| f.id.clone());
-           Err(InterpError::MultiBranch(self.program[f].id.clone(), att))
-        } else if func_idx >= self.program.len() {
-            Err(InterpError::InvalidBranch(func_idx))
-        } else {
-            self.next_pos = Some((func_idx, 0));
-            Ok(())
+        match &mut self.run_state {
+            RunState::Grid { next_pos } => {
+                if let Some((f, _)) = next_pos {
+                    let att = self.program.get(func_idx).map(|f| f.id.clone());
+                    Err(InterpError::MultiBranch(self.program[*f].id.clone(), att))
+                } else if func_idx >= self.program.len() {
+                    Err(InterpError::InvalidBranch(func_idx))
+                } else {
+                    *next_pos = Some((func_idx, 0));
+                    Ok(())
+                }
+            }
+            _ => panic!(),
         }
     }
 
@@ -226,7 +312,7 @@ impl Interpreter {
 
     pub fn next_command(&self) -> Option<&Command> {
         if !self.halted() {
-            let (func_idx, cmd_idx) = self.call_stack.last().unwrap();
+            let (func_idx, cmd_idx, _) = self.call_stack.last().unwrap();
             Some(&self.program[*func_idx].cmds[*cmd_idx])
         } else {
             None
@@ -372,7 +458,90 @@ impl Interpreter {
         self.get_word(index as usize)
     }
 
-    fn execute_cmd(&mut self, cmd: &Command) -> Result<(), InterpError> {
+    fn execute_setblock(&mut self, pos: (i32, i32, i32), block: &str, _kind: crate::cir::SetBlockKind) {
+        match &mut self.run_state {
+            RunState::Grid { .. } => {
+                /*if block.starts_with("minecraft:command_block") {
+                    // Command block placement
+                    println!("Command block placement at {} {} {} block {}", x, y, z, block);
+                } else if x == 0 && x_rel && y == 1 && y_rel && z == 0 && z_rel {
+                    if block == "minecraft:redstone_block" {
+                        println!("Branching to self");
+
+                        if let [(func_idx, _)] = &self.call_stack[..] {
+                            let func_idx = *func_idx;
+                            self.set_next_pos(func_idx)?;
+                        } else {
+                            todo!()
+                        }
+                    } else if block == "minecraft:air" {
+                        // Do nothing
+                    } else {
+                        todo!("{:?}", cmd)
+                    }
+                } else {
+                    if x_rel {
+                        todo!()
+                    }
+
+                    if z_rel {
+                        todo!()
+                    }
+
+                    if y != 1 {
+                        todo!("{} {}", pos, block);
+                    } else if block == "minecraft:redstone_block" {
+                        let idx = pos_to_func_idx(x, z);
+
+                        println!("Branching to {}", self.program[idx as usize].id);
+
+                        self.set_next_pos(idx as usize)?;
+                    }
+                }*/
+            }
+            RunState::Chain { resume_cmd, cmd_1, cmd_2, tick_queued, .. } => {
+                let extract_cmd = |block: &str| {
+                    assert!(block.contains("command_block"), "{}", block);
+
+                    let idx = block.find("Command:\"")?;
+                    let cmd = &block[idx + "Command:\"".len()..block.len() - 2];
+                    if cmd.is_empty() {
+                        None
+                    } else {
+                        Some(cmd.parse().unwrap())
+                    }
+                };
+
+                if pos == (-2, 0, 0) && block == "minecraft:command_block[facing=south]{Command:\"function rust:__langcraft_on_tick\"}" {
+                    println!("Placed on-tick command block");
+                } else if pos == (-2, 1, 1) {
+                    *resume_cmd = extract_cmd(block);
+                } else if pos == (-2, 0, 2) {
+                    if block == "minecraft:air" {
+                        *cmd_2 = None;
+                    } else {
+                        *cmd_2 = extract_cmd(block);
+                    }
+                } else if pos == (-2, 1, 0) {
+                    if block == "minecraft:redstone_block" {
+                        assert_eq!(*tick_queued, false);
+                        *tick_queued = true;
+                    } else if block == "minecraft:air" {
+                        // Removing the block
+                    } else {
+                        todo!()
+                    }
+                } else if pos == (-2, 0, 1) && block == "minecraft:air" {
+                    *cmd_1 = None;
+                } else {
+                    todo!("{:?}: {}", pos, block)
+                }
+            }
+        }
+    }
+
+    fn execute_cmd(&mut self, pos: (i32, i32, i32), cmd: &Command) -> Result<(), InterpError> {
+        //eprintln!("{}", cmd);
         /*if !self
             .call_stack
             .iter()
@@ -466,22 +635,45 @@ impl Interpreter {
                     }
                 } else {
                     let called_idx = self.program.iter().enumerate().find(|(_, f)| &f.id == id).unwrap_or_else(|| todo!("{:?}", id)).0;
-                    self.call_stack.push((called_idx, 0));
+                    self.call_stack.push((called_idx, 0, pos));
                 }
             }
-            Command::Fill(Fill { start, end, block }) => {
-                if !(start == "-2 0 0" && end == "-15 0 64" && block == "minecraft:air") {
-                    todo!("{:?} {:?} {:?}", start, end, block)
+            Command::Fill(Fill { start: _, end: _, block }) => {
+                if block != "minecraft:air" {
+                    todo!()
                 }
             }
             Command::Data(Data { target, kind }) => {
                 match (target, kind) {
                     (DataTarget::Block(block), DataKind::Modify { path, kind: DataModifyKind::Set, source }) => {
-                        if path == "RecordItem.tag.Memory" {
-                            let DataModifySource::Value(score) = source;
+                        let target_pos = add_rel_pos(pos, parse_rel_coords(block).unwrap());
 
-                            if let [x, y, z] = block.split_whitespace().map(|c| c.parse::<i32>().unwrap()).collect::<Vec<_>>()[..] {
-                                self.set_word(*score, get_index(x, y, z)? as usize)?;
+                        if path == "RecordItem.tag.Memory" {
+                            if let DataModifySource::Value(score) = source {
+                                self.set_word(*score, get_index(target_pos.0, target_pos.1, target_pos.2)? as usize)?;
+                            } else {
+                                todo!()
+                            }
+                        } else if path == "Command" {
+                            if let DataModifySource::ValueString(s) = source {
+                                let new_cmd = if s.is_empty() {
+                                    None
+                                } else {
+                                    Some(s.parse().unwrap())
+                                };
+
+                                if let RunState::Chain { resume_cmd, cmd_1, cmd_2, .. } = &mut self.run_state {
+                                    match target_pos {
+                                        (-2, 1, 1) => *resume_cmd = new_cmd,
+                                        (-2, 0, 1) => *cmd_1 = new_cmd,
+                                        (-2, 0, 2) => *cmd_2 = new_cmd,
+                                        _ => todo!(),
+                                    }
+                                } else {
+                                    todo!()
+                                }
+                            } else {
+                                panic!("command must be string")
                             }
                         } else {
                             todo!("{}", path)
@@ -508,63 +700,12 @@ impl Interpreter {
                 println!("\n{}\n", msg);
                 self.output.push(msg);
             }
-            Command::SetBlock(SetBlock { pos, block, kind: _kind }) => {
-                let mut coords = pos
-                    .split_whitespace()
-                    .map(|s| {
-                        let (st, relative) = if s.starts_with('~') {
-                            if s == "~" {
-                                return (0, true)
-                            } else {
-                                (&s[1..], true)
-                            }
-                        } else {
-                            (s, false)
-                        };
-                        (st.parse::<i32>().unwrap_or_else(|_| panic!("invalid {}", s)), relative)
-                    });
+            Command::SetBlock(SetBlock { pos: block_pos, block, kind }) => {
+                let rel_pos = parse_rel_coords(block_pos).unwrap();
 
-                let (x, x_rel) = coords.next().unwrap();
-                let (y, y_rel) = coords.next().unwrap();
-                let (z, z_rel) = coords.next().unwrap();
+                let block_pos = add_rel_pos(pos, rel_pos);
 
-                if block.starts_with("minecraft:command_block") {
-                    // Command block placement
-                    println!("Command block placement at {} block {}", pos, block);
-                } else if x == 0 && x_rel && y == 1 && y_rel && z == 0 && z_rel {
-                    if block == "minecraft:redstone_block" {
-                        println!("Branching to self");
-
-                        if let [(func_idx, _)] = &self.call_stack[..] {
-                            let func_idx = *func_idx;
-                            self.set_next_pos(func_idx)?;
-                        } else {
-                            todo!()
-                        }
-                    } else if block == "minecraft:air" {
-                        // Do nothing
-                    } else {
-                        todo!("{:?}", cmd)
-                    }
-                } else {
-                    if x_rel {
-                        todo!()
-                    }
-
-                    if z_rel {
-                        todo!()
-                    }
-
-                    if y != 1 {
-                        todo!("{} {}", pos, block);
-                    } else if block == "minecraft:redstone_block" {
-                        let idx = pos_to_func_idx(x, z);
-
-                        println!("Branching to {}", self.program[idx as usize].id);
-
-                        self.set_next_pos(idx as usize)?;
-                    }
-                }
+                self.execute_setblock(block_pos, block, *kind);
             }
             cmd if cmd.to_string().starts_with("execute as @e[tag=turtle] store result entity @s Pos[0] double 1 run") => {
                 self.turtle_pos_set(0, cmd)
@@ -586,7 +727,7 @@ impl Interpreter {
                     let len = block.len();
                     let letter = block.chars().nth(len - 6).unwrap();
                     if self.letters.get(&self.turtle_pos) == Some(&letter) {
-                        self.execute_cmd(run)?;
+                        self.execute_cmd(self.turtle_pos, run)?;
                     }
                 } else {
                     unreachable!()
@@ -748,15 +889,7 @@ impl Interpreter {
                 }
             }
             Command::Execute(Execute { run: Some(run), subcommands }) => {
-                if subcommands.iter().all(|s| matches!(s, ExecuteSubCmd::Condition { .. })) {
-                    if subcommands.iter().all(|s| if let ExecuteSubCmd::Condition { is_unless, cond } = s {
-                        self.check_cond(*is_unless, cond)
-                    } else {
-                        unreachable!()
-                    }) {
-                        self.execute_cmd(run)?;
-                    }
-                } else if cmd.to_string().starts_with("execute at @e[tag=turtle] run setblock ~ ~ ~") {
+                if cmd.to_string().starts_with("execute at @e[tag=turtle] run setblock ~ ~ ~") {
                     if let Command::SetBlock(SetBlock { pos: _, block, kind: _ }) = &**run {
                         eprintln!(
                             "Placed block at {} {} {}: {:?}",
@@ -769,7 +902,42 @@ impl Interpreter {
                         unreachable!()
                     }
                 } else {
-                    todo!("{}", cmd)
+                    let mut passes = true;
+                    let mut dest_pos = pos;
+
+                    for subcmd in subcommands {
+                        match subcmd {
+                            ExecuteSubCmd::Condition { is_unless, cond } => {
+                                if !self.check_cond(*is_unless, cond) {
+                                    passes = false;
+                                }
+                            }
+                            ExecuteSubCmd::At { target: Target::Selector(selector) } => {
+                                match selector.to_string().as_str() {
+                                    "@e[tag=next]" => {
+                                        if let RunState::Chain { next_pos, .. } = &self.run_state {
+                                            dest_pos = *next_pos;
+                                        } else {
+                                            todo!()
+                                        }
+                                    }
+                                    s => todo!("{}", s)
+                                }
+                            }
+                            ExecuteSubCmd::Positioned { pos } => {
+                                if pos == "-2 1 1" {
+                                    dest_pos = (-2, 1, 1);
+                                } else {
+                                    todo!()
+                                }
+                            }
+                            _ => todo!("{:?}", subcmd)
+                        }
+                    }
+
+                    if passes {
+                        self.execute_cmd(dest_pos, &**run)?;
+                    }
                 }
             }
             Command::Execute(Execute { run: None, subcommands }) => {
@@ -798,6 +966,20 @@ impl Interpreter {
                     todo!()
                 }
             }
+            Command::CloneCmd(c) if c.to_string() == "clone ~ ~1 ~1 ~ ~1 ~1 ~ ~ ~1" && pos == (-2, 0, 0) => {
+                if let RunState::Chain { resume_cmd, cmd_1, .. } = &mut self.run_state {
+                    *cmd_1 = resume_cmd.clone();
+                } else {
+                    todo!()
+                }
+            }
+            Command::Teleport(Teleport { target, pos: block_pos }) if target.to_string() == "@e[tag=next]" => {
+                if let RunState::Chain { next_pos, .. } = &mut self.run_state {
+                    *next_pos = add_rel_pos(pos, parse_rel_coords(block_pos).unwrap());
+                } else {
+                    todo!()
+                }
+            }
             Command::Comment(c) if c == "!INTERPRETER: TODO" => {
                 return Err(InterpError::EnteredTodo);
             }
@@ -818,8 +1000,8 @@ impl Interpreter {
 
                 if !self.check_cond(is_unless, &cond) {
                     eprintln!("Currently at:");
-                    for (f, c) in self.call_stack.iter() {
-                        eprintln!("{}, {}", self.program[*f].id, c);
+                    for (f, c, p) in self.call_stack.iter() {
+                        eprintln!("{}, {} at {:?}", self.program[*f].id, c, p);
                     }
                     return Err(InterpError::AssertionFailed);
                 }
@@ -832,20 +1014,34 @@ impl Interpreter {
     }
 
     pub fn step(&mut self) -> Result<(), InterpError> {
+        // In chain mode, a step goes like this:
+        // 1. Process the current command block if the call stack is empty (i.e. we've just started)
+        // 2. Run a command
+        // 3. Update the call stack
+        // 4. Determine which command block to use next, if necessary
+
         if self.commands_run >= 60_000 {
             return Err(InterpError::MaxCommandsRun);
         }
 
-        let (top_func_idx, _) = self.call_stack.first().unwrap();
-        let top_func = self.program[*top_func_idx].id.to_string();
+        let top_func_idx = self.call_stack.first().unwrap().0;
+        let top_func = self.program[top_func_idx].id.to_string();
 
-        let (func_idx, cmd_idx) = self.call_stack.last_mut().unwrap();
+        let (func_idx, cmd_idx, pos) = self.call_stack.last_mut().unwrap();
+        let pos = *pos;
 
         //println!("Function {} at command {}", self.program[*func_idx].id, cmd_idx);
 
+        /*let pos = match &self.run_state {
+            RunState::Grid { .. } => {
+            }
+            RunState::Chain { idx, .. } => {
+            }
+        };*/
+
         let cmd = &self.program[*func_idx].cmds[*cmd_idx].clone();
         *cmd_idx += 1;
-        self.execute_cmd(cmd)?;
+        self.execute_cmd(pos, cmd)?;
 
         self.commands_run += 1;
 
@@ -857,14 +1053,75 @@ impl Interpreter {
                     self.commands_run, top_func,
                 );
                 self.commands_run = 0;
-                if let Some(n) = self.next_pos.take() {
-                    eprintln!("\nNow about to execute {}", &self.program[n.0].id);
-                    self.call_stack.push(n);
+
+                match &mut self.run_state {
+                    RunState::Grid { next_pos } => {
+                        if let Some(next_pos) = std::mem::take(next_pos) {
+                            let (x, z) = func_idx_to_pos(top_func_idx);
+
+                            eprintln!("\nNow about to execute {}", &self.program[next_pos.0].id);
+                            self.call_stack.push((next_pos.0, next_pos.1, (x, 0, z)));
+                        }
+                    }
+                    RunState::Chain { cmd_1, cmd_2, idx, tick_queued, .. } => {
+                        // If the current command block is finished, we can get the next one ready
+                        if let Some(prev_idx) = idx {
+                            *prev_idx = match prev_idx {
+                                0 => 1,
+                                1 => 2,
+                                2 => 1,
+                                _ => unreachable!(),
+                            };
+                        }
+
+                        // This basically only ever happens at the very beginning of the program
+                        if idx.is_none() && *tick_queued {
+                            *tick_queued = false;
+                            *idx = Some(0);
+                        }
+
+                        let on_tick_func = Some(FuncCall { id: FunctionId::new("__langcraft_on_tick") }.into());
+
+                        let mut next_cmd = match idx {
+                            Some(0) => &on_tick_func,
+                            Some(1) => cmd_1,
+                            Some(2) => cmd_2,
+                            None => &None,
+                            _ => unreachable!(),
+                        };
+
+                        if next_cmd.is_none() && *tick_queued {
+                            *idx = Some(0);
+                            *tick_queued = false;
+                            next_cmd = &on_tick_func;
+                        }
+
+                        if let Some(next_cmd) = next_cmd {
+                            if let Command::FuncCall(FuncCall { id }) = next_cmd {
+                                let mut id_no_rust = id.clone();
+                                if id_no_rust.name.starts_with("rust:") {
+                                    id_no_rust.name = id_no_rust.name[5..].to_owned();
+                                }
+
+                                let pos = match idx {
+                                    Some(0) => (-2, 0, 0),
+                                    Some(1) => (-2, 0, 1),
+                                    Some(2) => (-2, 0, 2),
+                                    None => (0, 0, 0),
+                                    _ => unreachable!(),
+                                };
+
+                                let called_idx = self.program.iter().enumerate().find(|(_, f)| &f.id == id || f.id == id_no_rust).unwrap_or_else(|| todo!("{:?}", id)).0;
+                                self.call_stack.push((called_idx, 0, pos));
+                            }
+                        }
+                    }
                 }
+
                 break;
             }
 
-            let (func_idx, cmd_idx) = self.call_stack.last().unwrap();
+            let (func_idx, cmd_idx, _) = self.call_stack.last().unwrap();
 
             if self.program[*func_idx].cmds.len() == *cmd_idx {
                 self.call_stack.pop();
@@ -877,6 +1134,12 @@ impl Interpreter {
     }
 
     pub fn halted(&self) -> bool {
-        self.call_stack.last() == Some(&(0xFFFF_FFFF_FFFF_FFFF, 0)) || self.call_stack.is_empty()
+        let tick_queued = if let RunState::Chain { tick_queued, .. } = &self.run_state {
+            *tick_queued
+        } else {
+            false
+        };
+
+        matches!(self.call_stack.last(), Some(&(0xFFFF_FFFF_FFFF_FFFF, 0, _))) || (self.call_stack.is_empty() && !tick_queued)
     }
 }

@@ -8,7 +8,7 @@ use petgraph::prelude::{DiGraph, Graph, NodeIndex};
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum BlockEnd {
     StaticCall(String),
-    DynCall,
+    DynCall(ScoreHolder),
     Normal(Terminator),
 }
 
@@ -30,7 +30,7 @@ impl AbstractBlock {
                 Some(func_starts.get(&c["!FIXUPCALL ".len()..]).unwrap_or_else(|| panic!("failed to get {}", c)).clone())
             },
             BlockEnd::Normal(Terminator::Br(Br { dest, debugloc: _ })) => Some(FunctionId::new_block(&self.parent.name, dest.clone())),
-            BlockEnd::DynCall => None,
+            BlockEnd::DynCall(_) => None,
             _ => None,
         }
     }
@@ -109,7 +109,7 @@ impl AbstractBlock {
 
 fn estimate_count(
     visited: &mut HashSet<FunctionId>,
-    list: &HashMap<FunctionId, AbstractBlock>,
+    list: &HashMap<FunctionId, &Function>,
     func_starts: &HashMap<String, FunctionId>,
     cmd: &Command
 ) -> Option<usize> {
@@ -122,7 +122,8 @@ fn estimate_count(
                 // FIXME:
                 None
             } else {
-                todo!("{}", id)
+                let func = *list.get(id).unwrap();
+                Some(1 + estimate_total_count(list, func_starts, func)?)
             }
         }
         _ => Some(1),
@@ -130,9 +131,9 @@ fn estimate_count(
 }
 
 pub(crate) fn estimate_total_count(
-    list: &HashMap<FunctionId, AbstractBlock>,
+    list: &HashMap<FunctionId, &Function>,
     func_starts: &HashMap<String, FunctionId>,
-    block: &AbstractBlock
+    block: &Function,
 ) -> Option<usize> {
     let mut visited = HashSet::new();
     estimate_total_count_inner(&mut visited, list, func_starts, block)
@@ -140,12 +141,12 @@ pub(crate) fn estimate_total_count(
 
 fn estimate_total_count_inner(
     visited: &mut HashSet<FunctionId>,
-    list: &HashMap<FunctionId, AbstractBlock>,
+    list: &HashMap<FunctionId, &Function>,
     func_starts: &HashMap<String, FunctionId>,
-    block: &AbstractBlock
+    block: &Function,
 ) -> Option<usize> {
     let mut total = 0;
-    for cmd in block.body.cmds.iter() {
+    for cmd in block.cmds.iter() {
         total += estimate_count(visited, list, func_starts, cmd)?;
     }
     Some(total)
@@ -225,7 +226,7 @@ mod test {
     }
 }*/
 
-struct CountList(HashMap<FunctionId, Option<usize>>);
+/*struct CountList(HashMap<FunctionId, Option<usize>>);
 
 impl CountList {
     fn get(&self, id: &FunctionId) -> Option<usize> {
@@ -241,7 +242,7 @@ impl CountList {
 
         s
     }
-}
+}*/
 
 pub(crate) type BlockTree<'a> = (DiGraph<ChainNode<'a>, BlockEdge>, NodeIndex<u32>);
 
@@ -251,6 +252,55 @@ pub(crate) enum BlockEdge {
     Cond {
         value: ScoreHolder,
         inverted: bool,
+    },
+    SwitchCond {
+        value: ScoreHolder,
+        expected: i32,
+    },
+    SwitchDefault {
+        value: ScoreHolder,
+        not_expected: Vec<i32>,
+    }
+}
+
+impl BlockEdge {
+    pub fn into_conds(self) -> Vec<(crate::cir::ExecuteCondition, bool)> {
+        use crate::cir::{ExecuteCondition, ExecuteCondKind};
+
+        match self {
+            BlockEdge::None => Vec::new(),
+            BlockEdge::Cond { value, inverted } => {
+                let range = if inverted {
+                    0..=0
+                } else {
+                    1..=1
+                };
+
+                vec![(ExecuteCondition::Score {
+                    target: value.into(),
+                    target_obj: crate::compile_ir::OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches(range.into()),
+                }, false)]
+            }
+            BlockEdge::SwitchCond { value, expected } => {
+                vec![(ExecuteCondition::Score {
+                    target: value.into(),
+                    target_obj: crate::compile_ir::OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((expected..=expected).into())
+                }, false)]
+            }
+            BlockEdge::SwitchDefault { value, not_expected } => {
+                not_expected.into_iter()
+                    .map(|ne| {
+                        (ExecuteCondition::Score {
+                            target: value.clone().into(),
+                            target_obj: crate::compile_ir::OBJECTIVE.into(),
+                            kind: ExecuteCondKind::Matches((ne..=ne).into())
+                        }, true)
+                    })
+                    .collect()
+            }
+        }
     }
 }
 
@@ -265,6 +315,7 @@ static MAX_INLINE_COMMANDS: usize = 10;
 
 static MAX_TREE_DEPTH: usize = 1;
 
+/*
 // this returns a tree, but petgraph is really nice
 fn build_call_chain<'a>(funcs: &HashMap<&FunctionId, &'a AbstractBlock>, block: &'a AbstractBlock, func_starts: &HashMap<String, FunctionId>, counts: &CountList) -> BlockTree<'a> {
     let mut result = Graph::new();
@@ -364,8 +415,9 @@ fn build_call_chain<'a>(funcs: &HashMap<&FunctionId, &'a AbstractBlock>, block: 
 
     (result, head)
 }
+*/
 
-pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &HashMap<String, FunctionId>) -> Vec<BlockTree<'a>> {
+/*pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &HashMap<String, FunctionId>) -> Vec<BlockTree<'a>> {
     /*
         If leaf ends in a direct branch to tail:
             if total cmds okay and leaf != tail:
@@ -392,5 +444,5 @@ pub(crate) fn build_call_chains<'a>(funcs: &'a [AbstractBlock], func_starts: &Ha
     }*/
 
     graphs
-}
+}*/
 

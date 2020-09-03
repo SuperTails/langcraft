@@ -192,7 +192,7 @@ mod test {
 
         let mut interp = Interpreter::new_raw(INTRINSICS.clone(), "");
 
-        interp.call_stack = vec![(idx, 0)];
+        interp.call_stack = vec![(idx, 0, (0, 0, 0))];
 
         for i in 0..31 {
             interp.rust_scores.insert(
