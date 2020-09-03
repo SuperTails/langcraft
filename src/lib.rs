@@ -75,8 +75,6 @@ impl Datapack {
             FLUSH_STR,
         )?;
 
-        let on_tick_id = FunctionId::new("__langcraft_on_tick");
-
         // Iterator over (ID, contents)
         let funcs= self.functions.iter()
             .map(|func| {

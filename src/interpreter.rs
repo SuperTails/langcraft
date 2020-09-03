@@ -97,6 +97,7 @@ pub enum BreakKind {
     Access,
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum RunState {
     Grid {
         next_pos: Option<(usize, usize)>,

@@ -2830,18 +2830,32 @@ pub(crate) fn compile_terminator(
 
             match &*operand.get_type(tys) {
                 Type::IntegerType { bits: 32 } => {}
+                Type::IntegerType { bits: 16 } => {
+                    cmds.push(mark_assertion(true, &ExecuteCondition::Score {
+                        target: op[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((0..=65535).into()),
+                    }))
+                }
+                Type::IntegerType { bits: 8 } => {
+                    cmds.push(mark_assertion(true, &ExecuteCondition::Score {
+                        target: op[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((0..=255).into()),
+                    }))
+                }
                 o => todo!("{:?}", o)
             }
 
             let operand = op.into_iter().next().unwrap();
 
-            let default_tracker = get_unique_holder();
-
             let mut edges = dests.iter().map(|(dest_value, dest_name)| {
                 let dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
 
                 let edge = match &*dest_value.get_type(tys) {
-                    Type::IntegerType { bits: 32 } => {
+                    Type::IntegerType { bits: 32 } |
+                    Type::IntegerType { bits: 16 } |
+                    Type::IntegerType { bits: 8 } => {
                         if let MaybeConst::Const(expected) = eval_constant(dest_value, globals, tys) {
                             BlockEdge::SwitchCond { 
                                 value: operand.clone(),
@@ -2861,7 +2875,9 @@ pub(crate) fn compile_terminator(
 
             let not_expected = dests.iter().map(|(dest_value, _)| {
                 match &*dest_value.get_type(tys) {
-                    Type::IntegerType { bits: 32 } => {
+                    Type::IntegerType { bits: 32 } |
+                    Type::IntegerType { bits: 16 } | 
+                    Type::IntegerType { bits: 8 } => {
                         if let MaybeConst::Const(ne) = eval_constant(dest_value, globals, tys) {
                             ne
                         } else {
@@ -3008,7 +3024,20 @@ fn compile_block_end(block_end: &BlockEnd, body_cmds: usize, parent: &Function, 
 
     if let Either::Left(l) = &dests {
         if l.is_empty() {
-            todo!()
+            // We have somehow reached an unreachable block
+
+            cmds.push(SetBlock {
+                pos: "~ ~ ~".into(),
+                block: "minecraft:air".into(),
+                kind: cir::SetBlockKind::Replace,
+            }.into());
+            cmds.push(SetBlock {
+                pos: "-2 0 0".into(),
+                block: "minecraft:air".into(),
+                kind: cir::SetBlockKind::Replace,
+            }.into());
+
+            return cmds;
         }
     }
 

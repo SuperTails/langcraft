@@ -2,7 +2,7 @@ use crate::cir::{Command, Execute, FuncCall, Function, FunctionId, ScoreHolder};
 use std::collections::{HashSet, HashMap};
 use llvm_ir::Terminator;
 use llvm_ir::terminator::{Br, CondBr};
-use petgraph::prelude::{DiGraph, Graph, NodeIndex};
+use petgraph::prelude::{DiGraph, NodeIndex};
 
 #[derive(Debug, PartialEq, Clone)]
 #[allow(clippy::large_enum_variant)]
@@ -310,10 +310,6 @@ pub(crate) struct ChainNode<'a> {
     pub cmd_count: Option<usize>,
     pub depth: usize,
 }
-
-static MAX_INLINE_COMMANDS: usize = 10;
-
-static MAX_TREE_DEPTH: usize = 1;
 
 /*
 // this returns a tree, but petgraph is really nice
