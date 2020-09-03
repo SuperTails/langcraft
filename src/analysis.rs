@@ -248,11 +248,21 @@ pub(crate) enum BlockEdge {
     Cond {
         value: ScoreHolder,
         inverted: bool,
+    },
+    SwitchCond {
+        value: ScoreHolder,
+        expected: i32,
+    },
+    SwitchDefault {
+        value: ScoreHolder,
+        not_expected: Vec<i32>,
     }
 }
 
 impl BlockEdge {
-    pub fn into_conds(self) -> Vec<crate::cir::ExecuteCondition> {
+    pub fn into_conds(self) -> Vec<(crate::cir::ExecuteCondition, bool)> {
+        use crate::cir::{ExecuteCondition, ExecuteCondKind};
+
         match self {
             BlockEdge::None => Vec::new(),
             BlockEdge::Cond { value, inverted } => {
@@ -262,11 +272,29 @@ impl BlockEdge {
                     1..=1
                 };
 
-                vec![crate::cir::ExecuteCondition::Score {
+                vec![(ExecuteCondition::Score {
                     target: value.into(),
                     target_obj: crate::compile_ir::OBJECTIVE.into(),
-                    kind: crate::cir::ExecuteCondKind::Matches(range.into()),
-                }]
+                    kind: ExecuteCondKind::Matches(range.into()),
+                }, false)]
+            }
+            BlockEdge::SwitchCond { value, expected } => {
+                vec![(ExecuteCondition::Score {
+                    target: value.into(),
+                    target_obj: crate::compile_ir::OBJECTIVE.into(),
+                    kind: ExecuteCondKind::Matches((expected..=expected).into())
+                }, false)]
+            }
+            BlockEdge::SwitchDefault { value, not_expected } => {
+                not_expected.into_iter()
+                    .map(|ne| {
+                        (ExecuteCondition::Score {
+                            target: value.clone().into(),
+                            target_obj: crate::compile_ir::OBJECTIVE.into(),
+                            kind: ExecuteCondKind::Matches((ne..=ne).into())
+                        }, true)
+                    })
+                    .collect()
             }
         }
     }

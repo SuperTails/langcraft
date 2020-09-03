@@ -531,7 +531,8 @@ pub fn create_return_func() -> McFunction {
 pub fn create_call_func(others: &[McFunction]) -> McFunction {
     let mut cmds = Vec::new();
 
-    let mut t = cir::TextBuilder::new();
+    // TODO: Make this a build option
+    /*let mut t = cir::TextBuilder::new();
     t.append_text("func ptr: ".to_string());
     t.append_score(temp_fn_ptr(), OBJECTIVE.into(), None);
 
@@ -545,7 +546,7 @@ pub fn create_call_func(others: &[McFunction]) -> McFunction {
             message: t.build(),
         }
         .into()
-    );
+    );*/
 
     let mut cmd = Execute::new();       
     cmd.with_if(ExecuteCondition::Score {
@@ -2766,61 +2767,61 @@ pub(crate) fn compile_terminator(
             default_dest,
             ..
         }) => {
-            let (tmp, operand) = eval_operand(operand, globals);
+            let (tmp, op) = eval_operand(operand, globals);
             cmds.extend(tmp);
 
-            if operand.len() != 1 {
-                todo!("multibyte operand in switch {:?}", operand);
+            match operand.get_type() {
+                Type::IntegerType { bits: 32 } => {}
+                o => todo!("{:?}", o)
             }
 
-            let operand = operand[0].clone();
+            let operand = op.into_iter().next().unwrap();
 
             let default_tracker = get_unique_holder();
 
-            cmds.push(assign_lit(default_tracker.clone(), 0));
+            let mut edges = dests.iter().map(|(dest_value, dest_name)| {
+                let dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
 
-            for (dest_value, dest_name) in dests.iter() {
-                let dest_value = if let Constant::Int { value, .. } = dest_value {
-                    *value as i32
-                } else {
-                    todo!("{:?}", dest_value)
+                let edge = match dest_value.get_type() {
+                    Type::IntegerType { bits: 32 } => {
+                        if let MaybeConst::Const(expected) = eval_constant(dest_value, globals) {
+                            BlockEdge::SwitchCond { 
+                                value: operand.clone(),
+                                expected,
+                            }
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    _ => todo!()
                 };
 
-                let mut dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
+                (edge, dest_id)
+            }).collect::<Vec<_>>();
 
-                dest_id.name.push_str("%%fixup_branch");
+            let default_dest_id = McFuncId::new_block(&parent.name, default_dest.clone());
 
-                let mut branch_cmd = Execute::new();
-                branch_cmd.with_if(ExecuteCondition::Score {
-                    target: Target::Uuid(operand.clone()),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ExecuteCondKind::Matches(cir::McRange::Between(dest_value..=dest_value)),
-                });
+            let not_expected = dests.iter().map(|(dest_value, _)| {
+                match dest_value.get_type() {
+                    Type::IntegerType { bits: 32 } => {
+                        if let MaybeConst::Const(ne) = eval_constant(dest_value, globals) {
+                            ne
+                        } else {
+                            unreachable!()
+                        }
+                    }
+                    _ => todo!()
+                }
+            }).collect();
 
-                let mut add_cmd = branch_cmd.clone();
+            let default_edge = BlockEdge::SwitchDefault {
+                value: operand,
+                not_expected,
+            };
 
-                add_cmd.with_run(assign_lit(default_tracker.clone(), 1));
-                branch_cmd.with_run(McFuncCall { id: dest_id });
+            edges.push((default_edge, default_dest_id));
 
-                cmds.push(add_cmd.into());
-                cmds.push(branch_cmd.into());
-            }
-
-            let mut default_dest = McFuncId::new_block(&parent.name, default_dest.clone());
-
-            default_dest.name.push_str("%%fixup_branch");
-
-            let mut default_cmd = Execute::new();
-            default_cmd.with_if(ExecuteCondition::Score {
-                target: default_tracker.into(),
-                target_obj: OBJECTIVE.to_string(),
-                kind: ExecuteCondKind::Matches(cir::McRange::Between(0..=0)),
-            });
-            default_cmd.with_run(McFuncCall { id: default_dest });
-
-            cmds.push(default_cmd.into());
-
-            todo!()
+            (cmds, Either::Left(edges))
         }
         Terminator::Unreachable(Unreachable { .. }) => {
             cmds.push(mark_unreachable());
@@ -2984,8 +2985,8 @@ fn compile_block_end(block_end: &BlockEnd, body_cmds: usize, parent: &Function, 
                     var: cir::SelectorVariable::AllEntities,
                     args: vec![cir::SelectorArg("tag=next".into())],
                 }.into());
-                for cond in edge.into_conds() {
-                    modify_next.with_if(cond);
+                for (cond, is_unless) in edge.into_conds() {
+                    modify_next.with_subcmd(ExecuteSubCmd::Condition { is_unless, cond });
                 }
                 modify_next.with_run(Data {
                     target: DataTarget::Block("~ ~ ~".to_string()),
@@ -3044,8 +3045,8 @@ fn compile_block_end(block_end: &BlockEnd, body_cmds: usize, parent: &Function, 
         Either::Left(dests) => {
             for (edge, dest) in dests.iter().cloned() {
                 let mut modify_resume = over_thresh_base.clone();
-                for cond in edge.into_conds() {
-                    modify_resume.with_if(cond);
+                for (cond, is_unless) in edge.into_conds() {
+                    modify_resume.with_subcmd(ExecuteSubCmd::Condition { is_unless, cond });
                 }
                 modify_resume.with_run(Data {
                     target: DataTarget::Block(RESUME_BLOCK_POS.into()),

@@ -148,7 +148,7 @@ impl Interpreter {
             rust_scores: HashMap::new(),
             ptr_pos: (0, 0, 0),
             turtle_pos: (0, 0, 0),
-            run_state: todo!(),
+            run_state: RunState::Chain { resume_cmd: None, cmd_1: None, cmd_2: None, idx: None, tick_queued: false, next_pos: (0, 0, 0) },
             commands_run: 0,
             tick: 0,
             output: Vec::new(),
@@ -889,15 +889,7 @@ impl Interpreter {
                 }
             }
             Command::Execute(Execute { run: Some(run), subcommands }) => {
-                if subcommands.iter().all(|s| matches!(s, ExecuteSubCmd::Condition { .. })) {
-                    if subcommands.iter().all(|s| if let ExecuteSubCmd::Condition { is_unless, cond } = s {
-                        self.check_cond(*is_unless, cond)
-                    } else {
-                        unreachable!()
-                    }) {
-                        self.execute_cmd(pos, run)?;
-                    }
-                } else if cmd.to_string().starts_with("execute at @e[tag=turtle] run setblock ~ ~ ~") {
+                if cmd.to_string().starts_with("execute at @e[tag=turtle] run setblock ~ ~ ~") {
                     if let Command::SetBlock(SetBlock { pos: _, block, kind: _ }) = &**run {
                         eprintln!(
                             "Placed block at {} {} {}: {:?}",
@@ -909,79 +901,43 @@ impl Interpreter {
                     } else {
                         unreachable!()
                     }
-                } else if let [cond, at] = &subcommands[..] {
-                    let cond_str = cond.to_string();
-                    let is_cond =
-                        cond_str == "if score %%cmdcount rust < %%CMD_LIMIT rust" ||
-                        cond_str == "if score %%cmdcount rust >= %%CMD_LIMIT rust";
+                } else {
+                    let mut passes = true;
+                    let mut dest_pos = pos;
 
-                    if is_cond {
-                        let over_cond = if let ExecuteSubCmd::Condition { is_unless: false, cond } = cond {
-                            cond
-                        } else {
-                            unreachable!()
-                        };
-
-                        let dest_pos = match at.to_string().as_str() {
-                            "at @e[tag=next]" => {
-                                if let RunState::Chain { next_pos, .. } = &self.run_state {
-                                    *next_pos
+                    for subcmd in subcommands {
+                        match subcmd {
+                            ExecuteSubCmd::Condition { is_unless, cond } => {
+                                if !self.check_cond(*is_unless, cond) {
+                                    passes = false;
+                                }
+                            }
+                            ExecuteSubCmd::At { target: Target::Selector(selector) } => {
+                                match selector.to_string().as_str() {
+                                    "@e[tag=next]" => {
+                                        if let RunState::Chain { next_pos, .. } = &self.run_state {
+                                            dest_pos = *next_pos;
+                                        } else {
+                                            todo!()
+                                        }
+                                    }
+                                    s => todo!("{}", s)
+                                }
+                            }
+                            ExecuteSubCmd::Positioned { pos } => {
+                                if pos == "-2 1 1" {
+                                    dest_pos = (-2, 1, 1);
                                 } else {
                                     todo!()
                                 }
                             }
-                            "positioned -2 1 1" => (-2, 1, 1),
-                            _ => todo!("{}", at)
-                        };
-
-                        let passes = self.check_cond(false, over_cond);
-
-                        if let Command::Data(Data { kind: DataKind::Modify { source: DataModifySource::ValueString(func), .. }, target: DataTarget::Block(pos) }) = &**run {
-                            if pos != "~ ~ ~" {
-                                todo!()
-                            }
-
-                            let new_cmd = if func.is_empty() {
-                                None
-                            } else {
-                                Some(func.parse().unwrap())
-                            };
-
-
-                            match &new_cmd {
-                                Some(n) => println!("new: {}", n),
-                                None => println!("new: None"),
-                            }
-
-
-                            if let RunState::Chain { cmd_1, cmd_2, next_pos, .. } = &mut self.run_state {
-                                if passes {
-                                    match dest_pos {
-                                        (-2, 0, 1) => *cmd_1 = new_cmd,
-                                        (-2, 0, 2) => *cmd_2 = new_cmd,
-                                        _ => todo!("{:?}", next_pos)
-                                    }
-                                }
-                            } else {
-                                todo!()
-                            }
-                        } else if let Command::FuncCall(func) = &**run {
-                            let called_idx = self.program.iter().enumerate().find(|(_, f)| f.id == func.id).unwrap_or_else(|| todo!("{:?}", func.id)).0;
-                            
-                            if passes {
-                                self.call_stack.push((called_idx, 0, dest_pos));
-                            }
-                        } else if let Command::SetBlock(SetBlock { pos, block, kind}) = &**run {
-                            let rel = parse_rel_coords(pos).unwrap();
-                            self.execute_setblock(add_rel_pos(dest_pos, rel), block, *kind);
-                        } else {
-                            todo!()
+                            _ => todo!("{:?}", subcmd)
                         }
-                    } else {
-                        todo!()
                     }
-                } else {
-                    todo!("{}", cmd)
+
+                    if passes {
+                        self.execute_cmd(dest_pos, &**run)?;
+                    }
                 }
             }
             Command::Execute(Execute { run: None, subcommands }) => {
