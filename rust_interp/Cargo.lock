@@ -9,15 +9,8 @@ checksum = "cff77d8686867eceff3105329d4698d96c2391c176d5d03adc90c7389162b5b8"
 [[package]]
 name = "langcraft_api"
 version = "0.1.2"
-dependencies = [
- "lazy_static",
-]
-
-[[package]]
-name = "lazy_static"
-version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
+checksum = "f528bddf8e46f0924f85c7b6d61014329cb15b9b9e57050ffac777de66973889"
 
 [[package]]
 name = "rust_interp"

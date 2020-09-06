@@ -38,6 +38,11 @@ And the file to use will be:
 
 Any other language capable of generating LLVM bitcode can be used, as long as it can be built for a bare-metal 32-bit target. For a clang example see `compile_c.sh`.
 
+Note that the latest nightly versions of rustc now use LLVM 11, which Langcraft cannot parse (yet). You can set an earlier version to use for a directory with:
+```
+rustup override set nightly-2020-08-23
+```
+
 ### Demo
 A video of a Langcraft-compiled interpreter can be seen [here](https://youtu.be/Cx0w5Wn9pPU).
 

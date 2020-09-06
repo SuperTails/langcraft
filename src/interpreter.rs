@@ -952,7 +952,25 @@ impl Interpreter {
                     todo!("{:?}", subcommands[0])
                 };
 
-                if subcommands[1..].iter().all(|sc| matches!(sc, ExecuteSubCmd::Condition { .. })) {
+                let mut tail = &subcommands[1..];
+
+                let mut dest_pos = pos;
+
+                if let ExecuteSubCmd::At { target } = &tail[0] {
+                    tail = &tail[1..];
+                    dest_pos = match target.to_string().as_str() {
+                        "@e[tag=turtle]" => self.turtle_pos,
+                        t => todo!("{}", t),
+                    };
+                }
+
+                if let [ExecuteSubCmd::Condition { is_unless, cond }] = tail {
+                    self.rust_scores.insert(store_target.clone(), self.check_cond(*is_unless, cond) as i32);
+                } else {
+                    todo!("{:?}", tail)
+                }
+
+                /*if subcommands[1..].iter().all(|sc| matches!(sc, ExecuteSubCmd::Condition { .. })) {
                     let mut result = true;
                     for subcmd in subcommands[1..].iter() {
                         if let ExecuteSubCmd::Condition { is_unless, cond } = subcmd {
@@ -964,8 +982,8 @@ impl Interpreter {
 
                     self.rust_scores.insert(store_target.clone(), result as i32);
                 } else {
-                    todo!()
-                }
+                    todo!("{}", cmd)
+                }*/
             }
             Command::CloneCmd(c) if c.to_string() == "clone ~ ~1 ~1 ~ ~1 ~1 ~ ~ ~1" && pos == (-2, 0, 0) => {
                 if let RunState::Chain { resume_cmd, cmd_1, .. } = &mut self.run_state {

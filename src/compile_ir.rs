@@ -40,6 +40,9 @@ use std::sync::Mutex;
 // ARE NOT GUARANTEED TO HAVE THEIR HIGH BITS ZEROED OR SIGN-EXTENDED
 // SO YOU CANNOT JUST ADD A "u8" INTO A "u32" AND EXPECT IT TO WORK
 
+// FIXME: This all should set `gamerule maxCommandChainLength` to an appropriate value
+
+
 fn as_struct_ty(n: &NamedStructDef) -> Option<(&[TypeRef], bool)> {
     named_as_type(n).and_then(|d| {
         if let Type::StructType { element_types, is_packed } = &**d {
@@ -2386,7 +2389,7 @@ fn compile_call(
                                 args: vec![cir::SelectorArg("tag=turtle".to_string())],
                             }));
                             cmd.with_run(SetBlock {
-                                block: mc_block.to_string(),
+                                block: possible.to_string(),
                                 pos: "~ ~ ~".to_string(),
                                 kind: SetBlockKind::Replace,
                             });
@@ -2828,26 +2831,33 @@ pub(crate) fn compile_terminator(
             let (tmp, op) = eval_operand(operand, globals, tys);
             cmds.extend(tmp);
 
-            match &*operand.get_type(tys) {
-                Type::IntegerType { bits: 32 } => {}
+            let operand = match &*operand.get_type(tys) {
+                Type::IntegerType { bits: 32 } => {
+                    op.into_iter().next().unwrap()
+                }
                 Type::IntegerType { bits: 16 } => {
-                    cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                        target: op[0].clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((0..=65535).into()),
-                    }))
+                    let op = op.into_iter().next().unwrap();
+
+                    let tmp = get_unique_holder();
+                    
+                    cmds.push(assign(tmp.clone(), op));
+                    cmds.push(make_op_lit(tmp.clone(), "%=", 65536));
+
+                    tmp
                 }
                 Type::IntegerType { bits: 8 } => {
-                    cmds.push(mark_assertion(true, &ExecuteCondition::Score {
-                        target: op[0].clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ExecuteCondKind::Matches((0..=255).into()),
-                    }))
+                    let op = op.into_iter().next().unwrap();
+
+                    let tmp = get_unique_holder();
+                    
+                    cmds.push(assign(tmp.clone(), op));
+                    cmds.push(make_op_lit(tmp.clone(), "%=", 256));
+
+                    tmp
                 }
                 o => todo!("{:?}", o)
-            }
+            };
 
-            let operand = op.into_iter().next().unwrap();
 
             let mut edges = dests.iter().map(|(dest_value, dest_name)| {
                 let dest_id = McFuncId::new_block(&parent.name, dest_name.clone());
