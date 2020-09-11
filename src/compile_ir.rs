@@ -1861,9 +1861,7 @@ fn compile_shl(
 
         let (mut cmds, op0) = eval_operand(operand0, globals, tys);
 
-        if let Operand::ConstantOperand(Constant::Int { bits: 64, value: _ }) = operand1 {
-            let shift = as_const_64(operand1).unwrap();
-
+        if let Some(shift) = as_const_64(operand1) {
             let mut intra_byte = |max_bound: i32, dest_lo: ScoreHolder, dest_hi: ScoreHolder| {
                 let mul = 1 << shift;
                 cmds.push(mark_assertion_matches(false, op0[1].clone(), 0..=max_bound));
@@ -1939,7 +1937,7 @@ fn compile_shl(
                 );
             }
         } else {
-            match eval_maybe_const(operand1,globals) {
+            match eval_maybe_const(operand1,globals,tys) {
                 MaybeConst::NonConst(tmp,op1) => {
                     let mut op0i = op0.into_iter();
                     let mut op1i = op1.into_iter();
@@ -3848,11 +3846,28 @@ pub fn type_layout(ty: &Type, tys: &Types) -> Layout {
     }
 }
 
+pub fn dumploc(debugloc: &Option<llvm_ir::DebugLoc>) {
+    if let Some(llvm_ir::DebugLoc {line,col,filename,directory}) = debugloc {
+        eprint!("at {}:{}",filename,line);
+        
+        if let Some(column) = col {
+            eprint!(":{}",column);
+        }
+        
+        if let Some(dir) = directory {
+            eprint!("{}/{}",dir,filename);
+        }
+        
+        eprintln!(":");
+    }
+}
+
 pub fn compile_alloca(
     Alloca {
         allocated_type,
         num_elements,
         dest,
+        debugloc,
         ..
     }: &Alloca,
     tys: &Types,
@@ -3870,27 +3885,34 @@ pub fn compile_alloca(
     let mut cmds = Vec::new();
 
     cmds.push(assign(dest, stackptr()));
-    if let Operand::ConstantOperand(Constant::Int { bits: 32, value: _ }) = num_elements {
-        let num_elements = as_const_32(num_elements).unwrap() as i32;
+    if let Some(num_elements) = as_const_32(num_elements) {
         cmds.push(
             ScoreAdd {
                 target: stackptr().into(),
                 target_obj: OBJECTIVE.to_string(),
-                score: type_size as i32 * num_elements,
+                score: type_size as i32 * num_elements as i32,
             }
             .into(),
         );
-    } else if let Operand::LocalOperand {name, ty: llvm_ir::Type::IntegerType {bits: 32}} = num_elements {
-        let score = ScoreHolder::from_local_name(name.clone(),4);
+    } else if let Operand::LocalOperand {name, ty: _} = num_elements {
+        if matches!(&*num_elements.get_type(tys),llvm_ir::Type::IntegerType {bits: 32}) {
+            let score = ScoreHolder::from_local_name(name.clone(),4);
 
-        for _i in 1..type_size {
-            cmds.push(ScoreOp {
-                target: stackptr().into(),
-                target_obj: OBJECTIVE.to_string(),
-                kind: ScoreOpKind::AddAssign,
-                source: score[0].clone().into(),
-                source_obj: OBJECTIVE.to_string()
-            }.into());
+            for _i in 1..type_size {
+                cmds.push(ScoreOp {
+                    target: stackptr().into(),
+                    target_obj: OBJECTIVE.to_string(),
+                    kind: ScoreOpKind::AddAssign,
+                    source: score[0].clone().into(),
+                    source_obj: OBJECTIVE.to_string()
+                }.into());
+            }
+        } else if let llvm_ir::Type::IntegerType {bits} = &*num_elements.get_type(tys) {
+            dumploc(debugloc);
+            todo!("Allocate with a {}-bit size",bits);
+        } else {
+            dumploc(debugloc);
+            todo!("Allocate {:?}",&*num_elements.get_type(tys));
         }
     } else {
         todo!("{:?}", num_elements);
