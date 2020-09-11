@@ -4,6 +4,7 @@ use std::collections::{HashSet, HashMap};
 
 static INTRINSIC_STRS: &[(&str, &str)] = &[
     ("intrinsic:lshr", include_str!("intrinsic/lshr.mcfunction")),
+    ("intrinsic:lshr64", include_str!("intrinsic/lshr64.mcfunction")),
     (
         "intrinsic:lshr/getshift",
         include_str!("intrinsic/lshr/getshift.mcfunction"),

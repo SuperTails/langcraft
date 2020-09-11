@@ -2085,7 +2085,7 @@ fn compile_lshr(
         operand0,
         operand1,
         dest,
-        debugloc: _,
+        debugloc,
     }: &LShr,
     globals: &GlobalVarList,
     tys: &Types,
@@ -2107,31 +2107,49 @@ fn compile_lshr(
         cmds
     } else {
         if let Type::IntegerType { bits } = &*op0_type {
-            if *bits > 32 {
-                todo!("{:?}, {:?}", operand0, operand1);
-            }
+            // this error was moved down
         } else {
             todo!("{:?}", operand0);
         }
 
-        let dest = ScoreHolder::from_local_name(dest.clone(), 4)
-            .into_iter()
-            .next()
-            .unwrap();
-
         let (tmp, op1) = eval_operand(operand1, globals, tys);
         let op1 = op1.into_iter().next().unwrap();
 
-        cmds.extend(tmp);
-        cmds.push(assign(param(0, 0), op0[0].clone()));
-        cmds.push(assign(param(1, 0), op1));
-        cmds.push(
-            McFuncCall {
-                id: McFuncId::new("intrinsic:lshr"),
-            }
-            .into(),
-        );
-        cmds.push(assign(dest, param(0, 0)));
+        if op0.len() == 1 {
+            let dest = ScoreHolder::from_local_name(dest.clone(), 4)
+                .into_iter()
+                .next()
+                .unwrap();
+
+            cmds.extend(tmp);
+            cmds.push(assign(param(0, 0), op0[0].clone()));
+            cmds.push(assign(param(1, 0), op1));
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:lshr"),
+                }
+                .into(),
+            );
+            cmds.push(assign(dest, param(0, 0)));
+        } else if op0.len() == 2 {
+            let mut dest = ScoreHolder::from_local_name(dest.clone(), 8).into_iter();
+
+            cmds.extend(tmp);
+            cmds.push(assign(param(0, 0), op0[0].clone()));
+            cmds.push(assign(param(0, 1), op0[1].clone()));
+            cmds.push(assign(param(1, 0), op1));
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:lshr64"),
+                }
+                .into(),
+            );
+            cmds.push(assign(dest.next().unwrap(), param(0, 0)));
+            cmds.push(assign(dest.next().unwrap(), param(0, 1)));
+        } else {
+            dumploc(debugloc);
+            todo!("Logical Shift Right with {} bits",op0.len());
+        }
 
         cmds
     }
