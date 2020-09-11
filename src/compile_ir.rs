@@ -3846,18 +3846,23 @@ pub fn type_layout(ty: &Type, tys: &Types) -> Layout {
     }
 }
 
+/*
+ * Tells the user where the program experienced the error (if included)
+ */
 pub fn dumploc(debugloc: &Option<llvm_ir::DebugLoc>) {
-    if let Some(llvm_ir::DebugLoc {line,col,filename,directory}) = debugloc {
-        eprint!("at {}:{}",filename,line);
+    if let Some(llvm_ir::DebugLoc {line,col,filename,directory}) = debugloc { // check if the debug location is actually attached
+        eprint!("at {}:{}",filename,line); // this is the base information to give to the user
         
+        // some compilers can give the column number so print that out if it's included
         if let Some(column) = col {
             eprint!(":{}",column);
         }
         
         if let Some(dir) = directory {
-            eprint!("{}/{}",dir,filename);
+            eprint!(" in {}/{}",dir,filename);
         }
         
+        // conclude with a colon and newline
         eprintln!(":");
     }
 }
