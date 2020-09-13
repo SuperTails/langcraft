@@ -78,6 +78,12 @@ pub fn func_ptr_cast() {
 }
 
 #[test]
+pub fn func_ptr_direct_cast() {
+    let interp = compile_and_run(Path::new("./tests/func_ptr_direct_cast.bc"));
+    assert_eq!(interp.output, vec!["1"]);
+}
+
+#[test]
 pub fn sext_8to64() {
     let interp = compile_and_run(Path::new("./tests/sext_8to64.bc"));
     assert_eq!(interp.output, vec!["127", "0", "-128", "-1"]);

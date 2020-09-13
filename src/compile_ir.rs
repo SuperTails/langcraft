@@ -2160,6 +2160,7 @@ fn compile_call(
         function,
         arguments,
         dest,
+        debugloc,
         ..
     }: &Call,
     globals: &GlobalVarList,
@@ -2177,6 +2178,32 @@ fn compile_call(
             } else {
                 None
             }
+        } else if let Constant::BitCast (llvm_ir::constant::BitCast { operand, to_type }) = &**c {
+            let mut val = None;
+
+            // there will always be an stderr output so do this now
+            dumploc(debugloc);
+
+            if let Constant::GlobalReference { name: Name::Name(name), ty } = &**operand {
+                if let Type::FuncType { result_type: _, is_var_arg: false, .. } = &**ty {
+                    if let Type::PointerType {pointee_type, addr_space: _} = &**to_type {
+                        if let Type::FuncType { result_type, is_var_arg: false, .. } = &**pointee_type {
+                            eprintln!("[WARN] The compilation unit casts a function type to a different function type. Are the declarations different for this function?");
+                            val = Some((name, result_type));
+                        } else {
+                            eprintln!("[FATAL] Cannot call a data pointer unless cast.");
+                        }
+                    } else {
+                        eprintln!("[FATAL] Cannot call a non-pointer unless cast.");
+                    }
+                } else {
+                    eprintln!("[FATAL] Cannot directly cast a data pointer to a function.");
+                }
+            } else {
+                eprintln!("[FATAL] Cannot handle this callee. Are you trying to double-cast?");
+            }
+
+            val
         } else {
             None
         }
