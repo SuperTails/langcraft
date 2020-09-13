@@ -4162,14 +4162,14 @@ fn compile_getelementptr(
     GetElementPtr {
         address,
         indices,
-        dest,
+        dest: dest_all,
         in_bounds: _,
-        debugloc: _,
+        debugloc,
     }: &GetElementPtr,
     globals: &GlobalVarList,
     tys: &Types,
 ) -> Vec<Command> {
-    let dest = ScoreHolder::from_local_name(dest.clone(), 4);
+    let dest = ScoreHolder::from_local_name(dest_all.clone(), 4);
     let dest = dest[0].clone();
 
     let mut offset: i32 = 0;
@@ -4189,12 +4189,30 @@ fn compile_getelementptr(
                 match eval_maybe_const(index, globals, tys) {
                     MaybeConst::Const(c) => offset += pointee_size as i32 * c,
                     MaybeConst::NonConst(a, b) => {
-                        assert_eq!(b.len(), 1);
-                        let b = b.into_iter().next().unwrap();
+                        if b.len() == 1 {
+                            let b = b.into_iter().next().unwrap();
 
-                        cmds.extend(a);
-                        for _ in 0..pointee_size {
-                            cmds.push(make_op(dest.clone(), "+=", b.clone()));
+                            cmds.extend(a);
+                            for _ in 0..pointee_size {
+                                cmds.push(make_op(dest.clone(), "+=", b.clone()));
+                            }
+                        } else if b.len() == 2 {
+                            let dest = ScoreHolder::from_local_name(dest_all.clone(), 8);
+                            let mut b = b.into_iter();
+
+                            let (dest_lo, dest_hi) = (dest[0].clone(),dest[1].clone());
+                            let b_lo = b.next().unwrap();
+                            let b_hi = b.next().unwrap();
+                            let add64 = add_64_bit(dest_lo,dest_hi,b_lo,b_hi,dest_all.clone());
+
+                            cmds.extend(a);
+                            for _ in 0..pointee_size {
+                                cmds.extend(add64.clone());
+                            }
+                        } else {
+                            dumploc(debugloc);
+                            eprintln!("[FATAL] GetElementPtr can only be word-sized (32-bit) or doubleword-sized (64-bit)");
+                            panic!()
                         }
                     }
                 }
