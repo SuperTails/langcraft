@@ -16,7 +16,7 @@ use llvm_ir::constant::ICmp as ICmpConst;
 use llvm_ir::constant::Select as SelectConst;
 use llvm_ir::constant::ConstantRef;
 use llvm_ir::instruction::{
-    Add, Alloca, And, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
+    Add, Alloca, And, AShr, BitCast, Call, ExtractElement, ExtractValue, GetElementPtr, ICmp,
     InsertElement, InsertValue, IntToPtr, LShr, Load, Mul, Or, Phi, PtrToInt, SDiv, SExt, SRem,
     Select, Shl, ShuffleVector, Store, Sub, Trunc, UDiv, URem, Xor, ZExt,
 };
@@ -2149,6 +2149,62 @@ fn compile_lshr(
         } else {
             dumploc(debugloc);
             todo!("Logical Shift Right with {} bits",op0.len());
+        }
+
+        cmds
+    }
+}
+
+fn compile_ashr(
+    AShr {
+        operand0,
+        operand1,
+        dest,
+        debugloc,
+    }: &AShr,
+    globals: &GlobalVarList,
+    tys: &Types,
+) -> Vec<Command> {
+    let (mut cmds, op0) = eval_operand(operand0, globals, tys);
+
+    let op0_type = operand0.get_type(tys);
+
+    if let Some(value) = as_const_64(operand1) {
+        dumploc(debugloc);
+        eprintln!("[FATAL] 64-bit arithmetic shift right is not supported.");
+        panic!()
+    } else {
+        if let Type::IntegerType { bits } = &*op0_type {
+            // this error was moved down
+        } else {
+            dumploc(debugloc);
+            eprintln!("[FATAL] Arithmetic shift right is only implemented for integers.");
+            panic!()
+        }
+
+        let (tmp, op1) = eval_operand(operand1, globals, tys);
+        let op1 = op1.into_iter().next().unwrap();
+
+        if op0.len() == 1 {
+            let dest = ScoreHolder::from_local_name(dest.clone(), 4)
+                .into_iter()
+                .next()
+                .unwrap();
+
+            cmds.extend(tmp);
+            cmds.push(assign(param(0, 0), op0[0].clone()));
+            cmds.push(assign(param(1, 0), op1));
+            cmds.push(
+                McFuncCall {
+                    id: McFuncId::new("intrinsic:ashr"),
+                }
+                .into(),
+            );
+            cmds.push(assign(dest, param(0, 0)));
+        } else {
+            dumploc(debugloc);
+            eprintln!("[FATAL] Arithmetic Shift Right with {} bits is unimplemented",op0.len());
+            panic!()
         }
 
         cmds
@@ -5685,6 +5741,7 @@ pub fn compile_instr(
         Instruction::Xor(xor) => compile_xor(xor, globals, tys),
         Instruction::Shl(shl) => compile_shl(shl, globals, tys),
         Instruction::LShr(lshr) => compile_lshr(lshr, globals, tys),
+        Instruction::AShr(ashr) => compile_ashr(ashr, globals, tys),
         Instruction::PtrToInt(PtrToInt {
             operand,
             to_type,

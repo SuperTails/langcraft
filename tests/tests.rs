@@ -88,3 +88,9 @@ pub fn sext_8to64() {
     let interp = compile_and_run(Path::new("./tests/sext_8to64.bc"));
     assert_eq!(interp.output, vec!["127", "0", "-128", "-1"]);
 }
+
+#[test]
+pub fn arith_shr() {
+    let interp = compile_and_run(Path::new("./tests/arith_shr.bc"));
+    assert_eq!(interp.output, vec!["-23131"]);
+}
