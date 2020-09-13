@@ -4005,13 +4005,7 @@ pub fn compile_alloca(
             let score = ScoreHolder::from_local_name(name.clone(),4);
 
             for _i in 1..type_size {
-                cmds.push(ScoreOp {
-                    target: stackptr().into(),
-                    target_obj: OBJECTIVE.to_string(),
-                    kind: ScoreOpKind::AddAssign,
-                    source: score[0].clone().into(),
-                    source_obj: OBJECTIVE.to_string()
-                }.into());
+                cmds.push(make_op(stackptr(),"+=",score[0].clone()));
             }
         } else if let llvm_ir::Type::IntegerType {bits} = &*num_elements.get_type(tys) {
             dumploc(debugloc);
