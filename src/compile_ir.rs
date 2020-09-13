@@ -5443,6 +5443,33 @@ pub fn compile_instr(
                     cmds.push(exec.into());
 
                     cmds
+                } else if matches!(&*operand.get_type(tys), Type::IntegerType { bits: 8 }) {
+                    let op = op.into_iter().next().unwrap();
+                    cmds.push(assign(dest[0].clone(), op));
+                    cmds.push(make_op_lit(dest[0].clone(), "%=", 256));
+                    let mut exec = Execute::new();
+                    exec.with_if(ExecuteCondition::Score {
+                        target: dest[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((128..=255).into()),
+                    });
+                    exec.with_run(ScoreAdd {
+                        target: dest[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        score: -256,
+                    });
+                    cmds.push(exec.into());
+                    cmds.push(assign_lit(dest[1].clone(), 0)); // unconditionally initialize dest[1]
+                    let mut exec = Execute::new();
+                    exec.with_if(ExecuteCondition::Score {
+                        target: dest[0].clone().into(),
+                        target_obj: OBJECTIVE.into(),
+                        kind: ExecuteCondKind::Matches((..=-1).into()),
+                    });
+                    exec.with_run(assign_lit(dest[1].clone(), u32::MAX as i32));
+                    cmds.push(exec.into());
+
+                    cmds
                 } else {
                     todo!("{:?}", operand)
                 }
