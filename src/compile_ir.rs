@@ -1870,75 +1870,30 @@ fn compile_shl(
                 cmds.push(assign(dest_hi.clone(), op0[1].clone()));
                 let tmp = get_unique_holder();
                 cmds.push(assign_lit(tmp.clone(), mul));
-                cmds.push(
-                    ScoreOp {
-                        target: dest_lo.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ScoreOpKind::MulAssign,
-                        source: tmp.clone().into(),
-                        source_obj: OBJECTIVE.into(),
-                    }
-                    .into(),
-                );
-                cmds.push(
-                    ScoreOp {
-                        target: dest_hi.clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ScoreOpKind::MulAssign,
-                        source: tmp.clone().into(),
-                        source_obj: OBJECTIVE.into(),
-                    }
-                    .into(),
-                );
+                cmds.push(make_op(dest_lo, "*=", tmp.clone()));
+                cmds.push(make_op(dest_hi.clone(), "*=", tmp.clone()));
                 
                 let tmp2 = get_unique_holder();
                 
                 cmds.push(assign(tmp2.clone(),op0[0].clone()));
                 cmds.push(assign_lit(tmp.clone(),1 << (32 - shift)));
-                cmds.push(
-                    ScoreOp {
-                        target: tmp2.clone().into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ScoreOpKind::DivAssign,
-                        source: tmp.into(),
-                        source_obj: OBJECTIVE.into()
-                    }
-                    .into(),
-                );
-                cmds.push(
-                    ScoreOp {
-                        target: dest_hi.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ScoreOpKind::AddAssign,
-                        source: tmp2.into(),
-                        source_obj: OBJECTIVE.into()
-                    }
-                    .into(),
-                );
+                cmds.push(make_op(tmp2.clone(), "/=", tmp));
+                cmds.push(make_op(dest_hi, "+=", tmp2));
             };
             
             if shift < 32 {
-                intra_byte(((4294967295 as i64) >> shift) as i32,dest_lo,dest_hi);
+                intra_byte(((4294967295 as i64) >> shift) as i32, dest_lo, dest_hi);
             } else {
                 let tmp = get_unique_holder();
 
-                cmds.push(assign_lit(dest_lo.clone(), 0));
+                cmds.push(assign_lit(dest_lo, 0));
                 cmds.push(assign_lit(tmp.clone(), 1 << (shift - 32)));
                 cmds.push(assign(dest_hi.clone(), op0[0].clone()));
-                cmds.push(
-                    ScoreOp {
-                        target: dest_hi.into(),
-                        target_obj: OBJECTIVE.into(),
-                        kind: ScoreOpKind::MulAssign,
-                        source: tmp.into(),
-                        source_obj: OBJECTIVE.into(),
-                    }
-                    .into(),
-                );
+                cmds.push(make_op(dest_hi, "*=", tmp));
             }
         } else {
             match eval_maybe_const(operand1,globals,tys) {
-                MaybeConst::NonConst(tmp,op1) => {
+                MaybeConst::NonConst(tmp, op1) => {
                     let mut op0i = op0.into_iter();
                     let mut op1i = op1.into_iter();
                     let (dest_lo, dest_hi) = 
@@ -1959,10 +1914,10 @@ fn compile_shl(
                         }
                         .into(),
                     );
-                    cmds.push(assign(dest_lo.clone(), param(0, 0)));
-                    cmds.push(assign(dest_hi.clone(), param(0, 1)));
+                    cmds.push(assign(dest_lo, param(0, 0)));
+                    cmds.push(assign(dest_hi, param(0, 1)));
                 }
-                _ => todo!("Add handling for {:?}",operand1)
+                _ => todo!("Add handling for {:?}", operand1)
             }
         }
 
@@ -2171,15 +2126,13 @@ fn compile_ashr(
 
     if let Some(value) = as_const_64(operand1) {
         dumploc(debugloc);
-        eprintln!("[FATAL] 64-bit arithmetic shift right is not supported.");
-        panic!()
+        todo!("[FATAL] 64-bit arithmetic shift right is not supported.");
     } else {
         if let Type::IntegerType { bits } = &*op0_type {
             // this error was moved down
         } else {
             dumploc(debugloc);
-            eprintln!("[FATAL] Arithmetic shift right is only implemented for integers.");
-            panic!()
+            todo!("[FATAL] Arithmetic shift right is only implemented for integers.");
         }
 
         let (tmp, op1) = eval_operand(operand1, globals, tys);
@@ -2203,8 +2156,7 @@ fn compile_ashr(
             cmds.push(assign(dest, param(0, 0)));
         } else {
             dumploc(debugloc);
-            eprintln!("[FATAL] Arithmetic Shift Right with {} bits is unimplemented",op0.len());
-            panic!()
+            todo!("[FATAL] Arithmetic Shift Right with {} bits is unimplemented", op0.len());
         }
 
         cmds
@@ -2235,31 +2187,33 @@ fn compile_call(
                 None
             }
         } else if let Constant::BitCast (llvm_ir::constant::BitCast { operand, to_type }) = &**c {
-            let mut val = None;
-
-            // there will always be an stderr output so do this now
-            dumploc(debugloc);
-
-            if let Constant::GlobalReference { name: Name::Name(name), ty } = &**operand {
-                if let Type::FuncType { result_type: _, is_var_arg: false, .. } = &**ty {
-                    if let Type::PointerType {pointee_type, addr_space: _} = &**to_type {
-                        if let Type::FuncType { result_type, is_var_arg: false, .. } = &**pointee_type {
-                            eprintln!("[WARN] The compilation unit casts a function type to a different function type. Are the declarations different for this function?");
-                            val = Some((name, result_type));
-                        } else {
-                            eprintln!("[FATAL] Cannot call a data pointer unless cast.");
-                        }
-                    } else {
-                        eprintln!("[FATAL] Cannot call a non-pointer unless cast.");
-                    }
-                } else {
-                    eprintln!("[FATAL] Cannot directly cast a data pointer to a function.");
-                }
+            let (ref_name, ref_ty) = if let Constant::GlobalReference { name: Name::Name(name), ty } = &**operand {
+                (name, ty)
             } else {
-                eprintln!("[FATAL] Cannot handle this callee. Are you trying to double-cast?");
+                dumploc(debugloc);
+                panic!("[FATAL] Cannot handle this callee. Are you trying to double-cast?");
+            };
+
+            if let Type::FuncType { result_type: _, is_var_arg: false, .. } = &**ref_ty {
+
+            } else {
+                dumploc(debugloc);
+                panic!("[FATAL] Cannot directly cast a data pointer to a function.");
             }
 
-            val
+            let to_inner_ty = if let Type::PointerType { pointee_type, addr_space: _ } = &**to_type {
+                pointee_type
+            } else {
+                dumploc(debugloc);
+                panic!("[FATAL] Cannot call a non-pointer");
+            };
+
+            if let Type::FuncType { result_type, is_var_arg: false, .. } = &**to_inner_ty {
+                Some((ref_name, result_type))
+            } else {
+                dumploc(debugloc);
+                panic!("[FATAL] Cannot call a data pointer");
+            }
         } else {
             None
         }
@@ -3992,14 +3946,7 @@ pub fn compile_alloca(
 
     cmds.push(assign(dest, stackptr()));
     if let Some(num_elements) = as_const_32(num_elements) {
-        cmds.push(
-            ScoreAdd {
-                target: stackptr().into(),
-                target_obj: OBJECTIVE.to_string(),
-                score: type_size as i32 * num_elements as i32,
-            }
-            .into(),
-        );
+        cmds.push(make_op_lit(stackptr(), "+=", type_size as i32 * num_elements as i32));
     } else if let Operand::LocalOperand {name, ty: _} = num_elements {
         if matches!(&*num_elements.get_type(tys),llvm_ir::Type::IntegerType {bits: 32}) {
             let score = ScoreHolder::from_local_name(name.clone(),4);
@@ -4288,8 +4235,7 @@ fn compile_getelementptr(
                             }
                         } else {
                             dumploc(debugloc);
-                            eprintln!("[FATAL] GetElementPtr can only be word-sized (32-bit) or doubleword-sized (64-bit)");
-                            panic!()
+                            unreachable!("[FATAL] Invalid IR: GetElementPtr can only be word-sized (32-bit) or doubleword-sized (64-bit)");
                         }
                     }
                 }
@@ -5179,26 +5125,30 @@ pub fn compile_instr(
 
                     if target.len() != 1 || source.len() != 1 {
                         if target.len() == 2 && source.len() == 2 {
-                            cmds.extend(compile_normal_icmp(target[1].clone(),source[1].clone(),predicate,dest.clone()));
+                            cmds.extend(compile_normal_icmp(target[1].clone(), source[1].clone(),predicate, dest.clone()));
 
-                            let conditionals = compile_normal_icmp(target[0].clone(),source[0].clone(),predicate,dest);
+                            let conditionals = compile_normal_icmp(target[0].clone(), source[0].clone(), predicate, dest);
 
-                            for current_command in conditionals.iter() {
-                                let mut out_command = Execute::new();
+                            cmds.extend(
+                                conditionals
+                                .into_iter()
+                                .map(|current_command| -> Command {
+                                    let mut out_command = Execute::new();
 
-                                out_command.with_if(ExecuteCondition::Score {
-                                    target: Target::Uuid(target[1].clone()),
-                                    target_obj: OBJECTIVE.to_string(),
-                                    kind: ExecuteCondKind::Relation {
-                                        relation: cir::Relation::Eq,
-                                        source: Target::Uuid(source[1].clone()),
-                                        source_obj: OBJECTIVE.to_string()
-                                    }
-                                });
-                                out_command.with_run::<cir::Command>(current_command.clone());
+                                    out_command.with_if(ExecuteCondition::Score {
+                                        target: Target::Uuid(target[1].clone()),
+                                        target_obj: OBJECTIVE.to_string(),
+                                        kind: ExecuteCondKind::Relation {
+                                            relation: cir::Relation::Eq,
+                                            source: Target::Uuid(source[1].clone()),
+                                            source_obj: OBJECTIVE.to_string()
+                                        }
+                                    });
+                                    out_command.with_run::<cir::Command>(current_command.clone());
 
-                                cmds.push(out_command.into());
-                            }
+                                    out_command.into()
+                                })
+                            );
                         } else {
                             println!("Target len is {}, source len is {} and ty is {:?} and predicate is {:?}",target.len(),source.len(), ty, predicate);
                             todo!()
