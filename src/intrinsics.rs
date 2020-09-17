@@ -4,6 +4,8 @@ use std::collections::{HashSet, HashMap};
 
 static INTRINSIC_STRS: &[(&str, &str)] = &[
     ("intrinsic:lshr", include_str!("intrinsic/lshr.mcfunction")),
+    ("intrinsic:lshr64", include_str!("intrinsic/lshr64.mcfunction")),
+    ("intrinsic:ashr", include_str!("intrinsic/ashr.mcfunction")),
     (
         "intrinsic:lshr/getshift",
         include_str!("intrinsic/lshr/getshift.mcfunction"),
@@ -116,7 +118,14 @@ static INTRINSIC_STRS: &[(&str, &str)] = &[
         "intrinsic:llvm_ctlz_i32_inner",
         include_str!("intrinsic/llvm_ctlz_i32_inner.mcfunction"),
     ),
-    ("intrinsic:shl", include_str!("intrinsic/shl.mcfunction")),
+    (
+        "intrinsic:shl",
+        include_str!("intrinsic/shl.mcfunction")
+    ),
+    (
+        "intrinsic:shl64",
+        include_str!("intrinsic/shl64.mcfunction")
+    ),
 ];
 
 lazy_static! {
