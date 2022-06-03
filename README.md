@@ -3,6 +3,8 @@
 
 Langcraft is a code generator targeting [Minecraft Data Packs](https://minecraft.gamepedia.com/Data_Pack). It can currently run a fairly substantial set of bitcode files without issue. The project has a built-in command interpreter for debugging that supports breakpoints (ish) and inspecting register/memory values. All generated datapacks can be run in a real Minecraft Java Edition 1.16+ world in under 5 minutes.
 
+(See also [Wasmcraft2](https://github.com/SuperTails/wasmcraft2) for the spiritual successor to this project, which is faster and more reliable)
+
 ### Usage
 ```
 cargo run -- --arg1 --arg2 ./path/to/llvm/bitcode.bc
